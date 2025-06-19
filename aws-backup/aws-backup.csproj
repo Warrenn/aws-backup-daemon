@@ -20,6 +20,7 @@
       <PackageReference Include="AWSSDK.DynamoDbv2" Version="4.0.1.8" />
       <PackageReference Include="awssdk.s3" Version="4.0.2" />
       <PackageReference Include="AWSSDK.SQS" Version="4.0.0.11" />
+      <PackageReference Include="BouncyCastle" Version="1.8.9" />
       <PackageReference Include="Cronos" Version="0.11.0" />
       <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.6" />
       <PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="9.0.6" />
