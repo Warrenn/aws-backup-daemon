@@ -1,11 +1,13 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
+using System.Text;
 using System.Threading.Channels;
 
 public class ChunkedEncryptingFileProcessor : IChunkedEncryptingFileProcessor
 {
     private readonly byte[] _aesKey; // 32 bytes for AES-256
     private readonly int _bufferSize;
+    private readonly string _cacheFolder;
     private readonly int _chunkSizeBytes;
     private readonly ChannelWriter<ChunkData> _chunkWriter;
     private readonly IChunkedEncryptingFileProcessor _processor;
@@ -15,16 +17,21 @@ public class ChunkedEncryptingFileProcessor : IChunkedEncryptingFileProcessor
         int chunkSizeBytes = 5 * 1024 * 1024,
         int bufferSize = 80 * 1024,
         IChunkedEncryptingFileProcessor processor = null,
-        ChannelWriter<ChunkData> chunkWriter = null)
+        ChannelWriter<ChunkData> chunkWriter = null,
+        string cacheFolder = "")
     {
         if (aesKey is null || aesKey.Length != 32)
             throw new ArgumentException("AES key must be 32 bytes for AES-256", nameof(aesKey));
+
+        if (string.IsNullOrWhiteSpace(cacheFolder))
+            cacheFolder = Path.Combine(Path.GetTempPath(), "aws-backup", "chunks");
 
         _aesKey = aesKey;
         _chunkSizeBytes = chunkSizeBytes;
         _bufferSize = bufferSize;
         _processor = processor;
         _chunkWriter = chunkWriter;
+        _cacheFolder = cacheFolder;
     }
 
     public async Task<FileProcessResult> ProcessFileAsync(string inputPath,
@@ -63,7 +70,7 @@ public class ChunkedEncryptingFileProcessor : IChunkedEncryptingFileProcessor
             // ensure chunk pipeline is ready
             if (chunkHasher is null)
                 InitializeChunkPipeline();
-            if (chunkHasher is null) break; // safety check
+            if (chunkHasher is null) continue; // safety check
 
             // feed chunk hash + compression + encryption
             chunkHasher.TransformBlock(buffer, 0, read, null, 0);
@@ -90,7 +97,6 @@ public class ChunkedEncryptingFileProcessor : IChunkedEncryptingFileProcessor
         };
 
         // local helpers:
-
         void InitializeChunkPipeline()
         {
             bytesInChunk = 0;
@@ -99,7 +105,11 @@ public class ChunkedEncryptingFileProcessor : IChunkedEncryptingFileProcessor
             chunkHasher = SHA256.Create();
 
             // 2) output file for this chunk
-            var outPath = $"{Path.GetFileName(inputPath)}.chunk{chunkIndex:D4}.gz.aes";
+            if (Directory.Exists(_cacheFolder) == false)
+                Directory.CreateDirectory(_cacheFolder);
+            var fileNameHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(inputPath)))
+                .ToLowerInvariant();
+            var outPath = $"{Path.Combine(_cacheFolder,fileNameHash)}.chunk{chunkIndex:D4}.gz.aes";
             chunkFileFs = new FileStream(outPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
 
             // 3) AES setup
@@ -114,7 +124,7 @@ public class ChunkedEncryptingFileProcessor : IChunkedEncryptingFileProcessor
 
             // 4) crypto + gzip stream
             cryptoStream = new CryptoStream(chunkFileFs, aes.CreateEncryptor(), CryptoStreamMode.Write);
-            gzipStream = new GZipStream(cryptoStream, CompressionLevel.Optimal, true);
+            gzipStream = new GZipStream(cryptoStream, CompressionLevel.SmallestSize, true);
         }
 
         async Task FinalizeChunkAsync()
