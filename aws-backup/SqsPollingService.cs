@@ -1,5 +1,3 @@
-using Amazon.DynamoDBv2;
-using Amazon.DynamoDBv2.Model;
 using Amazon.SQS;
 using Amazon.SQS.Model;
 using Microsoft.Extensions.Hosting;
@@ -9,19 +7,16 @@ using Microsoft.Extensions.Configuration;
 public class SqsPollingService : BackgroundService
 {
     private readonly IAmazonSQS   _sqs;
-    private readonly IAmazonDynamoDB _ddb;
     private readonly ILogger<SqsPollingService> _logger;
     private readonly string      _queueUrl;
     private readonly string      _tableName;
 
     public SqsPollingService(
         IAmazonSQS sqs,
-        IAmazonDynamoDB ddb,
         ILogger<SqsPollingService> logger,
         IConfiguration config)
     {
         _sqs      = sqs;
-        _ddb      = ddb;
         _logger   = logger;
         _queueUrl = config["SQS:QueueUrl"] 
                     ?? throw new ArgumentException("Missing SQS:QueueUrl");
@@ -63,18 +58,6 @@ public class SqsPollingService : BackgroundService
                 {
                     _logger.LogInformation("Received message {Id}", msg.MessageId);
 
-                    // 1) Process: write an item to DynamoDB
-                    var item = new PutItemRequest
-                    {
-                        TableName = _tableName,
-                        Item = new Dictionary<string, AttributeValue>
-                        {
-                            ["MessageId"] = new AttributeValue { S = msg.MessageId },
-                            ["Body"]      = new AttributeValue { S = msg.Body },
-                            ["ReceivedAt"]= new AttributeValue { S = DateTime.UtcNow.ToString("o") }
-                        }
-                    };
-                    await _ddb.PutItemAsync(item, stoppingToken);
                     _logger.LogInformation("Wrote message {Id} to DynamoDB", msg.MessageId);
 
                     // 2) Delete from SQS

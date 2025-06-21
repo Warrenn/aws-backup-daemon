@@ -26,12 +26,12 @@ public class ChunkDataProcessor(
         return Task.WhenAll(_workers);
     }
 
-    private async Task WorkerLoopAsync(CancellationToken ct)
+    private async Task WorkerLoopAsync(CancellationToken stoppingToken)
     {
-        await foreach (var chunk in mediator.GetUploadChunks(ct))
+        await foreach (var chunk in mediator.GetUploadChunks(stoppingToken))
             try
             {
-                if (!await archiveService.ChunkRequiresUpload(chunk, ct))
+                if (!await archiveService.ChunkRequiresUpload(chunk, stoppingToken))
                 {
                     logger.LogInformation("Skipping chunk {ChunkIndex} for file {LocalFilePath} - already uploaded",
                         chunk.ChunkIndex, chunk.LocalFilePath);
@@ -60,11 +60,11 @@ public class ChunkDataProcessor(
                     ServerSideEncryptionMethod = serverSideEncryptionMethod
                 };
 
-                await transferUtil.UploadAsync(uploadReq, ct);
+                await transferUtil.UploadAsync(uploadReq, stoppingToken);
 
                 if (File.Exists(chunk.LocalFilePath)) File.Delete(chunk.LocalFilePath);
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
             }
             catch (Exception ex)

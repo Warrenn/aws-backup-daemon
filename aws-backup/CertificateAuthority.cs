@@ -12,8 +12,7 @@ namespace aws_backup;
 
 public static class CertificateAuthority
 {
-    static SecureRandom GetRandom() =>
-        new SecureRandom(new CryptoApiRandomGenerator());
+    private static SecureRandom GetRandom() => new(new CryptoApiRandomGenerator());
 
     public static void Main()
     {
@@ -46,10 +45,10 @@ public static class CertificateAuthority
         Console.WriteLine("-----END CLIENT CERTIFICATE-----");
     }
 
-    static AsymmetricCipherKeyPair GenerateRsaKeyPair(int bits)
+    private static AsymmetricCipherKeyPair GenerateRsaKeyPair(int bits)
     {
         var gen = new Org.BouncyCastle.Crypto.Generators.RsaKeyPairGenerator();
-        gen.Init(new Org.BouncyCastle.Crypto.KeyGenerationParameters(GetRandom(), bits));
+        gen.Init(new KeyGenerationParameters(GetRandom(), bits));
         return gen.GenerateKeyPair();
     }
 
@@ -93,9 +92,9 @@ public static class CertificateAuthority
             "SHA256WithRSAEncryption", keyPair.Private, GetRandom()));
     }
 
-    static X509Certificate GenerateClientCertificate(
+    private static X509Certificate GenerateClientCertificate(
         AsymmetricKeyParameter clientPub,
-        AsymmetricKeyParameter caPriv,
+        AsymmetricKeyParameter caPrivate,
         X509Certificate caCert,
         string subjectCn)
     {
@@ -131,17 +130,17 @@ public static class CertificateAuthority
             new AuthorityKeyIdentifierStructure(caCert.GetPublicKey()));
 
         return certGen.Generate(new Asn1SignatureFactory(
-            "SHA256WithRSAEncryption", caPriv, GetRandom()));
+            "SHA256WithRSAEncryption", caPrivate, GetRandom()));
     }
 
-    static void ExportPrivateKeyPem(AsymmetricKeyParameter privKey)
+    private static void ExportPrivateKeyPem(AsymmetricKeyParameter privateKey)
     {
         var w = new PemWriter(Console.Out);
-        w.WriteObject(privKey);
+        w.WriteObject(privateKey);
         w.Writer.Flush();
     }
 
-    static void ExportCertificatePem(X509Certificate cert)
+    private static void ExportCertificatePem(X509Certificate cert)
     {
         var w = new PemWriter(Console.Out);
         w.WriteObject(cert);

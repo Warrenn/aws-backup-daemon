@@ -7,7 +7,8 @@ public static class CommandLine
     /// <summary>
     ///     Helper to run an external process and capture stdout.
     /// </summary>
-    public static Task<(string stdOut, string stdErr, int exitCode)> RunProcessAsync(string fileName, string args)
+    public static async Task<(string stdOut, string stdErr, int exitCode)> RunProcessAsync(string fileName, string args,
+        CancellationToken stoppingToken)
     {
         var psi = new ProcessStartInfo
         {
@@ -19,7 +20,7 @@ public static class CommandLine
             CreateNoWindow = true
         };
 
-        var tcs = new TaskCompletionSource<(string stdOut, string stdErr, int exitCode)>();
+        (string stdOut, string stdErr, int exitCode) output = ("", "", -1);
         var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
 
         proc.Exited += (_, _) =>
@@ -28,10 +29,15 @@ public static class CommandLine
             var stderr = proc.StandardError.ReadToEnd();
             proc.Dispose();
 
-            tcs.SetResult((stdout, stderr, proc.ExitCode));
+            output.stdOut = stdout;
+            output.stdErr = stderr;
+            output.exitCode = proc.ExitCode;
         };
 
         proc.Start();
-        return tcs.Task;
+        await proc.WaitForExitAsync(stoppingToken);
+        if (!stoppingToken.IsCancellationRequested) return output;
+        proc.Kill();
+        return ("", "", -1);
     }
 }

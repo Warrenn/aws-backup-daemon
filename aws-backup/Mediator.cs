@@ -16,24 +16,16 @@ public interface IMediator
     Task RetryFile(string archiveRunId, string filePath, Exception exception, CancellationToken cancellationToken);
     Task ProcessFile(string archiveRunId, string filePath, CancellationToken cancellationToken);
     Task ProcessChunk(ChunkData chunkData, CancellationToken cancellationToken);
-    IAsyncEnumerable<(ArchiveRun archive, string key, Func<Stream> getDataStream)> GetHotStorageUploads(
+    IAsyncEnumerable<(ArchiveRun archive, string key, Func<Task<Stream>> getDataStream)> GetHotStorageUploads(
         CancellationToken cancellationToken);
 }
 
 public class Mediator : IMediator
 {
-    private readonly Channel<(ArchiveRun archive, string fullFilePath)> _archiveFilesChannel;
-    private readonly Channel<RunRequest> _requestsChannel;
-    private readonly Channel<(ArchiveRun archive, string filePath, Exception exception)> _retriesChannel;
-    private readonly Channel<ChunkData> _uploadChunksChannel;
-
-    public Mediator()
-    {
-        _archiveFilesChannel = Channel.CreateUnbounded<(ArchiveRun archive, string fullFilePath)>();
-        _requestsChannel = Channel.CreateUnbounded<RunRequest>();
-        _retriesChannel = Channel.CreateUnbounded<(ArchiveRun archive, string filePath, Exception exception)>();
-        _uploadChunksChannel = Channel.CreateUnbounded<ChunkData>();
-    }
+    private readonly Channel<(ArchiveRun archive, string fullFilePath)> _archiveFilesChannel = Channel.CreateUnbounded<(ArchiveRun archive, string fullFilePath)>();
+    private readonly Channel<RunRequest> _requestsChannel = Channel.CreateUnbounded<RunRequest>();
+    private readonly Channel<(ArchiveRun archive, string filePath, Exception exception)> _retriesChannel = Channel.CreateUnbounded<(ArchiveRun archive, string filePath, Exception exception)>();
+    private readonly Channel<ChunkData> _uploadChunksChannel = Channel.CreateUnbounded<ChunkData>();
 
     public IAsyncEnumerable<(ArchiveRun archive, string fullFilePath)> GetArchiveFiles(
         CancellationToken cancellationToken)
@@ -78,7 +70,7 @@ public class Mediator : IMediator
         return _uploadChunksChannel.Writer.WriteAsync(chunkData, cancellationToken).AsTask();
     }
 
-    public IAsyncEnumerable<(ArchiveRun archive, string key, Func<Stream> getDataStream)> GetHotStorageUploads(CancellationToken cancellationToken)
+    public IAsyncEnumerable<(ArchiveRun archive, string key, Func<Task<Stream>> getDataStream)> GetHotStorageUploads(CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }

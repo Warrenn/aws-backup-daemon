@@ -10,12 +10,10 @@ public class Configuration
     public int RestoreFileConcurrency { get; set; }
     public long ChunkSizeBytes { get; set; }
     public int ReadBufferSize { get; set; }
-    public int FileRetryLimit { get; set; }
     public long FileRetryDelay { get; set; }
+    public string RetryStrategy { get; set; }
     public string CacheFolder { get; set; }
     public string ArchiveNameTemplate { get; set; } //date
-    public string AwsProfile { get; set; }
-    public string AwsRegion { get; set; }
     public string AwsTrustRoleArn { get; set; }
     public string AwsTrustProfileArn { get; set; }
     public string AwsTrustRoleAnchor { get; set; }
@@ -23,7 +21,6 @@ public class Configuration
     public string AwsTrustPrivateKey { get; set; }
     public string ColdStorageType { get; set; }
     public string HotStorageType { get; set; }
-    public string DynamodbTableTemplate { get; set; }
     public string AwsS3SecurityConfig { get; set; }
     public string SnsTopicArn { get; set; }
     public string AlertEvents { get; set; }
@@ -39,5 +36,5 @@ public class Configuration
     public string S3BucketName { get; set; }
     public string S3RepoPrefix { get; set; }
     public long S3PartSize { get; set; }
-    public int MaxRetryAttempts { get; set; }
+    public int RetryLimit { get; set; }
 }

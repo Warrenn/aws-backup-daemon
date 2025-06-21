@@ -48,7 +48,7 @@ public abstract class FixedPoolFileProcessor(
 
                 if (configuration.KeepOwnerGroup)
                 {
-                    var (owner, group) = await FileHelper.GetOwnerGroupAsync(filePath);
+                    var (owner, group) = await FileHelper.GetOwnerGroupAsync(filePath, ct);
                     await archiveService.UpdateOwnerGroup(result.FullFileHash, owner, group, ct);
                 }
 

@@ -11,13 +11,14 @@ public static class FileHelper
     /// <summary>
     ///     Runs the OS command to get "owner:group" for the given file.
     /// </summary>
-    public static async Task<(string Owner, string Group)> GetOwnerGroupAsync(string path)
+    public static async Task<(string Owner, string Group)> GetOwnerGroupAsync(string path,
+        CancellationToken cancellationToken)
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             // PowerShell one-liner: "(Get-Acl file).Owner"
             var cmd = $"-NoProfile -Command \"(Get-Acl -Path '{path}').Owner\"";
-            var owner = (await CommandLine.RunProcessAsync("powershell", cmd)).stdOut.Trim();
+            var owner = (await CommandLine.RunProcessAsync("powershell", cmd, cancellationToken)).stdOut.Trim();
             // Windows doesn't have a single "group owner" concept; return empty
             return (owner, "");
         }
@@ -25,17 +26,17 @@ public static class FileHelper
         // stat --format '%U:%G' path
         var (output, _, _) = await CommandLine.RunProcessAsync(
             "stat",
-            $"--format \"%U:%G\" \"{path}\"");
+            $"--format \"%U:%G\" \"{path}\"",
+            cancellationToken);
         var parts = output.Trim().Split(':', 2);
-        if (parts.Length == 2)
-            return (parts[0], parts[1]);
-        return ("", "");
+        return parts.Length == 2 ? (parts[0], parts[1]) : ("", "");
     }
 
     /// <summary>
     ///     Runs the OS command to set owner:group on the given file.
     /// </summary>
-    public static async Task SetOwnerGroupAsync(string path, string owner, string group)
+    public static async Task SetOwnerGroupAsync(string path, string owner, string group,
+        CancellationToken cancellationToken)
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
@@ -45,14 +46,14 @@ public static class FileHelper
                           $"'$acl=Get-Acl -Path \"{path}\"; " +
                           $"$acl.SetOwner([System.Security.Principal.NTAccount]\"{owner}\"); " +
                           $"Set-Acl -Path \"{path}\" -AclObject $acl'";
-            await CommandLine.RunProcessAsync("powershell", psOwner);
+            await CommandLine.RunProcessAsync("powershell", psOwner, cancellationToken);
 
             // (Windows has no single "group owner"; you'd typically add a group ACE instead.)
         }
         else
         {
             // chown owner:group path
-            await CommandLine.RunProcessAsync("chown", $"{owner}:{group} \"{path}\"");
+            await CommandLine.RunProcessAsync("chown", $"{owner}:{group} \"{path}\"", cancellationToken);
         }
     }
 

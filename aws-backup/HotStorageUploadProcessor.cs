@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using Amazon.S3.Transfer;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -21,18 +22,23 @@ public class HotStorageUploadProcessor(
                 var storageClass = contextFactory.ResolveHotStorage(configuration);
                 var serverSideEncryptionMethod = contextFactory.ResolveServerSideEncryptionMethod(configuration);
                 var transferUtil = new TransferUtility(s3Client);
+
+                await using var stream = await getDataStream();
+                var gzipStream = new GZipStream(stream,
+                    CompressionLevel.Optimal,
+                    leaveOpen: false);
                 
-                var stream = getDataStream();
                 var uploadReq = new TransferUtilityUploadRequest
                 {
                     BucketName = bucketName,
                     Key = key,
-                    InputStream = stream, 
+                    InputStream = gzipStream,
                     PartSize = configuration.S3PartSize,
                     StorageClass = storageClass,
-                    ServerSideEncryptionMethod = serverSideEncryptionMethod
+                    ServerSideEncryptionMethod = serverSideEncryptionMethod,
+                    ContentType = "application/gzip"
                 };
-                
+
                 await transferUtil.UploadAsync(uploadReq, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

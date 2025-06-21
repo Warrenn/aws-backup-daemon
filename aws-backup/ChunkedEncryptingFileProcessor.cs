@@ -9,14 +9,20 @@ public record FileProcessResult(
     long OriginalSize, // Size before compression
     byte[] FullFileHash, // SHA-256 hash of the full file
     ChunkData[] Chunks
-);
+)
+{
+    public ByteArrayKey Key { get; init; } = new(FullFileHash);
+}
 
 public record ChunkData(
     string LocalFilePath,
     int ChunkIndex,
     byte[] Hash, // SHA-256 hash of the chunk
     long Size
-);
+)
+{
+    public ByteArrayKey Key { get; init; } = new(Hash);
+}
 
 public interface IChunkedEncryptingFileProcessor
 {
@@ -104,7 +110,7 @@ public class ChunkedEncryptingFileProcessor(
             // 2) output file for this chunk
             if (!Directory.Exists(cacheFolder))
                 Directory.CreateDirectory(cacheFolder);
-            
+
             var fileNameHash = Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(inputPath)));
             var outPath = $"{Path.Combine(cacheFolder, fileNameHash)}.chunk{chunkIndex:D4}.gz.aes";
             if (File.Exists(outPath)) File.Delete(outPath);
