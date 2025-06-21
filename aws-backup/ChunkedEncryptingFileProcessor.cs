@@ -26,7 +26,7 @@ public record ChunkData(
 
 public interface IChunkedEncryptingFileProcessor
 {
-    Task<FileProcessResult> ProcessFileAsync(string inputPath, CancellationToken cancellationToken = default);
+    Task<FileProcessResult> ProcessFileAsync(string inputPath, CancellationToken cancellationToken);
 }
 
 public class ChunkedEncryptingFileProcessor(

@@ -2,13 +2,22 @@ using Microsoft.Extensions.FileSystemGlobbing;
 
 namespace aws_backup;
 
-public static class FileLister
+public interface IFileLister
 {
     /// <summary>
     ///     Given a colon-delimited list of root directories, recurses each and
     ///     yields all reachable files, skipping directories you can’t enter.
     /// </summary>
-    public static IEnumerable<string> GetAllFiles(string colonDelimitedRoots, IEnumerable<string> ignorePatterns)
+    IEnumerable<string> GetAllFiles(string colonDelimitedRoots, IEnumerable<string> ignorePatterns);
+}
+
+public class FileLister : IFileLister
+{
+    /// <summary>
+    ///     Given a colon-delimited list of root directories, recurses each and
+    ///     yields all reachable files, skipping directories you can’t enter.
+    /// </summary>
+    public IEnumerable<string> GetAllFiles(string colonDelimitedRoots, IEnumerable<string> ignorePatterns)
     {
         var matcher = new Matcher();
         matcher.AddInclude("**/*");

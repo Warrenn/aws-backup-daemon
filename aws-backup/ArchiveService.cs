@@ -14,7 +14,7 @@ public record FileMetaData(
     ChunkData[] Chunks
 );
 
-public abstract record RunRequest(
+public record RunRequest(
     string RunId,
     string PathsToArchive,
     string CronSchedule
@@ -45,6 +45,8 @@ public interface IArchiveService
     Task UpdateAclEntries(byte[] resultFullFileHash, AclEntry[] aclEntries, CancellationToken ct);
     Task<bool> ChunkRequiresUpload(ChunkData chunk, CancellationToken ct);
     Task RecordFailedFile(string archiveRunId, string filePath, Exception exception, CancellationToken stoppingToken);
+    Task RecordLocalFile(string archiveRunRunId, string filePath, CancellationToken stoppingToken);
+    Task CompleteArchiveRun(string archiveRunRunId, CancellationToken stoppingToken);
 }
 
 public class ArchiveService : IArchiveService
@@ -91,6 +93,16 @@ public class ArchiveService : IArchiveService
 
     public Task RecordFailedFile(string archiveRunId, string filePath, Exception exception,
         CancellationToken stoppingToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task RecordLocalFile(string archiveRunRunId, string filePath, CancellationToken stoppingToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task CompleteArchiveRun(string archiveRunRunId, CancellationToken stoppingToken)
     {
         throw new NotImplementedException();
     }

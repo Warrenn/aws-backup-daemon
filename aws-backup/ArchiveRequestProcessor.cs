@@ -7,6 +7,7 @@ public class ArchiveRequestProcessor(
     IMediator mediator,
     IArchiveService archiveService,
     Configuration configuration,
+    IFileLister fileLister,
     ILogger<ArchiveRequestProcessor> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -43,8 +44,13 @@ public class ArchiveRequestProcessor(
                     logger.LogError(e, "Failed to read ignore file {IgnoreFile}", configuration.IgnoreFile);
                 }
 
-            foreach (var filePath in FileLister.GetAllFiles(archiveRequest.PathsToArchive, ignorePatterns))
+            foreach (var filePath in fileLister.GetAllFiles(archiveRequest.PathsToArchive, ignorePatterns))
+            {
+                await archiveService.RecordLocalFile(archiveRun.RunId, filePath, stoppingToken);
                 await mediator.ProcessFile(archiveRun.RunId, filePath, stoppingToken);
+            }
+            
+            await archiveService.CompleteArchiveRun(archiveRun.RunId, stoppingToken);
         }
     }
 }

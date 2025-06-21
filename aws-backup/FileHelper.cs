@@ -18,7 +18,7 @@ public static class FileHelper
         {
             // PowerShell one-liner: "(Get-Acl file).Owner"
             var cmd = $"-NoProfile -Command \"(Get-Acl -Path '{path}').Owner\"";
-            var owner = (await CommandLine.RunProcessAsync("powershell", cmd, cancellationToken)).stdOut.Trim();
+            var owner = (await CommandLine.RunProcessAsync("powershell", cmd, cancellationToken)).StdOut.Trim();
             // Windows doesn't have a single "group owner" concept; return empty
             return (owner, "");
         }

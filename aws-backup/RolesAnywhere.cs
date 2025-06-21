@@ -8,64 +8,56 @@ namespace aws_backup;
 
 public class RolesAnywhere
 {
-    private static async Task<int> Main(string[] args)
-    {
-        var sessionDurationOpt = new Option<int>("--session-duration") { DefaultValueFactory = _ => 43200 };
-        var profileArnOpt = new Option<string>("--profile-arn") { Required = true };
-        var roleArnOpt = new Option<string>("--role-arn") { Required = true };
-        var trustAnchorArnOpt = new Option<string>("--trust-anchor-arn") { Required = true };
-        var certificateOpt = new Option<FileInfo>("--certificate") { Required = true };
-        var privateKeyOpt = new Option<FileInfo>("--private-key") { Required = true };
-        var regionOpt = new Option<string>("--region") { DefaultValueFactory = _ => "us-east-1" };
-        
-        var root = new RootCommand
-        {
-            sessionDurationOpt,
-            profileArnOpt,
-            roleArnOpt,
-            trustAnchorArnOpt,
-            certificateOpt,
-            privateKeyOpt,
-            regionOpt
-        };
+    // private static async Task<int> Main(string[] args)
+    // {
+    //     var sessionDurationOpt = new Option<int>("--session-duration") { DefaultValueFactory = _ => 43200 };
+    //     var profileArnOpt = new Option<string>("--profile-arn") { Required = true };
+    //     var roleArnOpt = new Option<string>("--role-arn") { Required = true };
+    //     var trustAnchorArnOpt = new Option<string>("--trust-anchor-arn") { Required = true };
+    //     var certificateOpt = new Option<FileInfo>("--certificate") { Required = true };
+    //     var privateKeyOpt = new Option<FileInfo>("--private-key") { Required = true };
+    //     var regionOpt = new Option<string>("--region") { DefaultValueFactory = _ => "us-east-1" };
+    //
+    //     var root = new RootCommand
+    //     {
+    //         sessionDurationOpt,
+    //         profileArnOpt,
+    //         roleArnOpt,
+    //         trustAnchorArnOpt,
+    //         certificateOpt,
+    //         privateKeyOpt,
+    //         regionOpt
+    //     };
+    //
+    //     root.Description = "AWS RolesAnywhere session creator";
+    //     root.SetAction(async context =>
+    //     {
+    //         var sessionDuration = context.GetValue(sessionDurationOpt);
+    //         var profileArn = context.GetValue(profileArnOpt);
+    //         var roleArn = context.GetValue(roleArnOpt);
+    //         var trustAnchorArn = context.GetValue(trustAnchorArnOpt);
+    //         var certificate = context.GetValue(certificateOpt);
+    //         var privateKey = context.GetValue(privateKeyOpt);
+    //         var region = context.GetValue(regionOpt);
+    //         
+    //     });
+    //     return await root.Parse(args).InvokeAsync();
+    // }
 
-        root.Description = "AWS RolesAnywhere session creator";
-        root.SetAction(async context =>
-        {
-            var sessionDuration = context.GetValue(sessionDurationOpt);
-            var profileArn = context.GetValue(profileArnOpt);
-            var roleArn = context.GetValue(roleArnOpt);
-            var trustAnchorArn = context.GetValue(trustAnchorArnOpt);
-            var certificate = context.GetValue(certificateOpt);
-            var privateKey = context.GetValue(privateKeyOpt);
-            var region = context.GetValue(regionOpt);
-
-            await Run(
-                sessionDuration,
-                profileArn,
-                roleArn,
-                trustAnchorArn,
-                certificate,
-                privateKey,
-                region);
-        });
-        return await root.Parse(args).InvokeAsync();
-    }
-
-    private static async Task Run(
-        int sessionDuration,
+    public static async Task<string> Run(
         string profileArn,
         string roleArn,
         string trustAnchorArn,
-        FileInfo certificate,
-        FileInfo privateKey,
-        string region)
+        string certificateFileName,
+        string privateKeyFileName,
+        string region,
+        int sessionDuration = 43200) // default 12 hours
     {
         var endpoint = new Uri($"https://rolesanywhere.{region}.amazonaws.com");
         var url = new Uri(endpoint, "/sessions");
 
         // 1) Load CA cert and key
-        var certPem = await File.ReadAllTextAsync(certificate.FullName);
+        var certPem = await File.ReadAllTextAsync(certificateFileName);
         var cert = X509Certificate2.CreateFromPem(certPem);
         cert = cert.CopyWithPrivateKey(null); // ensure public-only
         var serial = cert.SerialNumber; // hex string
@@ -73,7 +65,7 @@ public class RolesAnywhere
         var x509Header = Convert.ToBase64String(derPub);
 
         // 2) Load private key
-        var keyPem = await File.ReadAllTextAsync(privateKey.FullName);
+        var keyPem = await File.ReadAllTextAsync(privateKeyFileName);
         using var rsa = RSA.Create();
         rsa.ImportFromPem(keyPem.ToCharArray());
 
@@ -147,7 +139,7 @@ public class RolesAnywhere
             req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
 
         var resp = await client.SendAsync(req);
-        Console.WriteLine(await resp.Content.ReadAsStringAsync());
+        return await resp.Content.ReadAsStringAsync();
     }
 
     private static byte[] HashSha256(byte[] data)

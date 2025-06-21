@@ -7,8 +7,8 @@ public static class CommandLine
     /// <summary>
     ///     Helper to run an external process and capture stdout.
     /// </summary>
-    public static async Task<(string stdOut, string stdErr, int exitCode)> RunProcessAsync(string fileName, string args,
-        CancellationToken stoppingToken)
+    public static async Task<(string StdOut, string StdErr, int ExitCode)> RunProcessAsync(
+        string fileName, string args, CancellationToken ct)
     {
         var psi = new ProcessStartInfo
         {
@@ -20,24 +20,37 @@ public static class CommandLine
             CreateNoWindow = true
         };
 
-        (string stdOut, string stdErr, int exitCode) output = ("", "", -1);
-        var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
-
-        proc.Exited += (_, _) =>
+        using var proc = new Process();
+        proc.StartInfo = psi;
+        try
         {
-            var stdout = proc.StandardOutput.ReadToEnd();
-            var stderr = proc.StandardError.ReadToEnd();
-            proc.Dispose();
+            proc.Start();
 
-            output.stdOut = stdout;
-            output.stdErr = stderr;
-            output.exitCode = proc.ExitCode;
-        };
+            // Begin async reads
+            var stdoutTask = proc.StandardOutput.ReadToEndAsync(ct);
+            var stderrTask = proc.StandardError.ReadToEndAsync(ct);
 
-        proc.Start();
-        await proc.WaitForExitAsync(stoppingToken);
-        if (!stoppingToken.IsCancellationRequested) return output;
-        proc.Kill();
-        return ("", "", -1);
+            // Wait for process to exit or cancellation
+            await proc.WaitForExitAsync(ct);
+
+            // Collect results
+            var stdOut = await stdoutTask;
+            var stdErr = await stderrTask;
+            return (stdOut, stdErr, proc.ExitCode);
+        }
+        catch (OperationCanceledException)
+        {
+            // kill if still running
+            try
+            {
+                proc.Kill(true);
+            }
+            catch (Exception e)
+            {
+                return (string.Empty, e.Message, -1);
+            }
+
+            throw;
+        }
     }
 }
