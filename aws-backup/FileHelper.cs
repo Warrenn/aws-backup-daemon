@@ -2,21 +2,66 @@ using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
 
+namespace aws_backup;
+
 public record AclEntry(string Identity, string Permissions, string Type);
 
-public record FileAcl(string Path, IReadOnlyList<AclEntry> Entries);
-
-public static class FileAclHelper
+public static class FileHelper
 {
-    public static FileAcl GetFileAcl(string path)
+    /// <summary>
+    ///     Runs the OS command to get "owner:group" for the given file.
+    /// </summary>
+    public static async Task<(string Owner, string Group)> GetOwnerGroupAsync(string path)
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            return GetWindowsAcl(path);
+        {
+            // PowerShell one-liner: "(Get-Acl file).Owner"
+            var cmd = $"-NoProfile -Command \"(Get-Acl -Path '{path}').Owner\"";
+            var owner = (await CommandLine.RunProcessAsync("powershell", cmd)).stdOut.Trim();
+            // Windows doesn't have a single "group owner" concept; return empty
+            return (owner, "");
+        }
 
-        return GetUnixAcl(path);
+        // stat --format '%U:%G' path
+        var (output, _, _) = await CommandLine.RunProcessAsync(
+            "stat",
+            $"--format \"%U:%G\" \"{path}\"");
+        var parts = output.Trim().Split(':', 2);
+        if (parts.Length == 2)
+            return (parts[0], parts[1]);
+        return ("", "");
     }
 
-    private static FileAcl GetWindowsAcl(string path)
+    /// <summary>
+    ///     Runs the OS command to set owner:group on the given file.
+    /// </summary>
+    public static async Task SetOwnerGroupAsync(string path, string owner, string group)
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            // PowerShell script to Set-Acl owner and (optionally) group entry
+            // Owner
+            var psOwner = $"-NoProfile -Command " +
+                          $"'$acl=Get-Acl -Path \"{path}\"; " +
+                          $"$acl.SetOwner([System.Security.Principal.NTAccount]\"{owner}\"); " +
+                          $"Set-Acl -Path \"{path}\" -AclObject $acl'";
+            await CommandLine.RunProcessAsync("powershell", psOwner);
+
+            // (Windows has no single "group owner"; you'd typically add a group ACE instead.)
+        }
+        else
+        {
+            // chown owner:group path
+            await CommandLine.RunProcessAsync("chown", $"{owner}:{group} \"{path}\"");
+        }
+    }
+
+    public static AclEntry[] GetFileAcl(string path)
+    {
+        return RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? GetWindowsAcl(path) : GetUnixAcl(path);
+    }
+
+    private static AclEntry[] GetWindowsAcl(string path)
     {
         var fileInfo = new FileInfo(path);
         var sec = fileInfo.GetAccessControl();
@@ -33,10 +78,10 @@ public static class FileAclHelper
                 rule.AccessControlType.ToString()
             ));
 
-        return new FileAcl(path, entries);
+        return entries.ToArray();
     }
 
-    private static FileAcl GetUnixAcl(string path)
+    private static AclEntry[] GetUnixAcl(string path)
     {
         // POSIX bits: owner, group, other
         var mode = File.GetUnixFileMode(path);
@@ -49,7 +94,7 @@ public static class FileAclHelper
             new("other", FormatPerm(mode, UnixFileMode.OtherRead, UnixFileMode.OtherWrite, UnixFileMode.OtherExecute),
                 "POSIX")
         };
-        return new FileAcl(path, entries);
+        return entries.ToArray();
     }
 
     private static string FormatPerm(UnixFileMode mode, UnixFileMode read, UnixFileMode write, UnixFileMode exec)
@@ -58,31 +103,32 @@ public static class FileAclHelper
                $"{((mode & write) > 0 ? "w" : "-")}" +
                $"{((mode & exec) > 0 ? "x" : "-")}";
     }
-    
-    public static void ApplyAcl(FileAcl acl, string targetPath)
+
+    public static void ApplyAcl(AclEntry[] acls, string targetPath)
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            ApplyWindowsAcl(acl, targetPath);
+            ApplyWindowsAcl(acls, targetPath);
         else
-            ApplyUnixAcl(acl, targetPath);
+            ApplyUnixAcl(acls, targetPath);
     }
-    private static void ApplyWindowsAcl(FileAcl acl, string path)
+
+    private static void ApplyWindowsAcl(AclEntry[] aclEntries, string path)
     {
         // Create a fresh ACL object
         var sec = new FileSecurity();
 
-        foreach (var entry in acl.Entries)
+        foreach (var entry in aclEntries)
         {
             // Parse the identity (domain\\user or local account)
             var identity = new NTAccount(entry.Identity);
             // Parse the rights enum from its string
-            var rights   = (FileSystemRights)Enum.Parse(
-                                typeof(FileSystemRights),
-                                entry.Permissions);
+            var rights = (FileSystemRights)Enum.Parse(
+                typeof(FileSystemRights),
+                entry.Permissions);
             // Parse Allow/Deny
-            var control  = (AccessControlType)Enum.Parse(
-                                typeof(AccessControlType),
-                                entry.Type);
+            var control = (AccessControlType)Enum.Parse(
+                typeof(AccessControlType),
+                entry.Type);
 
             // Build and add the rule
             var rule = new FileSystemAccessRule(
@@ -99,13 +145,13 @@ public static class FileAclHelper
         fileInfo.SetAccessControl(sec);
     }
 
-    private static void ApplyUnixAcl(FileAcl acl, string path)
+    private static void ApplyUnixAcl(AclEntry[] aclEntries, string path)
     {
         // We expect exactly three POSIX entries: owner, group, other
         // with Permissions like "rwx", "rw-", etc.
         // Grab the mode bits back from the strings:
         short mode = 0;
-        foreach (var e in acl.Entries)
+        foreach (var e in aclEntries)
         {
             var bits = 0;
             if (e.Permissions is ['r', ..]) bits |= 4;
@@ -124,28 +170,26 @@ public static class FileAclHelper
         var fileMode = (UnixFileMode)mode;
         File.SetUnixFileMode(path, fileMode);
     }
-    
-    public static (DateTime created, DateTime modified) GetTimestamps(string path)
+
+    public static void GetTimestamps(string path, out DateTime created, out DateTime modified)
     {
         // Get creation time (Local)
         // Optionally get UTC instead:
-        var created = File.GetCreationTimeUtc(path).ToLocalTime();
+        created = File.GetCreationTimeUtc(path);
 
         // Get last‐write (modified) time (Local)
         // Optionally get UTC instead:
-        var modified = File.GetLastWriteTimeUtc(path).ToLocalTime();
-
-        return (created, modified);
+        modified = File.GetLastWriteTimeUtc(path);
     }
-    
+
     public static void SetTimestamps(string path, DateTime created, DateTime modified)
     {
         // Set creation time (Local)
         // Optionally set UTC instead:
-        File.SetCreationTimeUtc(path, created.ToUniversalTime());
+        File.SetCreationTimeUtc(path, created);
 
         // Set last‐write (modified) time (Local)
         // Optionally set UTC instead:
-        File.SetLastWriteTimeUtc(path, modified.ToUniversalTime());
+        File.SetLastWriteTimeUtc(path, modified);
     }
 }

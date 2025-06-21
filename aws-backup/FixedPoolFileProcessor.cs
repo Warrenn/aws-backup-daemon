@@ -1,28 +1,22 @@
-using System.Threading.Channels;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-public class FixedPoolFileProcessor(
-    ChannelReader<string> fileQueue,
-    ChannelWriter<(string filePath, Exception exception)> retryQueue,
+namespace aws_backup;
+
+public abstract class FixedPoolFileProcessor(
+    IMediator mediator,
     IChunkedEncryptingFileProcessor processor,
+    IArchiveService archiveService,
     ILogger<FixedPoolFileProcessor> logger,
-    int maxDegreeOfParallelism = 4,
-    int shutdownTimeoutSeconds = 120)
+    Configuration configuration)
     : BackgroundService
 {
-    private readonly ChannelReader<string> _fileQueue = fileQueue;
-    private readonly ILogger<FixedPoolFileProcessor> _logger = logger;
-    private readonly int _maxDegreeOfParallelism = maxDegreeOfParallelism;
-    private readonly IChunkedEncryptingFileProcessor _processor = processor;
-    private readonly ChannelWriter<(string filePath, Exception exception)> _retryQueue = retryQueue;
-    private readonly int _shutdownTimeoutSeconds = shutdownTimeoutSeconds;
     private Task[] _workers = [];
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // Spin up N worker loops
-        _workers = new Task[_maxDegreeOfParallelism];
+        _workers = new Task[configuration.ReadConcurrency];
         for (var i = 0; i < _workers.Length; i++)
             _workers[i] = Task.Run(() => WorkerLoopAsync(stoppingToken), stoppingToken);
 
@@ -32,18 +26,43 @@ public class FixedPoolFileProcessor(
 
     private async Task WorkerLoopAsync(CancellationToken ct)
     {
-        await foreach (var filePath in _fileQueue.ReadAllAsync(ct))
+        await foreach (var (archive, filePath) in mediator.GetArchiveFiles(ct))
             try
             {
-                _logger.LogInformation("Processing {File}", filePath);
-                await _processor.ProcessFileAsync(filePath, ct);
+                var requireProcessing = await archiveService.FileRequiresProcessing(archive.RunId, filePath, ct);
+                if (!requireProcessing)
+                {
+                    logger.LogInformation("Skipping {File} for {RunId} - already processed", filePath, archive.RunId);
+                    continue;
+                }
+
+                logger.LogInformation("Processing {File} for {RunId}", filePath, archive.RunId);
+                var result = await processor.ProcessFileAsync(filePath, ct);
+                var requireMetaData = await archiveService.ReportProcessingResult(archive.RunId, result, ct);
+                if (!requireMetaData) continue;
+                if (configuration.KeepTimeStamps)
+                {
+                    FileHelper.GetTimestamps(filePath, out var created, out var modified);
+                    await archiveService.UpdateTimeStamps(result.FullFileHash, created, modified, ct);
+                }
+
+                if (configuration.KeepOwnerGroup)
+                {
+                    var (owner, group) = await FileHelper.GetOwnerGroupAsync(filePath);
+                    await archiveService.UpdateOwnerGroup(result.FullFileHash, owner, group, ct);
+                }
+
+                if (!configuration.KeepAcl) return;
+
+                var aclEntries = FileHelper.GetFileAcl(filePath);
+                await archiveService.UpdateAclEntries(result.FullFileHash, aclEntries, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
             }
             catch (Exception ex)
             {
-                await _retryQueue.WriteAsync((filePath, ex), ct);
+                await mediator.RetryFile(archive.RunId, filePath, ex, ct);
             }
     }
 
@@ -54,7 +73,7 @@ public class FixedPoolFileProcessor(
         await base.StopAsync(cancellationToken);
 
         // Wait for any in-flight work to finish (optional timeout)
-        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(_shutdownTimeoutSeconds));
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(configuration.ShutdownTimeoutSeconds));
         await Task.WhenAny(Task.WhenAll(_workers), Task.Delay(-1, timeoutCts.Token));
     }
 }

@@ -1,27 +1,24 @@
-using System.Threading.Channels;
-using Amazon;
-using Amazon.S3;
 using Amazon.S3.Transfer;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
+namespace aws_backup;
+
 public class ChunkDataProcessor(
-    ChannelReader<ChunkData> chunkQueue,
-    ILogger<FixedPoolFileProcessor> logger,
-    int maxDegreeOfParallelism = 4,
-    int shutdownTimeoutSeconds = 120)
+    IMediator mediator,
+    Configuration configuration,
+    ILogger<ChunkDataProcessor> logger,
+    IS3ClientFactory s3ClientFactory,
+    IContextFactory contextFactory,
+    IArchiveService archiveService)
     : BackgroundService
 {
-    private readonly ChannelReader<ChunkData> _chunkQueue = chunkQueue;
-    private readonly ILogger<FixedPoolFileProcessor> _logger = logger;
-    private readonly int _maxDegreeOfParallelism = maxDegreeOfParallelism;
-    private readonly int _shutdownTimeoutSeconds = shutdownTimeoutSeconds;
     private Task[] _workers = [];
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // Spin up N worker loops
-        _workers = new Task[_maxDegreeOfParallelism];
+        _workers = new Task[configuration.UploadS3Concurrency];
         for (var i = 0; i < _workers.Length; i++)
             _workers[i] = Task.Run(() => WorkerLoopAsync(stoppingToken), stoppingToken);
 
@@ -31,39 +28,49 @@ public class ChunkDataProcessor(
 
     private async Task WorkerLoopAsync(CancellationToken ct)
     {
-        await foreach (var chunk in _chunkQueue.ReadAllAsync(ct))
+        await foreach (var chunk in mediator.GetUploadChunks(ct))
             try
             {
+                if (!await archiveService.ChunkRequiresUpload(chunk, ct))
+                {
+                    logger.LogInformation("Skipping chunk {ChunkIndex} for file {LocalFilePath} - already uploaded",
+                        chunk.ChunkIndex, chunk.LocalFilePath);
+                    if (File.Exists(chunk.LocalFilePath)) File.Delete(chunk.LocalFilePath);
+                    continue;
+                }
+
+                var s3Client = s3ClientFactory.CreateS3Client(configuration);
+                var bucketName = contextFactory.ResolveS3BucketName(configuration);
+                var storageClass = contextFactory.ResolveColdStorage(configuration);
+                var serverSideEncryptionMethod = contextFactory.ResolveServerSideEncryptionMethod(configuration);
+                var key = contextFactory.ResolveS3Key(chunk, configuration);
+
                 // see if it not in dynamo db
                 // add the chunk data to dynamo db but mark it as not processed
                 // upload the chunk file to S3
                 // update the chunk data in dynamo db to mark it as processed
-                var transferUtil = new TransferUtility(new AmazonS3Client(new AmazonS3Config
-                {
-                    RegionEndpoint = RegionEndpoint.USEast1, // specify your region
-                    UseAccelerateEndpoint = true
-                    // Region = "us-west-2", // specify your region
-                    // UseHttp = true, // if you want to use HTTP instead of HTTPS
-                }));
+                var transferUtil = new TransferUtility(s3Client);
                 var uploadReq = new TransferUtilityUploadRequest
                 {
-                    // BucketName = bucketName,
-                    // Key        = key,
-                    // FilePath   = filePath,
-                    PartSize = 5 * 1024 * 1024, // 5 MiB parts
-                    StorageClass = S3StorageClass.Standard,
-                    ServerSideEncryptionCustomerMethod = ServerSideEncryptionCustomerMethod.AES256
+                    BucketName = bucketName,
+                    Key = key,
+                    FilePath = chunk.LocalFilePath,
+                    PartSize = configuration.S3PartSize,
+                    StorageClass = storageClass,
+                    ServerSideEncryptionMethod = serverSideEncryptionMethod
                 };
 
                 await transferUtil.UploadAsync(uploadReq, ct);
 
-                if (File.Exists(chunk.FilePath)) File.Delete(chunk.FilePath);
+                if (File.Exists(chunk.LocalFilePath)) File.Delete(chunk.LocalFilePath);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
             }
             catch (Exception ex)
             {
+                logger.LogError(ex, "Error processing chunk {ChunkIndex} for file {LocalFilePath}", chunk.ChunkIndex,
+                    chunk.LocalFilePath);
             }
     }
 
@@ -74,7 +81,7 @@ public class ChunkDataProcessor(
         await base.StopAsync(cancellationToken);
 
         // Wait for any in-flight work to finish (optional timeout)
-        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(_shutdownTimeoutSeconds));
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(configuration.ShutdownTimeoutSeconds));
         await Task.WhenAny(Task.WhenAll(_workers), Task.Delay(-1, timeoutCts.Token));
     }
 }

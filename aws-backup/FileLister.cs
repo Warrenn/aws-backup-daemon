@@ -1,5 +1,7 @@
 using Microsoft.Extensions.FileSystemGlobbing;
 
+namespace aws_backup;
+
 public static class FileLister
 {
     /// <summary>
@@ -22,7 +24,7 @@ public static class FileLister
             string[] subDirs;
             string[] files;
 
-            // try get files in this directory
+            // try to get files in this directory
             try
             {
                 files = Directory.GetFiles(dir);
@@ -45,7 +47,7 @@ public static class FileLister
                 yield return file;
             }
 
-            // try get subdirectories
+            // try to get subdirectories
             try
             {
                 subDirs = Directory.GetDirectories(dir);

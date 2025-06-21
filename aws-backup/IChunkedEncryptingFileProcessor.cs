@@ -1,19 +1,18 @@
+namespace aws_backup;
 
-public struct FileProcessResult
-{
-    public long Size { get; init; } // size in bytes
-    public string FilePath { get; init; }
-    public byte[] FullFileHash { get; init; } // SHA-256 hash of the full file
-    public ChunkData[] Chunks { get; init; } // list of processed chunks
-}
+public record FileProcessResult(
+    string LocalFilePath,
+    long OriginalSize, // Size before compression
+    byte[] FullFileHash, // SHA-256 hash of the full file
+    ChunkData[] Chunks
+);
 
-public struct ChunkData()
-{
-    public string FilePath { get; init; }
-    public int ChunkIndex { get; init; }
-    public byte[] Hash { get; init; } = []; // SHA-256 hash of the chunk
-    public long Size { get; init; }   // size in bytes
-}
+public record ChunkData(
+    string LocalFilePath,
+    int ChunkIndex,
+    byte[] Hash, // SHA-256 hash of the chunk
+    long Size
+);
 
 public interface IChunkedEncryptingFileProcessor
 {

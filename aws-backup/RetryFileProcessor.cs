@@ -1,32 +1,21 @@
-using System.Threading.Channels;
 using Microsoft.Extensions.Hosting;
 using Timer = System.Timers.Timer;
 
 namespace aws_backup;
 
 public class RetryFileProcessor(
-    ChannelReader<(string filePath, Exception exception)> retryQueue,
-    ChannelWriter<string> fileWriter,
-    int retryLimit,
-    Func<int, string, Exception, TimeSpan> timeAlg) : BackgroundService, IRetryManager
+    IMediator mediator,
+    IContextFactory contextFactory,
+    Configuration configuration,
+    IArchiveService archiveService) : BackgroundService
 {
     private readonly Dictionary<string, Exception> _failedFiles = [];
     private readonly Dictionary<string, int> _retryAttempts = [];
-
-    public Task ClearPendingRetries(string archive, CancellationToken cancellationToken = default)
-    {
-        throw new NotImplementedException();
-    }
-
-    public Task<(string filePath, Exception exception)[]> GetFailedRetries(string archive,
-        CancellationToken cancellationToken = default)
-    {
-        throw new NotImplementedException();
-    }
+    private readonly Dictionary<string, Timer> _timers = [];
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await foreach (var (filePath, exception) in retryQueue.ReadAllAsync(stoppingToken))
+        await foreach (var (archive, filePath, exception) in mediator.GetRetries(stoppingToken))
         {
             if (_failedFiles.ContainsKey(filePath)) continue;
 
@@ -34,20 +23,29 @@ public class RetryFileProcessor(
             if (_retryAttempts.TryGetValue(filePath, out var attempts))
                 attemptNo = attempts + 1;
 
-            if (attemptNo > retryLimit)
+            if (attemptNo > configuration.MaxRetryAttempts)
             {
-                _failedFiles[filePath] = exception;
+                await archiveService.RecordFailedFile(archive.RunId, filePath, exception, stoppingToken);
                 continue;
             }
 
+            var timeAlg = contextFactory.ResolveRetryTimeAlgorithm(configuration);
             _retryAttempts[filePath] = attemptNo;
             var retryDelay = timeAlg(attemptNo, filePath, exception);
+            if (_timers.TryGetValue(filePath, out var existingTimer))
+            {
+                existingTimer.Stop();
+                existingTimer.Dispose();
+                _timers.Remove(filePath);
+            }
+
             var timer = new Timer(retryDelay);
+            timer.AutoReset = false;
 
             timer.Elapsed += async (_, _) =>
             {
                 timer.Stop();
-                await fileWriter.WriteAsync(filePath, stoppingToken);
+                await mediator.ProcessFile(archive.RunId, filePath, stoppingToken);
             };
 
             timer.Start();

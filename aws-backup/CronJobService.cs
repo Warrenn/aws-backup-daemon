@@ -1,27 +1,22 @@
+using Cronos;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Cronos;
 
-public class CronJobService : BackgroundService
+namespace aws_backup;
+
+public class CronJobService(
+    string cronSchedule,
+    Func<CancellationToken, Task> job,
+    ILogger<CronJobService> logger)
+    : BackgroundService
 {
-    private readonly CronExpression _cronExpression;
-    private readonly Func<CancellationToken, Task> _job;
-    private readonly ILogger<CronJobService> _logger;
+    private readonly CronExpression _cronExpression = CronExpression.Parse(cronSchedule, CronFormat.Standard);
 
-    public CronJobService(
-        string cronSchedule,
-        Func<CancellationToken, Task> job,
-        ILogger<CronJobService> logger // or "America/New_York", etc.
-    )
-    {
-        _cronExpression = CronExpression.Parse(cronSchedule, CronFormat.Standard);
-        _job = job;
-        _logger = logger;
-    }
+    // or "America/New_York", etc.
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("CronJobService started with schedule '{Schedule}' in zone '{Zone}'",
+        logger.LogInformation("CronJobService started with schedule '{Schedule}' in zone '{Zone}'",
             _cronExpression, TimeZoneInfo.Utc.Id);
 
         while (!stoppingToken.IsCancellationRequested)
@@ -34,7 +29,7 @@ public class CronJobService : BackgroundService
 
             if (!nextUtc.HasValue)
             {
-                _logger.LogWarning("Cron expression '{Schedule}' will not occur again.", _cronExpression);
+                logger.LogWarning("Cron expression '{Schedule}' will not occur again.", _cronExpression);
                 break;
             }
 
@@ -43,11 +38,16 @@ public class CronJobService : BackgroundService
                 // If we're already past it (due to drift), skip ahead
                 continue;
 
-            _logger.LogInformation("Next run at {NextRun}", nextUtc.Value);
+            logger.LogInformation("Next run at {NextRun}", nextUtc.Value);
             try
             {
+                //new cancelation source where if original stoppingToken is cancelled, this will also cancel
+                var source = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+
                 // 2) Wait until it's time (or until shutdown)
-                await Task.Delay(delay, stoppingToken);
+                await Task.Delay(delay, source.Token);
+
+                //if (cronExpressionChanged) continue;
             }
             catch (TaskCanceledException)
             {
@@ -57,18 +57,18 @@ public class CronJobService : BackgroundService
             // 3) Invoke your job
             try
             {
-                _logger.LogInformation("Cron job starting at {Now}", DateTimeOffset.UtcNow);
-                await _job(stoppingToken);
-                _logger.LogInformation("Cron job completed at {Now}", DateTimeOffset.UtcNow);
+                logger.LogInformation("Cron job starting at {Now}", DateTimeOffset.UtcNow);
+                await job(stoppingToken);
+                logger.LogInformation("Cron job completed at {Now}", DateTimeOffset.UtcNow);
             }
             catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
-                _logger.LogError(ex, "Error running cron job");
+                logger.LogError(ex, "Error running cron job");
             }
 
             // loop for the next occurrence...
         }
 
-        _logger.LogInformation("CronJobService is stopping.");
+        logger.LogInformation("CronJobService is stopping.");
     }
 }
