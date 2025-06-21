@@ -3,6 +3,8 @@ using System.Security.Cryptography;
 using Amazon.S3;
 using Amazon.S3.Model;
 
+namespace aws_backup;
+
 public class S3ChunkedFileReconstructor
 {
     private readonly byte[] _aesKey;

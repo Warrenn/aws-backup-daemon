@@ -8,7 +8,7 @@ public class ChunkDataProcessor(
     IMediator mediator,
     Configuration configuration,
     ILogger<ChunkDataProcessor> logger,
-    IS3ClientFactory s3ClientFactory,
+    IAwsClientFactory awsClientFactory,
     IContextFactory contextFactory,
     IArchiveService archiveService)
     : BackgroundService
@@ -39,7 +39,7 @@ public class ChunkDataProcessor(
                     continue;
                 }
 
-                var s3Client = s3ClientFactory.CreateS3Client(configuration);
+                var s3Client = awsClientFactory.CreateS3Client(configuration);
                 var bucketName = contextFactory.ResolveS3BucketName(configuration);
                 var storageClass = contextFactory.ResolveColdStorage(configuration);
                 var serverSideEncryptionMethod = contextFactory.ResolveServerSideEncryptionMethod(configuration);

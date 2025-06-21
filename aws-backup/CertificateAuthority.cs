@@ -8,6 +8,8 @@ using Org.BouncyCastle.Security;
 using Org.BouncyCastle.X509;
 using Org.BouncyCastle.X509.Extension;
 
+namespace aws_backup;
+
 public static class CertificateAuthority
 {
     static SecureRandom GetRandom() =>

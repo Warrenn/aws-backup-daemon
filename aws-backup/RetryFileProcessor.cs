@@ -25,6 +25,7 @@ public class RetryFileProcessor(
 
             if (attemptNo > configuration.MaxRetryAttempts)
             {
+                _failedFiles.Add(filePath, exception);
                 await archiveService.RecordFailedFile(archive.RunId, filePath, exception, stoppingToken);
                 continue;
             }
@@ -49,6 +50,7 @@ public class RetryFileProcessor(
             };
 
             timer.Start();
+            _timers[filePath] = timer;
         }
     }
 }

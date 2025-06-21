@@ -46,3 +46,52 @@ public interface IArchiveService
     Task<bool> ChunkRequiresUpload(ChunkData chunk, CancellationToken ct);
     Task RecordFailedFile(string archiveRunId, string filePath, Exception exception, CancellationToken stoppingToken);
 }
+
+public class ArchiveService : IArchiveService
+{
+    public Task<ArchiveRun?> GetArchiveRun(string archiveRequestRunId, CancellationToken stoppingToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task SaveArchiveRun(ArchiveRun archiveRun, CancellationToken stoppingToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task<bool> FileRequiresProcessing(string archiveRunId, string filePath, CancellationToken ct)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task<bool> ReportProcessingResult(string archiveRunId, FileProcessResult result, CancellationToken ct)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task UpdateTimeStamps(byte[] resultFullFileHash, DateTime created, DateTime modified, CancellationToken ct)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task UpdateOwnerGroup(byte[] resultFullFileHash, string owner, string group, CancellationToken ct)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task UpdateAclEntries(byte[] resultFullFileHash, AclEntry[] aclEntries, CancellationToken ct)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task<bool> ChunkRequiresUpload(ChunkData chunk, CancellationToken ct)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task RecordFailedFile(string archiveRunId, string filePath, Exception exception,
+        CancellationToken stoppingToken)
+    {
+        throw new NotImplementedException();
+    }
+}
