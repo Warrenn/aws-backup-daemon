@@ -1,8 +1,10 @@
 using Amazon.SQS;
 using Amazon.SQS.Model;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Configuration;
+
+namespace aws_backup;
 
 public class SqsPollingService : BackgroundService
 {

@@ -6,7 +6,7 @@ namespace aws_backup;
 
 public class RetryFileProcessor(
     IMediator mediator,
-    IContextFactory contextFactory,
+    IContextResolver contextResolver,
     Configuration configuration,
     IArchiveService archiveService,
     ILogger<RetryFileProcessor> logger) : BackgroundService
@@ -17,12 +17,12 @@ public class RetryFileProcessor(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var archiveId = "";
-        await foreach (var (archive, filePath, exception) in mediator.GetRetries(stoppingToken))
+        var currentRunId = "";
+        await foreach (var (runId, filePath, exception) in mediator.Retries(stoppingToken))
         {
-            if (archiveId != archive.RunId)
+            if (currentRunId != runId)
             {
-                archiveId = archive.RunId;
+                currentRunId = runId;
                 _failedFiles.Clear();
                 _retryAttempts.Clear();
                 foreach (var (_, t) in _timers)
@@ -43,11 +43,11 @@ public class RetryFileProcessor(
             if (attemptNo > configuration.RetryLimit)
             {
                 _failedFiles.Add(filePath, exception);
-                await archiveService.RecordFailedFile(archive.RunId, filePath, exception, stoppingToken);
+                await archiveService.RecordFailedFile(runId, filePath, exception, stoppingToken);
                 continue;
             }
 
-            var timeAlg = contextFactory.ResolveRetryTimeAlgorithm(configuration);
+            var timeAlg = contextResolver.ResolveRetryTimeAlgorithm(configuration);
             _retryAttempts[filePath] = attemptNo;
             var retryDelay = timeAlg(attemptNo, filePath, exception);
 
@@ -67,15 +67,15 @@ public class RetryFileProcessor(
                 try
                 {
                     await Task.Delay(retryDelay, cts.Token);
-                    await mediator.ProcessFile(archive.RunId, key, cts.Token);
+                    await mediator.ProcessFile(runId, key, cts.Token);
                 }
                 catch (OperationCanceledException)
                 {
                 }
                 catch (Exception e)
                 {
-                    logger.LogError(e, "Error processing retry for file {FilePath} in archive {ArchiveId}",
-                        key, archive.RunId);
+                    logger.LogError(e, "Error processing retry for file {FilePath} in archive {runId}",
+                        key, runId);
                 }
                 finally
                 {

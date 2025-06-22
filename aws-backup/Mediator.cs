@@ -4,47 +4,50 @@ namespace aws_backup;
 
 public interface IMediator
 {
-    IAsyncEnumerable<(ArchiveRun archive, string fullFilePath)> GetArchiveFiles(CancellationToken cancellationToken);
-    IAsyncEnumerable<RunRequest> GetRequests(CancellationToken cancellationToken);
+    IAsyncEnumerable<(string runId, string fullFilePath)> GetArchiveFiles(CancellationToken cancellationToken);
+    IAsyncEnumerable<RunRequest> RunRequests(CancellationToken cancellationToken);
 
-    IAsyncEnumerable<(ArchiveRun archive, string filePath, Exception exception)> GetRetries(
-        CancellationToken cancellationToken);
+    IAsyncEnumerable<(string runId, string filePath, Exception exception)> Retries(CancellationToken cancellationToken);
 
-    IAsyncEnumerable<ChunkData> GetUploadChunks(CancellationToken cancellationToken);
+    IAsyncEnumerable<DataChunkDetails> Chunks(CancellationToken cancellationToken);
 
     Task CreateBackup(RunRequest request, CancellationToken cancellationToken);
     Task RetryFile(string archiveRunId, string filePath, Exception exception, CancellationToken cancellationToken);
     Task ProcessFile(string archiveRunId, string filePath, CancellationToken cancellationToken);
-    Task ProcessChunk(ChunkData chunkData, CancellationToken cancellationToken);
-    IAsyncEnumerable<(ArchiveRun archive, string key, Func<Task<Stream>> getDataStream)> GetHotStorageUploads(
-        CancellationToken cancellationToken);
+    Task ProcessChunk(DataChunkDetails dataChunkDetails, CancellationToken cancellationToken);
+    IAsyncEnumerable<(ArchiveRun archive, string key)> GetArchiveState(CancellationToken cancellationToken);
+    IAsyncEnumerable<(string key, DataChunkManifest manifest)> DataChunksManifest(CancellationToken cancellationToken);
 }
 
 public class Mediator : IMediator
 {
-    private readonly Channel<(ArchiveRun archive, string fullFilePath)> _archiveFilesChannel = Channel.CreateUnbounded<(ArchiveRun archive, string fullFilePath)>();
-    private readonly Channel<RunRequest> _requestsChannel = Channel.CreateUnbounded<RunRequest>();
-    private readonly Channel<(ArchiveRun archive, string filePath, Exception exception)> _retriesChannel = Channel.CreateUnbounded<(ArchiveRun archive, string filePath, Exception exception)>();
-    private readonly Channel<ChunkData> _uploadChunksChannel = Channel.CreateUnbounded<ChunkData>();
+    private readonly Channel<(ArchiveRun archive, string fullFilePath)> _archiveFilesChannel =
+        Channel.CreateUnbounded<(ArchiveRun archive, string fullFilePath)>();
 
-    public IAsyncEnumerable<(ArchiveRun archive, string fullFilePath)> GetArchiveFiles(
-        CancellationToken cancellationToken)
+    private readonly Channel<RunRequest> _requestsChannel = Channel.CreateUnbounded<RunRequest>();
+
+    private readonly Channel<(ArchiveRun archive, string filePath, Exception exception)> _retriesChannel =
+        Channel.CreateUnbounded<(ArchiveRun archive, string filePath, Exception exception)>();
+
+    private readonly Channel<DataChunkDetails> _uploadChunksChannel = Channel.CreateUnbounded<DataChunkDetails>();
+
+    public IAsyncEnumerable<(string runId, string fullFilePath)> GetArchiveFiles(CancellationToken cancellationToken)
     {
-        return _archiveFilesChannel.Reader.ReadAllAsync(cancellationToken);
+        throw new NotImplementedException();
     }
 
-    public IAsyncEnumerable<RunRequest> GetRequests(CancellationToken cancellationToken)
+    public IAsyncEnumerable<RunRequest> RunRequests(CancellationToken cancellationToken)
     {
         return _requestsChannel.Reader.ReadAllAsync(cancellationToken);
     }
 
-    public IAsyncEnumerable<(ArchiveRun archive, string filePath, Exception exception)> GetRetries(
+    public IAsyncEnumerable<(string runId, string filePath, Exception exception)> Retries(
         CancellationToken cancellationToken)
     {
-        return _retriesChannel.Reader.ReadAllAsync(cancellationToken);
+        throw new Exception();
     }
 
-    public IAsyncEnumerable<ChunkData> GetUploadChunks(CancellationToken cancellationToken)
+    public IAsyncEnumerable<DataChunkDetails> Chunks(CancellationToken cancellationToken)
     {
         return _uploadChunksChannel.Reader.ReadAllAsync(cancellationToken);
     }
@@ -65,12 +68,18 @@ public class Mediator : IMediator
         throw new NotImplementedException();
     }
 
-    public Task ProcessChunk(ChunkData chunkData, CancellationToken cancellationToken)
+    public Task ProcessChunk(DataChunkDetails dataChunkDetails, CancellationToken cancellationToken)
     {
-        return _uploadChunksChannel.Writer.WriteAsync(chunkData, cancellationToken).AsTask();
+        return _uploadChunksChannel.Writer.WriteAsync(dataChunkDetails, cancellationToken).AsTask();
     }
 
-    public IAsyncEnumerable<(ArchiveRun archive, string key, Func<Task<Stream>> getDataStream)> GetHotStorageUploads(CancellationToken cancellationToken)
+    public IAsyncEnumerable<(ArchiveRun archive, string key)> GetArchiveState(CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    public IAsyncEnumerable<(string key, DataChunkManifest manifest)> DataChunksManifest(
+        CancellationToken stoppingToken)
     {
         throw new NotImplementedException();
     }

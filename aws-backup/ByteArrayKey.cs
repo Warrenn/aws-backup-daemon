@@ -3,7 +3,7 @@ namespace aws_backup;
 public readonly struct ByteArrayKey : IEquatable<ByteArrayKey>
 {
     private readonly byte[] _data;
-    private readonly int    _hash;
+    private readonly int _hash;
 
     public ByteArrayKey(byte[] data)
     {
@@ -21,10 +21,22 @@ public readonly struct ByteArrayKey : IEquatable<ByteArrayKey>
     }
 
     public override bool Equals(object? obj)
-        => obj is ByteArrayKey other && Equals(other);
+    {
+        return obj is ByteArrayKey other && Equals(other);
+    }
 
-    public override int GetHashCode() => _hash;
+    public override int GetHashCode()
+    {
+        return _hash;
+    }
 
-    public static bool operator ==(ByteArrayKey a, ByteArrayKey b) => a.Equals(b);
-    public static bool operator !=(ByteArrayKey a, ByteArrayKey b) => !a.Equals(b);
+    public static bool operator ==(ByteArrayKey a, ByteArrayKey b)
+    {
+        return a.Equals(b);
+    }
+
+    public static bool operator !=(ByteArrayKey a, ByteArrayKey b)
+    {
+        return !a.Equals(b);
+    }
 }

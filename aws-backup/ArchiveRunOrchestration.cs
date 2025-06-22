@@ -3,32 +3,32 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
-public class ArchiveRequestProcessor(
+public class ArchiveRunOrchestration(
     IMediator mediator,
     IArchiveService archiveService,
     Configuration configuration,
     IFileLister fileLister,
-    ILogger<ArchiveRequestProcessor> logger) : BackgroundService
+    ILogger<ArchiveRunOrchestration> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // This service is responsible for processing archive runs.
         // It will read from the archiveQueue and process each archive.
-        await foreach (var archiveRequest in mediator.GetRequests(stoppingToken))
+        await foreach (var runRequest in mediator.RunRequests(stoppingToken))
         {
-            var archiveRun = await archiveService.GetArchiveRun(archiveRequest.RunId, stoppingToken);
+            var archiveRun = await archiveService.LookupArchiveRun(runRequest.RunId, stoppingToken);
             if (archiveRun is null)
             {
-                logger.Log(LogLevel.Information, "Creating new archive run for {RunId}", archiveRequest.RunId);
+                logger.Log(LogLevel.Information, "Creating new archive run for {RunId}", runRequest.RunId);
                 archiveRun = new ArchiveRun(
-                    archiveRequest.RunId,
-                    archiveRequest.PathsToArchive,
-                    archiveRequest.CronSchedule
+                    runRequest.RunId,
+                    runRequest.PathsToArchive,
+                    runRequest.CronSchedule
                 );
-                await archiveService.SaveArchiveRun(archiveRun, stoppingToken);
+                await archiveService.StartNewArchiveRun(archiveRun, configuration, stoppingToken);
             }
 
-            if (archiveRun.Status == ArchiveRunStatus.Completed) return;
+            if (archiveRun.Status == ArchiveRunStatus.Completed) continue;
 
             string[] ignorePatterns = [];
             if (File.Exists(configuration.IgnoreFile))
@@ -44,7 +44,7 @@ public class ArchiveRequestProcessor(
                     logger.LogError(e, "Failed to read ignore file {IgnoreFile}", configuration.IgnoreFile);
                 }
 
-            foreach (var filePath in fileLister.GetAllFiles(archiveRequest.PathsToArchive, ignorePatterns))
+            foreach (var filePath in fileLister.GetAllFiles(runRequest.PathsToArchive, ignorePatterns))
             {
                 await archiveService.RecordLocalFile(archiveRun.RunId, filePath, stoppingToken);
                 await mediator.ProcessFile(archiveRun.RunId, filePath, stoppingToken);

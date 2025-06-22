@@ -9,8 +9,9 @@ public class ChunkDataProcessor(
     Configuration configuration,
     ILogger<ChunkDataProcessor> logger,
     IAwsClientFactory awsClientFactory,
-    IContextFactory contextFactory,
-    IArchiveService archiveService)
+    IContextResolver contextResolver,
+    IArchiveService archiveService,
+    IDataChunkService dataChunkService)
     : BackgroundService
 {
     private Task[] _workers = [];
@@ -28,10 +29,10 @@ public class ChunkDataProcessor(
 
     private async Task WorkerLoopAsync(CancellationToken stoppingToken)
     {
-        await foreach (var chunk in mediator.GetUploadChunks(stoppingToken))
+        await foreach (var chunk in mediator.Chunks(stoppingToken))
             try
             {
-                if (!await archiveService.ChunkRequiresUpload(chunk, stoppingToken))
+                if (!await dataChunkService.ChunkRequiresUpload(chunk, stoppingToken))
                 {
                     logger.LogInformation("Skipping chunk {ChunkIndex} for file {LocalFilePath} - already uploaded",
                         chunk.ChunkIndex, chunk.LocalFilePath);
@@ -40,15 +41,12 @@ public class ChunkDataProcessor(
                 }
 
                 var s3Client = awsClientFactory.CreateS3Client(configuration);
-                var bucketName = contextFactory.ResolveS3BucketName(configuration);
-                var storageClass = contextFactory.ResolveColdStorage(configuration);
-                var serverSideEncryptionMethod = contextFactory.ResolveServerSideEncryptionMethod(configuration);
-                var key = contextFactory.ResolveS3Key(chunk, configuration);
+                var bucketName = contextResolver.ResolveS3BucketName(configuration);
+                var storageClass = contextResolver.ResolveColdStorage(configuration);
+                var serverSideEncryptionMethod = contextResolver.ResolveServerSideEncryptionMethod(configuration);
+                var key = contextResolver.ResolveS3Key(chunk, configuration);
 
-                // see if it not in dynamo db
-                // add the chunk data to dynamo db but mark it as not processed
                 // upload the chunk file to S3
-                // update the chunk data in dynamo db to mark it as processed
                 var transferUtil = new TransferUtility(s3Client);
                 var uploadReq = new TransferUtilityUploadRequest
                 {
@@ -61,6 +59,7 @@ public class ChunkDataProcessor(
                 };
 
                 await transferUtil.UploadAsync(uploadReq, stoppingToken);
+                await dataChunkService.MarkChunkAsUploaded(chunk, key, bucketName, stoppingToken);
 
                 if (File.Exists(chunk.LocalFilePath)) File.Delete(chunk.LocalFilePath);
             }

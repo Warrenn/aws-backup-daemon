@@ -26,43 +26,43 @@ public abstract class FixedPoolFileProcessor(
 
     private async Task WorkerLoopAsync(CancellationToken ct)
     {
-        await foreach (var (archive, filePath) in mediator.GetArchiveFiles(ct))
+        await foreach (var (runId, filePath) in mediator.GetArchiveFiles(ct))
             try
             {
-                var requireProcessing = await archiveService.FileRequiresProcessing(archive.RunId, filePath, ct);
+                var requireProcessing = await archiveService.FileRequiresProcessing(runId, filePath, ct);
                 if (!requireProcessing)
                 {
-                    logger.LogInformation("Skipping {File} for {RunId} - already processed", filePath, archive.RunId);
+                    logger.LogInformation("Skipping {File} for {RunId} - already processed", filePath, runId);
                     continue;
                 }
 
-                logger.LogInformation("Processing {File} for {RunId}", filePath, archive.RunId);
+                logger.LogInformation("Processing {File} for {RunId}", filePath, runId);
                 var result = await processor.ProcessFileAsync(filePath, ct);
-                var requireMetaData = await archiveService.ReportProcessingResult(archive.RunId, result, ct);
+                var requireMetaData = await archiveService.ReportProcessingResult(runId, result, ct);
                 if (!requireMetaData) continue;
                 if (configuration.KeepTimeStamps)
                 {
                     FileHelper.GetTimestamps(filePath, out var created, out var modified);
-                    await archiveService.UpdateTimeStamps(result.FullFileHash, created, modified, ct);
+                    await archiveService.UpdateTimeStamps(runId, result.LocalFilePath, created, modified, ct);
                 }
 
                 if (configuration.KeepOwnerGroup)
                 {
                     var (owner, group) = await FileHelper.GetOwnerGroupAsync(filePath, ct);
-                    await archiveService.UpdateOwnerGroup(result.FullFileHash, owner, group, ct);
+                    await archiveService.UpdateOwnerGroup(runId, result.LocalFilePath, owner, group, ct);
                 }
 
                 if (!configuration.KeepAcl) return;
 
                 var aclEntries = FileHelper.GetFileAcl(filePath);
-                await archiveService.UpdateAclEntries(result.FullFileHash, aclEntries, ct);
+                await archiveService.UpdateAclEntries(runId, result.LocalFilePath, aclEntries, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
             }
             catch (Exception ex)
             {
-                await mediator.RetryFile(archive.RunId, filePath, ex, ct);
+                await mediator.RetryFile(runId, filePath, ex, ct);
             }
     }
 

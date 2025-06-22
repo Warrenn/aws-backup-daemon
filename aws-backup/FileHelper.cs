@@ -4,8 +4,6 @@ using System.Security.Principal;
 
 namespace aws_backup;
 
-public record AclEntry(string Identity, string Permissions, string Type);
-
 public static class FileHelper
 {
     /// <summary>
@@ -172,7 +170,7 @@ public static class FileHelper
         File.SetUnixFileMode(path, fileMode);
     }
 
-    public static void GetTimestamps(string path, out DateTime created, out DateTime modified)
+    public static void GetTimestamps(string path, out DateTimeOffset created, out DateTimeOffset modified)
     {
         // Get creation time (Local)
         // Optionally get UTC instead:

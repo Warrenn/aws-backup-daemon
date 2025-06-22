@@ -13,7 +13,7 @@ public class ArchiveRequestProcessorTests
         var req = new RunRequest("run1", "", "* * * * *");
         var mediatorMock = new Mock<IMediator>();
         mediatorMock
-            .Setup(m => m.GetRequests(It.IsAny<CancellationToken>()))
+            .Setup(m => m.RunRequests(It.IsAny<CancellationToken>()))
             .Returns(AsyncEnumerable.Repeat(req, 1));
 
         var archiveServiceMock = new Mock<IArchiveService>();
@@ -37,7 +37,7 @@ public class ArchiveRequestProcessorTests
         await processor.StartAsync(CancellationToken.None);
 
         // Assert
-        archiveServiceMock.Verify(s => s.SaveArchiveRun(It.IsAny<ArchiveRun>(), It.IsAny<CancellationToken>()), Times.Once);
+        archiveServiceMock.Verify(s => s.StartNewArchiveRun(It.IsAny<ArchiveRun>(), configuration, It.IsAny<CancellationToken>()), Times.Once);
         archiveServiceMock.Verify(s => s.RecordLocalFile("run1", "a.txt", It.IsAny<CancellationToken>()), Times.Once);
         archiveServiceMock.Verify(s => s.RecordLocalFile("run1", "b.txt", It.IsAny<CancellationToken>()), Times.Once);
         archiveServiceMock.Verify(s => s.CompleteArchiveRun("run1", It.IsAny<CancellationToken>()), Times.Once);
@@ -53,12 +53,12 @@ public class ArchiveRequestProcessorTests
 
         var mediatorMock = new Mock<IMediator>();
         mediatorMock
-            .Setup(m => m.GetRequests(It.IsAny<CancellationToken>()))
+            .Setup(m => m.RunRequests(It.IsAny<CancellationToken>()))
             .Returns(AsyncEnumerable.Repeat(req, 1));
 
         var archiveServiceMock = new Mock<IArchiveService>();
         archiveServiceMock
-            .Setup(s => s.GetArchiveRun("run2", It.IsAny<CancellationToken>()))
+            .Setup(s => s.LookupArchiveRun("run2", It.IsAny<CancellationToken>()))
             .ReturnsAsync(existingRun);
 
         var fileListerMock = new Mock<IFileLister>();
@@ -77,7 +77,7 @@ public class ArchiveRequestProcessorTests
         await processor.StartAsync(CancellationToken.None);
 
         // Assert
-        archiveServiceMock.Verify(s => s.SaveArchiveRun(It.IsAny<ArchiveRun>(), It.IsAny<CancellationToken>()), Times.Never);
+        archiveServiceMock.Verify(s => s.StartNewArchiveRun(It.IsAny<ArchiveRun>(), configuration, It.IsAny<CancellationToken>()), Times.Never);
         archiveServiceMock.Verify(s => s.RecordLocalFile(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         archiveServiceMock.Verify(s => s.CompleteArchiveRun(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }

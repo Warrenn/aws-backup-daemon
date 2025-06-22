@@ -8,20 +8,9 @@ public record FileProcessResult(
     string LocalFilePath,
     long OriginalSize, // Size before compression
     byte[] FullFileHash, // SHA-256 hash of the full file
-    ChunkData[] Chunks
-)
+    DataChunkDetails[] Chunks)
 {
     public ByteArrayKey Key { get; init; } = new(FullFileHash);
-}
-
-public record ChunkData(
-    string LocalFilePath,
-    int ChunkIndex,
-    byte[] Hash, // SHA-256 hash of the chunk
-    long Size
-)
-{
-    public ByteArrayKey Key { get; init; } = new(Hash);
 }
 
 public interface IChunkedEncryptingFileProcessor
@@ -31,7 +20,7 @@ public interface IChunkedEncryptingFileProcessor
 
 public class ChunkedEncryptingFileProcessor(
     Configuration configuration,
-    IContextFactory contextFactory,
+    IContextResolver contextResolver,
     IMediator mediator) : IChunkedEncryptingFileProcessor
 {
     public async Task<FileProcessResult> ProcessFileAsync(string inputPath,
@@ -39,11 +28,11 @@ public class ChunkedEncryptingFileProcessor(
     {
         // full-file hasher
         using var fullHasher = SHA256.Create();
-        var chunks = new List<ChunkData>();
+        var chunks = new List<DataChunkDetails>();
         var bufferSize = configuration.ReadBufferSize;
         var chunkSize = configuration.ChunkSizeBytes;
-        var cacheFolder = contextFactory.ResolveCacheFolder(configuration);
-        var aesKey = contextFactory.ResolveAesKey(configuration);
+        var cacheFolder = contextResolver.ResolveCacheFolder(configuration);
+        var aesKey = await contextResolver.ResolveAesKey(configuration);
 
         // open for read, disallow writers
         await using var fs = new FileStream(
@@ -143,7 +132,7 @@ public class ChunkedEncryptingFileProcessor(
             await cryptoStream.DisposeAsync(); // closes CryptoStream
             await chunkFileFs.DisposeAsync(); // closes file stream
 
-            var chunkData = new ChunkData(
+            var chunkData = new DataChunkDetails(
                 chunkFileFs.Name,
                 chunkIndex,
                 chunkHasher.Hash ?? [],

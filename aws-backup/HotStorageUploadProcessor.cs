@@ -1,55 +1,52 @@
-using System.IO.Compression;
-using Amazon.S3.Transfer;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
 public class HotStorageUploadProcessor(
-    Configuration configuration,
-    IAwsClientFactory awsClientFactory,
-    IContextFactory contextFactory,
+    IHotStorageService hotStorageService,
     IMediator mediator,
     ILogger<HotStorageUploadProcessor> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await foreach (var (archive, key, getDataStream) in mediator.GetHotStorageUploads(stoppingToken))
-            try
-            {
-                var s3Client = awsClientFactory.CreateS3Client(configuration);
-                var bucketName = contextFactory.ResolveS3BucketName(configuration);
-                var storageClass = contextFactory.ResolveHotStorage(configuration);
-                var serverSideEncryptionMethod = contextFactory.ResolveServerSideEncryptionMethod(configuration);
-                var transferUtil = new TransferUtility(s3Client);
-
-                await using var stream = await getDataStream();
-                var gzipStream = new GZipStream(stream,
-                    CompressionLevel.Optimal,
-                    leaveOpen: false);
-                
-                var uploadReq = new TransferUtilityUploadRequest
+        var archiveTask = Task.Run(async () =>
+        {
+            await foreach (var (archive, key) in mediator.GetArchiveState(stoppingToken))
+                try
                 {
-                    BucketName = bucketName,
-                    Key = key,
-                    InputStream = gzipStream,
-                    PartSize = configuration.S3PartSize,
-                    StorageClass = storageClass,
-                    ServerSideEncryptionMethod = serverSideEncryptionMethod,
-                    ContentType = "application/gzip"
-                };
+                    await hotStorageService.UploadAsync(key, archive, stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    // Handle cancellation gracefully
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Error processing hot storage upload for archive {ArchiveId} and key {Key}",
+                        archive.RunId, key);
+                    // Optionally, you can rethrow or handle the exception as needed
+                }
+        }, stoppingToken);
+        
+        var uploadManifestTask = Task.Run(async () =>
+        {
+            await foreach (var (key, manifest) in mediator.DataChunksManifest(stoppingToken))
+                try
+                {
+                    await hotStorageService.UploadAsync(key, manifest, stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    // Handle cancellation gracefully
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Error processing hot storage upload manifest for key {Key}", key);
+                    // Optionally, you can rethrow or handle the exception as needed
+                }
+        }, stoppingToken);
 
-                await transferUtil.UploadAsync(uploadReq, stoppingToken);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                // Handle cancellation gracefully
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Error processing hot storage upload for archive {ArchiveId} and key {Key}",
-                    archive.RunId, key);
-                // Optionally, you can rethrow or handle the exception as needed
-            }
+        await Task.WhenAll(uploadManifestTask, archiveTask);
     }
 }
