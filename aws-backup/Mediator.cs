@@ -24,6 +24,7 @@ public interface IMediator
     ValueTask SaveArchiveRun(ArchiveRun currentArchiveRun, CancellationToken stoppingToken);
     ValueTask SaveChunkManifest(DataChunkManifest manifest, CancellationToken stoppingToken);
     ValueTask ProcessSqsMessage(string body, CancellationToken stoppingToken);
+    IAsyncEnumerable<T> GetRestoreRequests<T>(CancellationToken stoppingToken) where T : allows ref struct;
 }
 
 public class Mediator(
@@ -107,6 +108,11 @@ public class Mediator(
     }
 
     public ValueTask ProcessSqsMessage(string body, CancellationToken stoppingToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    public IAsyncEnumerable<T> GetRestoreRequests<T>(CancellationToken stoppingToken) where T : allows ref struct
     {
         throw new NotImplementedException();
     }

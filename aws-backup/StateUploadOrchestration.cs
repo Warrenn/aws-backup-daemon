@@ -3,10 +3,10 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
-public class HotStorageUploadProcessor(
+public class StateUploadOrchestration(
     IHotStorageService hotStorageService,
     IMediator mediator,
-    ILogger<HotStorageUploadProcessor> logger,
+    ILogger<StateUploadOrchestration> logger,
     Configuration configuration) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -21,7 +21,7 @@ public class HotStorageUploadProcessor(
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
-                    // Handle cancellation gracefully
+                    break;
                 }
                 catch (Exception ex)
                 {
@@ -41,7 +41,7 @@ public class HotStorageUploadProcessor(
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
-                    // Handle cancellation gracefully
+                    break;
                 }
                 catch (Exception ex)
                 {

@@ -4,12 +4,12 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
-public class RetryFileProcessor(
+public class RetryFileOrchestration(
     IMediator mediator,
     IContextResolver contextResolver,
     Configuration configuration,
     IArchiveService archiveService,
-    ILogger<RetryFileProcessor> logger) : BackgroundService
+    ILogger<RetryFileOrchestration> logger) : BackgroundService
 {
     private readonly Dictionary<string, Exception> _failedFiles = [];
     private readonly Dictionary<string, int> _retryAttempts = [];

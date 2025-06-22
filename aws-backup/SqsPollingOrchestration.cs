@@ -1,27 +1,29 @@
-using Amazon.SQS;
 using Amazon.SQS.Model;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using System.Security.Cryptography;
 
 namespace aws_backup;
 
-public class SqsPollingService(
+public class SqsPollingOrchestration(
     Configuration configuration,
     IAwsClientFactory clientFactory,
-    ILogger<SqsPollingService> logger,
-    IMediator mediator
-    ) : BackgroundService
+    ILogger<SqsPollingOrchestration> logger,
+    IMediator mediator,
+    IContextResolver contextResolver
+) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var sqs = await clientFactory.CreateSqsClient(configuration, stoppingToken);
-        
+
         var queueUrl = configuration.QueueUrl;
         var waitTimeSeconds = configuration.SqsWaitTimeSeconds;
         var maxNumberOfMessages = configuration.SqsMaxNumberOfMessages;
         var visibilityTimeout = configuration.SqsVisibilityTimeout;
-        
+        var retryDelay = configuration.SqsRetryDelaySeconds;
+        var sqsDecryptionKey = await contextResolver.ResolveSqsDecryptionKey(configuration);
+
         logger.LogInformation("Starting SQS polling on {Url}", queueUrl);
 
         while (!stoppingToken.IsCancellationRequested)
@@ -31,49 +33,62 @@ public class SqsPollingService(
             {
                 resp = await sqs.ReceiveMessageAsync(new ReceiveMessageRequest
                 {
-                    QueueUrl            = queueUrl,
-                    WaitTimeSeconds     = waitTimeSeconds,      // long poll
-                    MaxNumberOfMessages = maxNumberOfMessages,      // batch up to 10
-                    VisibilityTimeout   = visibilityTimeout       // allow 60s to process
+                    QueueUrl = queueUrl,
+                    WaitTimeSeconds = waitTimeSeconds, // long poll
+                    MaxNumberOfMessages = maxNumberOfMessages, // batch up to 10
+                    VisibilityTimeout = visibilityTimeout // allow 60s to process
                 }, stoppingToken);
             }
-            catch (OperationCanceledException) { break; }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error receiving messages, retrying in 10s");
-                await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
+                logger.LogError(ex, "Error receiving messages, retrying in {retryDelay} seconds", retryDelay);
+                
+                await Task.Delay(TimeSpan.FromSeconds(retryDelay), stoppingToken);
                 continue;
             }
 
             if (resp.Messages.Count == 0)
-                continue;  // no messages this cycle, long-poll will loop
+                continue; // no messages this cycle, long-poll will loop
 
             foreach (var msg in resp.Messages)
-            {
                 try
                 {
                     logger.LogInformation("Received message {Id}", msg.MessageId);
-
-                    logger.LogInformation("Wrote message {Id} to DynamoDB", msg.MessageId);
                     var body = msg.Body;
-                    
+                    if (string.IsNullOrWhiteSpace(body)) continue;
+
+                    if (configuration.EncryptSQS)
+                    {
+                        var encryptedData = Convert.FromBase64String(body);
+                        var iv = encryptedData[..16]; // first 16 bytes are IV
+                        using var aes = Aes.Create();
+                        aes.Key = sqsDecryptionKey;
+                        aes.IV = iv;
+                        aes.Mode = CipherMode.CBC;
+                        
+                        await using var decryptStream = new CryptoStream(
+                            respStream,
+                            aes.CreateDecryptor(),
+                            CryptoStreamMode.Read);
+                    }
+
                     await mediator.ProcessSqsMessage(body, stoppingToken);
 
-                    // 2) Delete from SQS
                     await sqs.DeleteMessageAsync(queueUrl, msg.ReceiptHandle, stoppingToken);
                     logger.LogInformation("Deleted message {Id} from SQS", msg.MessageId);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
-                    logger.LogInformation("Cancellation requested during processing");
                     break;
                 }
                 catch (Exception ex)
                 {
                     logger.LogError(ex, "Failed to process message {Id}, it will become visible again", msg.MessageId);
-                    // do not delete: message will reappear
                 }
-            }
         }
 
         logger.LogInformation("SQS polling service is stopping.");

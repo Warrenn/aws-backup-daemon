@@ -4,10 +4,10 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
-public class ChunkDataProcessor(
+public class UploadChunkDataOrchestration(
     IMediator mediator,
     Configuration configuration,
-    ILogger<ChunkDataProcessor> logger,
+    ILogger<UploadChunkDataOrchestration> logger,
     IAwsClientFactory awsClientFactory,
     IContextResolver contextResolver,
     IDataChunkService dataChunkService)
@@ -64,6 +64,7 @@ public class ChunkDataProcessor(
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
+                break;
             }
             catch (Exception ex)
             {

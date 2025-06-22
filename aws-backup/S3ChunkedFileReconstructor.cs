@@ -40,7 +40,7 @@ public class S3ChunkedFileReconstructor
         string keyPrefix, // e.g. "myfile.bin"
         int totalChunks, // e.g. 10
         string outputFilePath,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         // Ensure output file exists and is sized (optional)
         await using (var pre = new FileStream(
@@ -58,7 +58,7 @@ public class S3ChunkedFileReconstructor
 
         var tasks = Enumerable.Range(0, totalChunks).Select(async idx =>
         {
-            await sem.WaitAsync(ct);
+            await sem.WaitAsync(cancellationToken);
             try
             {
                 var chunkKey = $"{keyPrefix}.chunk{idx:D4}.gz.aes";
@@ -66,13 +66,13 @@ public class S3ChunkedFileReconstructor
                 {
                     BucketName = bucketName,
                     Key = chunkKey
-                }, ct);
+                }, cancellationToken);
 
                 await using var respStream = resp.ResponseStream;
 
                 // 1) read IV
                 var iv = new byte[16];
-                await respStream.ReadExactlyAsync(iv, ct);
+                await respStream.ReadExactlyAsync(iv, cancellationToken);
 
                 // 2) decrypt + decompress
                 using var aes = Aes.Create();
@@ -101,8 +101,8 @@ public class S3ChunkedFileReconstructor
 
                 var buf = new byte[_bufferSize];
                 int read;
-                while ((read = await gzipStream.ReadAsync(buf, ct)) > 0)
-                    await outFs.WriteAsync(buf.AsMemory(0, read), ct);
+                while ((read = await gzipStream.ReadAsync(buf, cancellationToken)) > 0)
+                    await outFs.WriteAsync(buf.AsMemory(0, read), cancellationToken);
             }
             finally
             {

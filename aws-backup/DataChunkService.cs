@@ -18,7 +18,7 @@ public record DataChunkDetails(
     long Size
 )
 {
-    public ByteArrayKey Key { get; init; } = new(Hash);
+    public ByteArrayKey Key { get; } = new(Hash);
 }
 
 public interface IDataChunkService

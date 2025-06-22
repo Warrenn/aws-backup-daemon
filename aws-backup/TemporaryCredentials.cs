@@ -10,7 +10,7 @@ public record AwsTemporaryCredentials(
     string? SecretAccessKey,
     string? SessionToken);
 
-public interface IAwsCredentialsServer
+public interface ITemporaryCredentialsServer
 {
     Task<AwsTemporaryCredentials> GetCredentials(
         string profileArn,
@@ -22,7 +22,7 @@ public interface IAwsCredentialsServer
         int sessionDuration = 43200); // default 12 hours
 }
 
-public class RolesAnywhere : IAwsCredentialsServer
+public class RolesAnywhere : ITemporaryCredentialsServer
 {
     public async Task<AwsTemporaryCredentials> GetCredentials(
         string profileArn,

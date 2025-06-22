@@ -2,6 +2,7 @@ namespace aws_backup;
 
 public class Configuration
 {
+    public bool EncryptSQS { get; set; }
     public string RepositoryName { get; set; }
     public string PassphrasePath { get; set; }
     public string IgnoreFile { get; set; }
@@ -27,7 +28,7 @@ public class Configuration
     public string LogVerbosity { get; set; }
     public string LogFilePath { get; set; }
     public string LogFileMaxSize { get; set; } // in MB
-    public string CronSchedule { get; set; } 
+    public string CronSchedule { get; set; }
     public double ShutdownTimeoutSeconds { get; set; }
     public string PathsToArchive { get; set; }
     public bool KeepTimeStamps { get; set; }
@@ -43,4 +44,6 @@ public class Configuration
     public int SqsWaitTimeSeconds { get; set; }
     public int SqsMaxNumberOfMessages { get; set; }
     public int SqsVisibilityTimeout { get; set; }
+    public int RestoreConcurrency { get; set; }
+    public long SqsRetryDelaySeconds { get; set; }
 }

@@ -13,6 +13,7 @@ riderModule.iml
 /_ReSharper.Caches/
 .idea/
 *.user
+*.DotSettings
 
 # Build results
 [Dd]ebug/

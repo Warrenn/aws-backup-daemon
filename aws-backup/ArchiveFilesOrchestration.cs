@@ -3,11 +3,11 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
-public abstract class FixedPoolFileProcessor(
+public abstract class ArchiveFilesOrchestration(
     IMediator mediator,
     IChunkedEncryptingFileProcessor processor,
     IArchiveService archiveService,
-    ILogger<FixedPoolFileProcessor> logger,
+    ILogger<ArchiveFilesOrchestration> logger,
     Configuration configuration)
     : BackgroundService
 {
@@ -29,7 +29,7 @@ public abstract class FixedPoolFileProcessor(
         await foreach (var (runId, filePath) in mediator.GetArchiveFiles(ct))
             try
             {
-                var requireProcessing = await archiveService.FileRequiresProcessing(runId, filePath, ct);
+                var requireProcessing = await archiveService.DoesFileRequireProcessing(runId, filePath, ct);
                 if (!requireProcessing)
                 {
                     logger.LogInformation("Skipping {File} for {RunId} - already processed", filePath, runId);
@@ -56,6 +56,7 @@ public abstract class FixedPoolFileProcessor(
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
+                break;
             }
             catch (Exception ex)
             {

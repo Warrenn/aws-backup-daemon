@@ -110,6 +110,7 @@ public class ChunkedEncryptingFileProcessor(
             aes.KeySize = 256;
             aes.Mode = CipherMode.CBC;
             aes.Key = aesKey;
+            aes.Padding = PaddingMode.PKCS7;
             aes.GenerateIV(); // unique per chunk
 
             // write the IV at the file start

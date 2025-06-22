@@ -5,10 +5,10 @@ using Microsoft.Extensions.Options;
 
 namespace aws_backup;
 
-public class CronJobService(
+public class CronJobOrchestration(
     IOptionsMonitor<Configuration> configurationMonitor,
     Func<CancellationToken, Task> job,
-    ILogger<CronJobService> logger)
+    ILogger<CronJobOrchestration> logger)
     : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

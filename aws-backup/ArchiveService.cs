@@ -60,7 +60,7 @@ public interface IArchiveService
     Task<ArchiveRun> StartNewArchiveRun(RunRequest request, Configuration configuration,
         CancellationToken stoppingToken);
 
-    Task<bool> FileRequiresProcessing(string archiveRunId, string filePath, CancellationToken ct);
+    Task<bool> DoesFileRequireProcessing(string archiveRunId, string filePath, CancellationToken ct);
     Task ReportProcessingResult(string archiveRunId, FileProcessResult result, CancellationToken ct);
 
     Task UpdateTimeStamps(string runId, string localFilePath, DateTimeOffset created, DateTimeOffset modified,
@@ -105,7 +105,7 @@ public class ArchiveService(
         return _currentArchiveRun;
     }
 
-    public async Task<bool> FileRequiresProcessing(string archiveRunId, string filePath, CancellationToken ct)
+    public async Task<bool> DoesFileRequireProcessing(string archiveRunId, string filePath, CancellationToken ct)
     {
         if (_currentArchiveRun.Files.TryGetValue(filePath, out var fileMeta))
             return fileMeta.Status is not FileStatus.Processed and not FileStatus.Skipped;

@@ -14,6 +14,7 @@ public interface IContextResolver
     S3StorageClass ResolveHotStorage(Configuration configuration);
     string ResolveArchiveKey(string runId);
     string ResolveChunkManifestKey();
+    Task<byte[]> ResolveSqsDecryptionKey(Configuration configuration);
 }
 
 public class ContextResolver : IContextResolver
@@ -59,6 +60,11 @@ public class ContextResolver : IContextResolver
     }
 
     public string ResolveChunkManifestKey()
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task<byte[]> ResolveSqsDecryptionKey(Configuration configuration)
     {
         throw new NotImplementedException();
     }
