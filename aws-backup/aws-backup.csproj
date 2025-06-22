@@ -5,6 +5,7 @@
         <TargetFramework>net9.0</TargetFramework>
         <RootNamespace>aws_backup</RootNamespace>
         <ImplicitUsings>enable</ImplicitUsings>
+        <PublishAot>true</PublishAot>
         <Nullable>enable</Nullable>
         <InvariantGlobalization>true</InvariantGlobalization>
         <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
@@ -20,14 +21,12 @@
       <PackageReference Include="awssdk.s3" Version="4.0.2" />
       <PackageReference Include="AWSSDK.SimpleSystemsManagement" Version="4.0.1.10" />
       <PackageReference Include="AWSSDK.SQS" Version="4.0.0.11" />
-      <PackageReference Include="BouncyCastle" Version="1.8.9" />
       <PackageReference Include="Cronos" Version="0.11.0" />
       <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.6" />
       <PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="9.0.6" />
       <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.6" />
       <PackageReference Include="Moq" Version="4.20.72" />
       <PackageReference Include="protobuf-net" Version="3.2.52" />
-      <PackageReference Include="System.CommandLine" Version="2.0.0-beta5.25306.1" />
     </ItemGroup>
 
 </Project>

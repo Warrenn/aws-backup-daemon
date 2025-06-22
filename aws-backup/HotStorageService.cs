@@ -22,7 +22,7 @@ public class HotStorageService(
     {
         // 1) Create the pipe
         var pipe = new Pipe();
-        var s3 = awsClientFactory.CreateS3Client(configuration);
+        var s3 = await awsClientFactory.CreateS3Client(configuration);
         var bucketName = contextResolver.ResolveS3BucketName(configuration);
         var partSizeBytes = configuration.S3PartSize;
         var storageClass = contextResolver.ResolveHotStorage(configuration);
@@ -59,7 +59,7 @@ public class HotStorageService(
 
     public async Task<T> DownloadAsync<T>(string key, CancellationToken ct)
     {
-        var s3 = awsClientFactory.CreateS3Client(configuration);
+        var s3 = await awsClientFactory.CreateS3Client(configuration);
         var bucketName = contextResolver.ResolveS3BucketName(configuration);
         using var resp = await s3.GetObjectAsync(
             new GetObjectRequest { BucketName = bucketName, Key = key },
