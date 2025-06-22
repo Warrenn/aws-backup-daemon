@@ -6,47 +6,41 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
-public class SqsPollingService : BackgroundService
+public class SqsPollingService(
+    Configuration configuration,
+    IAwsClientFactory clientFactory,
+    ILogger<SqsPollingService> logger,
+    IMediator mediator
+    ) : BackgroundService
 {
-    private readonly IAmazonSQS   _sqs;
-    private readonly ILogger<SqsPollingService> _logger;
-    private readonly string      _queueUrl;
-    private readonly string      _tableName;
-
-    public SqsPollingService(
-        IAmazonSQS sqs,
-        ILogger<SqsPollingService> logger,
-        IConfiguration config)
-    {
-        _sqs      = sqs;
-        _logger   = logger;
-        _queueUrl = config["SQS:QueueUrl"] 
-                    ?? throw new ArgumentException("Missing SQS:QueueUrl");
-        _tableName = config["DynamoDB:TableName"] 
-                     ?? throw new ArgumentException("Missing DynamoDB:TableName");
-    }
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Starting SQS polling on {Url}", _queueUrl);
+        var sqs = await clientFactory.CreateSqsClient(configuration, stoppingToken);
+        
+        var queueUrl = configuration.QueueUrl;
+        var waitTimeSeconds = configuration.SqsWaitTimeSeconds;
+        var maxNumberOfMessages = configuration.SqsMaxNumberOfMessages;
+        var visibilityTimeout = configuration.SqsVisibilityTimeout;
+        
+        logger.LogInformation("Starting SQS polling on {Url}", queueUrl);
 
         while (!stoppingToken.IsCancellationRequested)
         {
             ReceiveMessageResponse resp;
             try
             {
-                resp = await _sqs.ReceiveMessageAsync(new ReceiveMessageRequest
+                resp = await sqs.ReceiveMessageAsync(new ReceiveMessageRequest
                 {
-                    QueueUrl            = _queueUrl,
-                    WaitTimeSeconds     = 20,      // long poll
-                    MaxNumberOfMessages = 10,      // batch up to 10
-                    VisibilityTimeout   = 60       // allow 60s to process
+                    QueueUrl            = queueUrl,
+                    WaitTimeSeconds     = waitTimeSeconds,      // long poll
+                    MaxNumberOfMessages = maxNumberOfMessages,      // batch up to 10
+                    VisibilityTimeout   = visibilityTimeout       // allow 60s to process
                 }, stoppingToken);
             }
             catch (OperationCanceledException) { break; }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error receiving messages, retrying in 10s");
+                logger.LogError(ex, "Error receiving messages, retrying in 10s");
                 await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
                 continue;
             }
@@ -58,27 +52,30 @@ public class SqsPollingService : BackgroundService
             {
                 try
                 {
-                    _logger.LogInformation("Received message {Id}", msg.MessageId);
+                    logger.LogInformation("Received message {Id}", msg.MessageId);
 
-                    _logger.LogInformation("Wrote message {Id} to DynamoDB", msg.MessageId);
+                    logger.LogInformation("Wrote message {Id} to DynamoDB", msg.MessageId);
+                    var body = msg.Body;
+                    
+                    await mediator.ProcessSqsMessage(body, stoppingToken);
 
                     // 2) Delete from SQS
-                    await _sqs.DeleteMessageAsync(_queueUrl, msg.ReceiptHandle, stoppingToken);
-                    _logger.LogInformation("Deleted message {Id} from SQS", msg.MessageId);
+                    await sqs.DeleteMessageAsync(queueUrl, msg.ReceiptHandle, stoppingToken);
+                    logger.LogInformation("Deleted message {Id} from SQS", msg.MessageId);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
-                    _logger.LogInformation("Cancellation requested during processing");
+                    logger.LogInformation("Cancellation requested during processing");
                     break;
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to process message {Id}, it will become visible again", msg.MessageId);
+                    logger.LogError(ex, "Failed to process message {Id}, it will become visible again", msg.MessageId);
                     // do not delete: message will reappear
                 }
             }
         }
 
-        _logger.LogInformation("SQS polling service is stopping.");
+        logger.LogInformation("SQS polling service is stopping.");
     }
 }

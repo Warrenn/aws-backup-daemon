@@ -51,7 +51,7 @@ public class S3ChunkedFileReconstructor
                          _bufferSize, FileOptions.None))
         {
             // set length to chunkSize * totalChunks (last chunk may write less)
-            pre.SetLength((long)_chunkSize * totalChunks);
+            pre.SetLength(_originalFileSize);
         }
 
         var sem = new SemaphoreSlim(_maxConcurrency);

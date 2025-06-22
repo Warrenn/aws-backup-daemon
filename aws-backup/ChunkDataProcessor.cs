@@ -39,7 +39,7 @@ public class ChunkDataProcessor(
                     continue;
                 }
 
-                var s3Client = await awsClientFactory.CreateS3Client(configuration);
+                var s3Client = await awsClientFactory.CreateS3Client(configuration, stoppingToken);
                 var bucketName = contextResolver.ResolveS3BucketName(configuration);
                 var storageClass = contextResolver.ResolveColdStorage(configuration);
                 var serverSideEncryptionMethod = contextResolver.ResolveServerSideEncryptionMethod(configuration);

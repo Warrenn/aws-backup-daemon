@@ -23,6 +23,7 @@ public interface IMediator
     ValueTask ProcessChunk(DataChunkDetails dataChunkDetails, CancellationToken cancellationToken);
     ValueTask SaveArchiveRun(ArchiveRun currentArchiveRun, CancellationToken stoppingToken);
     ValueTask SaveChunkManifest(DataChunkManifest manifest, CancellationToken stoppingToken);
+    ValueTask ProcessSqsMessage(string body, CancellationToken stoppingToken);
 }
 
 public class Mediator(
@@ -103,5 +104,10 @@ public class Mediator(
     {
         var key = resolver.ResolveChunkManifestKey();
         return _chunkManifestChannel.Writer.WriteAsync((key, manifest), stoppingToken);
+    }
+
+    public ValueTask ProcessSqsMessage(string body, CancellationToken stoppingToken)
+    {
+        throw new NotImplementedException();
     }
 }

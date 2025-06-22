@@ -39,4 +39,8 @@ public class Configuration
     public int RetryLimit { get; set; }
     public int MsDelayBetweenArchiveSaves { get; set; }
     public int MsDelayBetweenManifestSaves { get; set; }
+    public string QueueUrl { get; set; }
+    public int SqsWaitTimeSeconds { get; set; }
+    public int SqsMaxNumberOfMessages { get; set; }
+    public int SqsVisibilityTimeout { get; set; }
 }
