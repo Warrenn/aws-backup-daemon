@@ -12,6 +12,8 @@ public interface IContextResolver
     Task<byte[]> ResolveAesKey(Configuration configuration);
     Func<int, string, Exception, TimeSpan> ResolveRetryTimeAlgorithm(Configuration configuration);
     S3StorageClass ResolveHotStorage(Configuration configuration);
+    string ResolveArchiveKey(string runId);
+    string ResolveChunkManifestKey();
 }
 
 public class ContextResolver : IContextResolver
@@ -47,6 +49,16 @@ public class ContextResolver : IContextResolver
     }
 
     public S3StorageClass ResolveHotStorage(Configuration configuration)
+    {
+        throw new NotImplementedException();
+    }
+
+    public string ResolveArchiveKey(string runId)
+    {
+        throw new NotImplementedException();
+    }
+
+    public string ResolveChunkManifestKey()
     {
         throw new NotImplementedException();
     }

@@ -5,45 +5,26 @@ using System.Text.Json;
 
 namespace aws_backup;
 
-public class RolesAnywhere
-{
-    // private static async Task<int> Main(string[] args)
-    // {
-    //     var sessionDurationOpt = new Option<int>("--session-duration") { DefaultValueFactory = _ => 43200 };
-    //     var profileArnOpt = new Option<string>("--profile-arn") { Required = true };
-    //     var roleArnOpt = new Option<string>("--role-arn") { Required = true };
-    //     var trustAnchorArnOpt = new Option<string>("--trust-anchor-arn") { Required = true };
-    //     var certificateOpt = new Option<FileInfo>("--certificate") { Required = true };
-    //     var privateKeyOpt = new Option<FileInfo>("--private-key") { Required = true };
-    //     var regionOpt = new Option<string>("--region") { DefaultValueFactory = _ => "us-east-1" };
-    //
-    //     var root = new RootCommand
-    //     {
-    //         sessionDurationOpt,
-    //         profileArnOpt,
-    //         roleArnOpt,
-    //         trustAnchorArnOpt,
-    //         certificateOpt,
-    //         privateKeyOpt,
-    //         regionOpt
-    //     };
-    //
-    //     root.Description = "AWS RolesAnywhere session creator";
-    //     root.SetAction(async context =>
-    //     {
-    //         var sessionDuration = context.GetValue(sessionDurationOpt);
-    //         var profileArn = context.GetValue(profileArnOpt);
-    //         var roleArn = context.GetValue(roleArnOpt);
-    //         var trustAnchorArn = context.GetValue(trustAnchorArnOpt);
-    //         var certificate = context.GetValue(certificateOpt);
-    //         var privateKey = context.GetValue(privateKeyOpt);
-    //         var region = context.GetValue(regionOpt);
-    //         
-    //     });
-    //     return await root.Parse(args).InvokeAsync();
-    // }
+public record AwsTemporaryCredentials(
+    string? AccessKeyId,
+    string? SecretAccessKey,
+    string? SessionToken);
 
-    public static async Task<string> Run(
+public interface IAwsCredentialsServer
+{
+    Task<AwsTemporaryCredentials> GetCredentials(
+        string profileArn,
+        string roleArn,
+        string trustAnchorArn,
+        string certificateFileName,
+        string privateKeyFileName,
+        string region,
+        int sessionDuration = 43200); // default 12 hours
+}
+
+public class RolesAnywhere : IAwsCredentialsServer
+{
+    public async Task<AwsTemporaryCredentials> GetCredentials(
         string profileArn,
         string roleArn,
         string trustAnchorArn,
@@ -138,7 +119,27 @@ public class RolesAnywhere
             req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
 
         var resp = await client.SendAsync(req);
-        return await resp.Content.ReadAsStringAsync();
+        var json = await resp.Content.ReadAsStringAsync();
+        return Parse(json);
+    }
+
+    private static AwsTemporaryCredentials Parse(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        // navigate to credentialSet[0].credentials
+        if (!root.TryGetProperty("credentialSet", out var set) || set.GetArrayLength() == 0)
+            throw new FormatException("credentialSet array not found or empty");
+
+        var credsElem = set[0]
+            .GetProperty("credentials"); // will throw if missing
+
+        var accessKeyId = credsElem.GetProperty("accessKeyId").GetString();
+        var secretAccessKey = credsElem.GetProperty("secretAccessKey").GetString();
+        var sessionToken = credsElem.GetProperty("sessionToken").GetString();
+
+        return new AwsTemporaryCredentials(accessKeyId, secretAccessKey, sessionToken);
     }
 
     private static byte[] HashSha256(byte[] data)

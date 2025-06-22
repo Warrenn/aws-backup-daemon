@@ -6,7 +6,8 @@ namespace aws_backup;
 public class HotStorageUploadProcessor(
     IHotStorageService hotStorageService,
     IMediator mediator,
-    ILogger<HotStorageUploadProcessor> logger) : BackgroundService
+    ILogger<HotStorageUploadProcessor> logger,
+    Configuration configuration) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -16,6 +17,7 @@ public class HotStorageUploadProcessor(
                 try
                 {
                     await hotStorageService.UploadAsync(key, archive, stoppingToken);
+                    await Task.Delay(configuration.MsDelayBetweenArchiveSaves, stoppingToken);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -28,13 +30,14 @@ public class HotStorageUploadProcessor(
                     // Optionally, you can rethrow or handle the exception as needed
                 }
         }, stoppingToken);
-        
+
         var uploadManifestTask = Task.Run(async () =>
         {
-            await foreach (var (key, manifest) in mediator.DataChunksManifest(stoppingToken))
+            await foreach (var (key, manifest) in mediator.GetDataChunksManifest(stoppingToken))
                 try
                 {
                     await hotStorageService.UploadAsync(key, manifest, stoppingToken);
+                    await Task.Delay(configuration.MsDelayBetweenManifestSaves, stoppingToken);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {

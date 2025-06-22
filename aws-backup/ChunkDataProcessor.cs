@@ -28,10 +28,10 @@ public class ChunkDataProcessor(
 
     private async Task WorkerLoopAsync(CancellationToken stoppingToken)
     {
-        await foreach (var chunk in mediator.Chunks(stoppingToken))
+        await foreach (var chunk in mediator.GetChunks(stoppingToken))
             try
             {
-                if (!await dataChunkService.ChunkRequiresUpload(chunk, stoppingToken))
+                if (!dataChunkService.ChunkRequiresUpload(chunk))
                 {
                     logger.LogInformation("Skipping chunk {ChunkIndex} for file {LocalFilePath} - already uploaded",
                         chunk.ChunkIndex, chunk.LocalFilePath);

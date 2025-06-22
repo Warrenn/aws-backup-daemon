@@ -18,7 +18,7 @@ public class RetryFileProcessor(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var currentRunId = "";
-        await foreach (var (runId, filePath, exception) in mediator.Retries(stoppingToken))
+        await foreach (var (runId, filePath, exception) in mediator.GetRetries(stoppingToken))
         {
             if (currentRunId != runId)
             {

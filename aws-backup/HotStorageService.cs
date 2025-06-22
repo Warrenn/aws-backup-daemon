@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.IO.Compression;
 using System.IO.Pipelines;
 using Amazon.S3.Model;
@@ -8,9 +9,13 @@ namespace aws_backup;
 
 public interface IHotStorageService
 {
-    Task UploadAsync<T>(string key, T obj, CancellationToken ct = default);
+    Task UploadAsync<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicConstructors | DynamicallyAccessedMemberTypes.NonPublicFields | DynamicallyAccessedMemberTypes.NonPublicMethods | DynamicallyAccessedMemberTypes.NonPublicNestedTypes | DynamicallyAccessedMemberTypes.NonPublicProperties | DynamicallyAccessedMemberTypes.None | DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicMethods | DynamicallyAccessedMemberTypes.PublicNestedTypes | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor | DynamicallyAccessedMemberTypes.PublicProperties)]
+        T>(string key, T obj, CancellationToken ct = default);
 
-    Task<T> DownloadAsync<T>(string key, CancellationToken ct = default);
+    Task<T> DownloadAsync<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicConstructors | DynamicallyAccessedMemberTypes.NonPublicFields | DynamicallyAccessedMemberTypes.NonPublicMethods | DynamicallyAccessedMemberTypes.NonPublicNestedTypes | DynamicallyAccessedMemberTypes.NonPublicProperties | DynamicallyAccessedMemberTypes.None | DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicMethods | DynamicallyAccessedMemberTypes.PublicNestedTypes | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor | DynamicallyAccessedMemberTypes.PublicProperties)]
+        T>(string key, CancellationToken ct = default);
 }
 
 public class HotStorageService(
@@ -18,7 +23,9 @@ public class HotStorageService(
     IContextResolver contextResolver, 
     Configuration configuration) : IHotStorageService
 {
-    public async Task UploadAsync<T>(string key, T obj, CancellationToken ct)
+    public async Task UploadAsync<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicConstructors | DynamicallyAccessedMemberTypes.NonPublicFields | DynamicallyAccessedMemberTypes.NonPublicMethods | DynamicallyAccessedMemberTypes.NonPublicNestedTypes | DynamicallyAccessedMemberTypes.NonPublicProperties | DynamicallyAccessedMemberTypes.None | DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicMethods | DynamicallyAccessedMemberTypes.PublicNestedTypes | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor | DynamicallyAccessedMemberTypes.PublicProperties)]
+        T>(string key, T obj, CancellationToken ct)
     {
         // 1) Create the pipe
         var pipe = new Pipe();
@@ -57,7 +64,9 @@ public class HotStorageService(
         await uploadTask;
     }
 
-    public async Task<T> DownloadAsync<T>(string key, CancellationToken ct)
+    public async Task<T> DownloadAsync<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicConstructors | DynamicallyAccessedMemberTypes.NonPublicFields | DynamicallyAccessedMemberTypes.NonPublicMethods | DynamicallyAccessedMemberTypes.NonPublicNestedTypes | DynamicallyAccessedMemberTypes.NonPublicProperties | DynamicallyAccessedMemberTypes.None | DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicMethods | DynamicallyAccessedMemberTypes.PublicNestedTypes | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor | DynamicallyAccessedMemberTypes.PublicProperties)]
+        T>(string key, CancellationToken ct)
     {
         var s3 = await awsClientFactory.CreateS3Client(configuration);
         var bucketName = contextResolver.ResolveS3BucketName(configuration);

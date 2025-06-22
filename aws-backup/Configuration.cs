@@ -37,4 +37,6 @@ public class Configuration
     public string S3RepoPrefix { get; set; }
     public long S3PartSize { get; set; }
     public int RetryLimit { get; set; }
+    public int MsDelayBetweenArchiveSaves { get; set; }
+    public int MsDelayBetweenManifestSaves { get; set; }
 }

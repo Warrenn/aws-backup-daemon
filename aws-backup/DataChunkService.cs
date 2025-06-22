@@ -6,7 +6,7 @@ public record CloudChunkDetails(
     byte[] Hash, // SHA-256 hash of the chunk
     long Size);
 
-public class DataChunkManifest : Dictionary<ByteArrayKey, CloudChunkDetails>
+public class DataChunkManifest : SortedDictionary<ByteArrayKey, CloudChunkDetails>
 {
     public static DataChunkManifest Current { get; } = new();
 }
@@ -23,20 +23,34 @@ public record DataChunkDetails(
 
 public interface IDataChunkService
 {
-    Task<bool> ChunkRequiresUpload(DataChunkDetails chunk, CancellationToken stoppingToken);
+    bool ChunkRequiresUpload(DataChunkDetails chunk);
     Task MarkChunkAsUploaded(DataChunkDetails chunk, string key, string bucketName, CancellationToken stoppingToken);
 }
 
-public class DataChunkService  : IDataChunkService
+public class DataChunkService(
+    IMediator mediator
+) : IDataChunkService
 {
-    public Task<bool> ChunkRequiresUpload(DataChunkDetails chunk, CancellationToken stoppingToken)
+    public bool ChunkRequiresUpload(DataChunkDetails chunk)
     {
-        throw new NotImplementedException();
+        var dataChunkManifest = DataChunkManifest.Current;
+        return dataChunkManifest.ContainsKey(chunk.Key);
     }
 
-    public Task MarkChunkAsUploaded(DataChunkDetails chunk, string key, string bucketName,
+    public async Task MarkChunkAsUploaded(DataChunkDetails chunk, string key, string bucketName,
         CancellationToken stoppingToken)
     {
-        throw new NotImplementedException();
+        var dataChunkManifest = DataChunkManifest.Current;
+        if (dataChunkManifest.ContainsKey(chunk.Key))
+            // If the chunk is already in the manifest, we don't need to re-add it
+            return;
+        var cloudChunkDetails = new CloudChunkDetails(
+            key,
+            bucketName,
+            chunk.Hash,
+            chunk.Size);
+        dataChunkManifest.Add(chunk.Key, cloudChunkDetails);
+
+        await mediator.SaveChunkManifest(dataChunkManifest, stoppingToken);
     }
 }

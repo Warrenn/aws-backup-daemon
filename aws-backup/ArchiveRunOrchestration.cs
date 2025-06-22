@@ -20,12 +20,7 @@ public class ArchiveRunOrchestration(
             if (archiveRun is null)
             {
                 logger.Log(LogLevel.Information, "Creating new archive run for {RunId}", runRequest.RunId);
-                archiveRun = new ArchiveRun(
-                    runRequest.RunId,
-                    runRequest.PathsToArchive,
-                    runRequest.CronSchedule
-                );
-                await archiveService.StartNewArchiveRun(archiveRun, configuration, stoppingToken);
+                archiveRun = await archiveService.StartNewArchiveRun(runRequest, configuration, stoppingToken);
             }
 
             if (archiveRun.Status == ArchiveRunStatus.Completed) continue;
@@ -49,7 +44,7 @@ public class ArchiveRunOrchestration(
                 await archiveService.RecordLocalFile(archiveRun.RunId, filePath, stoppingToken);
                 await mediator.ProcessFile(archiveRun.RunId, filePath, stoppingToken);
             }
-            
+
             await archiveService.CompleteArchiveRun(archiveRun.RunId, stoppingToken);
         }
     }

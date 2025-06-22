@@ -38,8 +38,7 @@ public abstract class FixedPoolFileProcessor(
 
                 logger.LogInformation("Processing {File} for {RunId}", filePath, runId);
                 var result = await processor.ProcessFileAsync(filePath, ct);
-                var requireMetaData = await archiveService.ReportProcessingResult(runId, result, ct);
-                if (!requireMetaData) continue;
+                await archiveService.ReportProcessingResult(runId, result, ct);
                 if (configuration.KeepTimeStamps)
                 {
                     FileHelper.GetTimestamps(filePath, out var created, out var modified);
@@ -51,8 +50,6 @@ public abstract class FixedPoolFileProcessor(
                     var (owner, group) = await FileHelper.GetOwnerGroupAsync(filePath, ct);
                     await archiveService.UpdateOwnerGroup(runId, result.LocalFilePath, owner, group, ct);
                 }
-
-                if (!configuration.KeepAcl) return;
 
                 var aclEntries = FileHelper.GetFileAcl(filePath);
                 await archiveService.UpdateAclEntries(runId, result.LocalFilePath, aclEntries, ct);

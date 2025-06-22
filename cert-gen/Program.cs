@@ -24,7 +24,8 @@ public static class Program
         var usernameOpt = new Option<string>("--username", "-u")
         {
             Description = "Username to use in the certificate CN (defaults to current user name).",
-            Required = true
+            Required = false,
+            DefaultValueFactory = _ => Environment.UserName
         };
         var caPrivateKeyOpt = new Option<string>("--ca-private-key", "-c")
         {
@@ -46,7 +47,7 @@ public static class Program
             Description = "Path to the public client certificate file (PEM format).",
             Required = true
         };
-        
+
         var rootCommand = new RootCommand
         {
             usernameOpt,
@@ -80,11 +81,11 @@ public static class Program
 
             ExportPrivateKeyPem(clientKeyPair.Private, clientPrivateKeyPath);
 
-            ExportCertificatePem(clientCert,clientCertPath);
-            
+            ExportCertificatePem(clientCert, clientCertPath);
+
             return 0;
         });
-                
+
         rootCommand.Description = "Generate the certificates needed for AWS RolesAnywhere";
         var parseResult = rootCommand.Parse(args);
         return await parseResult.InvokeAsync();
