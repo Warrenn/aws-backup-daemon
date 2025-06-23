@@ -9,42 +9,48 @@ public interface IContextResolver
     ServerSideEncryptionMethod ResolveServerSideEncryptionMethod(Configuration configuration);
     string ResolveS3Key(DataChunkDetails chunk, Configuration configuration);
     string ResolveCacheFolder(Configuration configuration);
-    Task<byte[]> ResolveAesKey(Configuration configuration);
+    Task<byte[]> ResolveAesKey(Configuration configuration, CancellationToken cancellationToken);
     Func<int, string, Exception, TimeSpan> ResolveRetryTimeAlgorithm(Configuration configuration);
     S3StorageClass ResolveHotStorage(Configuration configuration);
     string ResolveArchiveKey(string runId);
     string ResolveChunkManifestKey();
-    Task<byte[]> ResolveSqsDecryptionKey(Configuration configuration);
+    Task<byte[]> ResolveSqsDecryptionKey(Configuration configuration, CancellationToken cancellationToken);
+    string ResolveRestoreLocation(string file, Configuration configuration);
 }
 
 public class ContextResolver : IContextResolver
 {
-    public string ResolveS3BucketName(Configuration configuration) => configuration.S3BucketName;
+    public string ResolveS3BucketName(Configuration configuration)
+    {
+        return configuration.S3BucketName;
+    }
 
     public S3StorageClass ResolveColdStorage(Configuration configuration)
     {
         throw new NotImplementedException(nameof(ResolveColdStorage));
     }
 
-    public ServerSideEncryptionMethod ResolveServerSideEncryptionMethod(Configuration configuration) 
+    public ServerSideEncryptionMethod ResolveServerSideEncryptionMethod(Configuration configuration)
     {
         throw new NotImplementedException(nameof(ResolveServerSideEncryptionMethod));
     }
-    public string ResolveS3Key(DataChunkDetails chunk, Configuration configuration) 
+
+    public string ResolveS3Key(DataChunkDetails chunk, Configuration configuration)
     {
         throw new NotImplementedException(nameof(ResolveS3Key));
     }
+
     public string ResolveCacheFolder(Configuration configuration)
     {
         throw new NotImplementedException(nameof(ResolveCacheFolder));
     }
 
-    public Task<byte[]> ResolveAesKey(Configuration configuration) 
+    public Task<byte[]> ResolveAesKey(Configuration configuration, CancellationToken cancellationToken)
     {
-        throw new NotImplementedException(nameof(ResolveAesKey));
+        throw new NotImplementedException();
     }
 
-    public Func<int, string, Exception, TimeSpan> ResolveRetryTimeAlgorithm(Configuration configuration) 
+    public Func<int, string, Exception, TimeSpan> ResolveRetryTimeAlgorithm(Configuration configuration)
     {
         throw new NotImplementedException(nameof(ResolveRetryTimeAlgorithm));
     }
@@ -64,8 +70,18 @@ public class ContextResolver : IContextResolver
         throw new NotImplementedException();
     }
 
-    public Task<byte[]> ResolveSqsDecryptionKey(Configuration configuration)
+    public Task<byte[]> ResolveSqsDecryptionKey(Configuration configuration, CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
+    }
+
+    public string ResolveRestoreLocation(string file, Configuration configuration)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task<byte[]> ResolveAesKey(Configuration configuration)
+    {
+        throw new NotImplementedException(nameof(ResolveAesKey));
     }
 }

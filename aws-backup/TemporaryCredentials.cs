@@ -132,12 +132,12 @@ public class RolesAnywhere : ITemporaryCredentialsServer
         if (!root.TryGetProperty("credentialSet", out var set) || set.GetArrayLength() == 0)
             throw new FormatException("credentialSet array not found or empty");
 
-        var credsElem = set[0]
+        var credentialsElem = set[0]
             .GetProperty("credentials"); // will throw if missing
 
-        var accessKeyId = credsElem.GetProperty("accessKeyId").GetString();
-        var secretAccessKey = credsElem.GetProperty("secretAccessKey").GetString();
-        var sessionToken = credsElem.GetProperty("sessionToken").GetString();
+        var accessKeyId = credentialsElem.GetProperty("accessKeyId").GetString();
+        var secretAccessKey = credentialsElem.GetProperty("secretAccessKey").GetString();
+        var sessionToken = credentialsElem.GetProperty("sessionToken").GetString();
 
         return new AwsTemporaryCredentials(accessKeyId, secretAccessKey, sessionToken);
     }

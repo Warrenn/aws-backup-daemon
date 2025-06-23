@@ -32,7 +32,7 @@ public class ChunkedEncryptingFileProcessor(
         var bufferSize = configuration.ReadBufferSize;
         var chunkSize = configuration.ChunkSizeBytes;
         var cacheFolder = contextResolver.ResolveCacheFolder(configuration);
-        var aesKey = await contextResolver.ResolveAesKey(configuration);
+        var aesKey = await contextResolver.ResolveAesKey(configuration, cancellationToken);
 
         // open for read, disallow writers
         await using var fs = new FileStream(
@@ -136,7 +136,7 @@ public class ChunkedEncryptingFileProcessor(
             var chunkData = new DataChunkDetails(
                 chunkFileFs.Name,
                 chunkIndex,
-                chunkHasher.Hash ?? [],
+                new ByteArrayKey(chunkHasher.Hash ?? []),
                 bytesInChunk
             );
             chunks.Add(chunkData);

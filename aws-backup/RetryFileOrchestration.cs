@@ -15,10 +15,10 @@ public class RetryFileOrchestration(
     private readonly Dictionary<string, int> _retryAttempts = [];
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _timers = [];
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         var currentRunId = "";
-        await foreach (var (runId, filePath, exception) in mediator.GetRetries(stoppingToken))
+        await foreach (var (runId, filePath, exception) in mediator.GetRetries(cancellationToken))
         {
             if (currentRunId != runId)
             {
@@ -43,7 +43,7 @@ public class RetryFileOrchestration(
             if (attemptNo > configuration.RetryLimit)
             {
                 _failedFiles.Add(filePath, exception);
-                await archiveService.RecordFailedFile(runId, filePath, exception, stoppingToken);
+                await archiveService.RecordFailedFile(runId, filePath, exception, cancellationToken);
                 continue;
             }
 
@@ -57,7 +57,7 @@ public class RetryFileOrchestration(
                 existingSource.Dispose();
             }
 
-            var cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _timers[filePath] = cts;
             var key = filePath;
 

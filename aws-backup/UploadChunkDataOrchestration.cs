@@ -15,20 +15,20 @@ public class UploadChunkDataOrchestration(
 {
     private Task[] _workers = [];
 
-    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override Task ExecuteAsync(CancellationToken cancellationToken)
     {
         // Spin up N worker loops
         _workers = new Task[configuration.UploadS3Concurrency];
         for (var i = 0; i < _workers.Length; i++)
-            _workers[i] = Task.Run(() => WorkerLoopAsync(stoppingToken), stoppingToken);
+            _workers[i] = Task.Run(() => WorkerLoopAsync(cancellationToken), cancellationToken);
 
         // Return a task that completes when all workers finish
         return Task.WhenAll(_workers);
     }
 
-    private async Task WorkerLoopAsync(CancellationToken stoppingToken)
+    private async Task WorkerLoopAsync(CancellationToken cancellationToken)
     {
-        await foreach (var chunk in mediator.GetChunks(stoppingToken))
+        await foreach (var chunk in mediator.GetChunks(cancellationToken))
             try
             {
                 if (!dataChunkService.ChunkRequiresUpload(chunk))
@@ -39,7 +39,7 @@ public class UploadChunkDataOrchestration(
                     continue;
                 }
 
-                var s3Client = await awsClientFactory.CreateS3Client(configuration, stoppingToken);
+                var s3Client = await awsClientFactory.CreateS3Client(configuration, cancellationToken);
                 var bucketName = contextResolver.ResolveS3BucketName(configuration);
                 var storageClass = contextResolver.ResolveColdStorage(configuration);
                 var serverSideEncryptionMethod = contextResolver.ResolveServerSideEncryptionMethod(configuration);
@@ -57,12 +57,12 @@ public class UploadChunkDataOrchestration(
                     ServerSideEncryptionMethod = serverSideEncryptionMethod
                 };
 
-                await transferUtil.UploadAsync(uploadReq, stoppingToken);
-                await dataChunkService.MarkChunkAsUploaded(chunk, key, bucketName, stoppingToken);
+                await transferUtil.UploadAsync(uploadReq, cancellationToken);
+                await dataChunkService.MarkChunkAsUploaded(chunk, key, bucketName, cancellationToken);
 
                 if (File.Exists(chunk.LocalFilePath)) File.Delete(chunk.LocalFilePath);
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 break;
             }

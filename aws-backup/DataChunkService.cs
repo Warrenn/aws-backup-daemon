@@ -1,10 +1,11 @@
+using Amazon.S3;
+
 namespace aws_backup;
 
 public record CloudChunkDetails(
     string S3Key, // S3 key for the chunk
     string BucketName, // S3 bucket name
-    byte[] Hash, // SHA-256 hash of the chunk
-    long Size);
+    ByteArrayKey Hash);
 
 public class DataChunkManifest : SortedDictionary<ByteArrayKey, CloudChunkDetails>
 {
@@ -14,17 +15,16 @@ public class DataChunkManifest : SortedDictionary<ByteArrayKey, CloudChunkDetail
 public record DataChunkDetails(
     string LocalFilePath,
     int ChunkIndex,
-    byte[] Hash, // SHA-256 hash of the chunk
+    ByteArrayKey Key,
     long Size
-)
-{
-    public ByteArrayKey Key { get; } = new(Hash);
-}
+);
 
 public interface IDataChunkService
 {
     bool ChunkRequiresUpload(DataChunkDetails chunk);
-    Task MarkChunkAsUploaded(DataChunkDetails chunk, string key, string bucketName, CancellationToken stoppingToken);
+
+    Task MarkChunkAsUploaded(DataChunkDetails chunk, string key, string bucketName,
+        CancellationToken cancellationToken);
 }
 
 public class DataChunkService(
@@ -38,7 +38,7 @@ public class DataChunkService(
     }
 
     public async Task MarkChunkAsUploaded(DataChunkDetails chunk, string key, string bucketName,
-        CancellationToken stoppingToken)
+        CancellationToken cancellationToken)
     {
         var dataChunkManifest = DataChunkManifest.Current;
         if (dataChunkManifest.ContainsKey(chunk.Key))
@@ -47,10 +47,9 @@ public class DataChunkService(
         var cloudChunkDetails = new CloudChunkDetails(
             key,
             bucketName,
-            chunk.Hash,
-            chunk.Size);
+            chunk.Key);
         dataChunkManifest.Add(chunk.Key, cloudChunkDetails);
 
-        await mediator.SaveChunkManifest(dataChunkManifest, stoppingToken);
+        await mediator.SaveChunkManifest(dataChunkManifest, cancellationToken);
     }
 }

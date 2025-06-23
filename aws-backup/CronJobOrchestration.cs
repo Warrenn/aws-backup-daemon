@@ -11,7 +11,7 @@ public class CronJobOrchestration(
     ILogger<CronJobOrchestration> logger)
     : BackgroundService
 {
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         CancellationTokenSource scheduleCts = new();
         var cronSchedule = configurationMonitor.CurrentValue.CronSchedule;
@@ -28,7 +28,7 @@ public class CronJobOrchestration(
         logger.LogInformation("CronJobService started with schedule '{Schedule}' in zone '{Zone}'",
             cronExpression, TimeZoneInfo.Utc.Id);
 
-        while (!stoppingToken.IsCancellationRequested)
+        while (!cancellationToken.IsCancellationRequested)
         {
             // 1) Compute next run time
             var nextUtc = cronExpression.GetNextOccurrence(
@@ -48,7 +48,7 @@ public class CronJobOrchestration(
                 continue;
 
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(
-                stoppingToken, scheduleCts.Token);
+                cancellationToken, scheduleCts.Token);
             logger.LogInformation("Next run at {NextRun}", nextUtc.Value);
             try
             {
@@ -59,7 +59,7 @@ public class CronJobOrchestration(
             }
             catch (OperationCanceledException)
             {
-                if (stoppingToken.IsCancellationRequested) break;
+                if (cancellationToken.IsCancellationRequested) break;
                 continue;
             }
 
@@ -67,10 +67,10 @@ public class CronJobOrchestration(
             try
             {
                 logger.LogInformation("Cron job starting at {Now}", DateTimeOffset.UtcNow);
-                await job(stoppingToken);
+                await job(cancellationToken);
                 logger.LogInformation("Cron job completed at {Now}", DateTimeOffset.UtcNow);
             }
-            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 logger.LogError(ex, "Error running cron job");
             }

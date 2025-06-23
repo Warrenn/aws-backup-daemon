@@ -55,22 +55,22 @@ public class ArchiveRun
 
 public interface IArchiveService
 {
-    Task<ArchiveRun?> LookupArchiveRun(string runId, CancellationToken stoppingToken);
+    Task<ArchiveRun?> LookupArchiveRun(string runId, CancellationToken cancellationToken);
 
     Task<ArchiveRun> StartNewArchiveRun(RunRequest request, Configuration configuration,
-        CancellationToken stoppingToken);
+        CancellationToken cancellationToken);
 
-    Task<bool> DoesFileRequireProcessing(string archiveRunId, string filePath, CancellationToken ct);
-    Task ReportProcessingResult(string archiveRunId, FileProcessResult result, CancellationToken ct);
+    Task<bool> DoesFileRequireProcessing(string archiveRunId, string filePath, CancellationToken cancellationToken);
+    Task ReportProcessingResult(string archiveRunId, FileProcessResult result, CancellationToken cancellationToken);
 
     Task UpdateTimeStamps(string runId, string localFilePath, DateTimeOffset created, DateTimeOffset modified,
-        CancellationToken ct);
+        CancellationToken cancellationToken);
 
-    Task UpdateOwnerGroup(string runId, string localFilePath, string owner, string group, CancellationToken ct);
-    Task UpdateAclEntries(string runId, string filePath, AclEntry[] aclEntries, CancellationToken ct);
-    Task RecordFailedFile(string archiveRunId, string filePath, Exception exception, CancellationToken stoppingToken);
-    Task RecordLocalFile(string archiveRunRunId, string filePath, CancellationToken stoppingToken);
-    Task CompleteArchiveRun(string archiveRunRunId, CancellationToken stoppingToken);
+    Task UpdateOwnerGroup(string runId, string localFilePath, string owner, string group, CancellationToken cancellationToken);
+    Task UpdateAclEntries(string runId, string filePath, AclEntry[] aclEntries, CancellationToken cancellationToken);
+    Task RecordFailedFile(string archiveRunId, string filePath, Exception exception, CancellationToken cancellationToken);
+    Task RecordLocalFile(string archiveRunRunId, string filePath, CancellationToken cancellationToken);
+    Task CompleteArchiveRun(string archiveRunRunId, CancellationToken cancellationToken);
 }
 
 public class ArchiveService(
@@ -81,15 +81,15 @@ public class ArchiveService(
     private ArchiveRun _currentArchiveRun = null!;
     private TaskCompletionSource _tcs = null!;
 
-    public async Task<ArchiveRun?> LookupArchiveRun(string runId, CancellationToken stoppingToken)
+    public async Task<ArchiveRun?> LookupArchiveRun(string runId, CancellationToken cancellationToken)
     {
-        if (await s3Service.RunExists(runId, stoppingToken))
+        if (await s3Service.RunExists(runId, cancellationToken))
             return await Task.FromResult<ArchiveRun?>(null);
-        return await s3Service.GetArchive(runId, stoppingToken);
+        return await s3Service.GetArchive(runId, cancellationToken);
     }
 
     public async Task<ArchiveRun> StartNewArchiveRun(RunRequest request, Configuration configuration,
-        CancellationToken stoppingToken)
+        CancellationToken cancellationToken)
     {
         _currentArchiveRun = new ArchiveRun
         {
@@ -101,11 +101,11 @@ public class ArchiveService(
             Status = ArchiveRunStatus.Processing
         };
         _tcs = new TaskCompletionSource();
-        await mediator.SaveArchiveRun(_currentArchiveRun, stoppingToken);
+        await mediator.SaveArchiveRun(_currentArchiveRun, cancellationToken);
         return _currentArchiveRun;
     }
 
-    public async Task<bool> DoesFileRequireProcessing(string archiveRunId, string filePath, CancellationToken ct)
+    public async Task<bool> DoesFileRequireProcessing(string archiveRunId, string filePath, CancellationToken cancellationToken)
     {
         if (_currentArchiveRun.Files.TryGetValue(filePath, out var fileMeta))
             return fileMeta.Status is not FileStatus.Processed and not FileStatus.Skipped;
@@ -123,11 +123,11 @@ public class ArchiveService(
             Chunks: []
         );
         _currentArchiveRun.Files[filePath] = fileMeta;
-        await CheckIfRunComplete(ct);
+        await CheckIfRunComplete(cancellationToken);
         return false;
     }
 
-    public async Task ReportProcessingResult(string archiveRunId, FileProcessResult result, CancellationToken ct)
+    public async Task ReportProcessingResult(string archiveRunId, FileProcessResult result, CancellationToken cancellationToken)
     {
         var fileMeta = new FileMetaData(
             result.LocalFilePath,
@@ -143,12 +143,12 @@ public class ArchiveService(
             Chunks: result.Chunks
         );
         _currentArchiveRun.Files[result.LocalFilePath] = fileMeta;
-        await CheckIfRunComplete(ct);
+        await CheckIfRunComplete(cancellationToken);
     }
 
     public async Task UpdateTimeStamps(string runId, string localFilePath, DateTimeOffset created,
         DateTimeOffset modified,
-        CancellationToken ct)
+        CancellationToken cancellationToken)
     {
         if (!_currentArchiveRun.Files.TryGetValue(localFilePath, out var fileMeta)) return;
         var updatedMeta = fileMeta with
@@ -157,11 +157,11 @@ public class ArchiveService(
             LastModified = modified
         };
         _currentArchiveRun.Files[localFilePath] = updatedMeta;
-        await CheckIfRunComplete(ct);
+        await CheckIfRunComplete(cancellationToken);
     }
 
     public async Task UpdateOwnerGroup(string runId, string localFilePath, string owner, string group,
-        CancellationToken ct)
+        CancellationToken cancellationToken)
     {
         if (!_currentArchiveRun.Files.TryGetValue(localFilePath, out var fileMeta)) return;
         var updatedMeta = fileMeta with
@@ -170,10 +170,10 @@ public class ArchiveService(
             Group = group
         };
         _currentArchiveRun.Files[localFilePath] = updatedMeta;
-        await CheckIfRunComplete(ct);
+        await CheckIfRunComplete(cancellationToken);
     }
 
-    public async Task UpdateAclEntries(string runId, string localFilePath, AclEntry[] aclEntries, CancellationToken ct)
+    public async Task UpdateAclEntries(string runId, string localFilePath, AclEntry[] aclEntries, CancellationToken cancellationToken)
     {
         if (!_currentArchiveRun.Files.TryGetValue(localFilePath, out var fileMeta)) return;
         var updatedMeta = fileMeta with
@@ -181,11 +181,11 @@ public class ArchiveService(
             AclEntries = aclEntries
         };
         _currentArchiveRun.Files[localFilePath] = updatedMeta;
-        await CheckIfRunComplete(ct);
+        await CheckIfRunComplete(cancellationToken);
     }
 
     public async Task RecordFailedFile(string archiveRunId, string localFilePath, Exception exception,
-        CancellationToken stoppingToken)
+        CancellationToken cancellationToken)
     {
         if (!_currentArchiveRun.Files.TryGetValue(localFilePath, out var fileMeta))
             fileMeta = new FileMetaData(
@@ -206,10 +206,10 @@ public class ArchiveService(
             Status = FileStatus.Skipped
         };
         _currentArchiveRun.Files[localFilePath] = updatedMeta;
-        await CheckIfRunComplete(stoppingToken);
+        await CheckIfRunComplete(cancellationToken);
     }
 
-    public async Task RecordLocalFile(string archiveRunRunId, string localFilePath, CancellationToken stoppingToken)
+    public async Task RecordLocalFile(string archiveRunRunId, string localFilePath, CancellationToken cancellationToken)
     {
         if (!_currentArchiveRun.Files.TryGetValue(localFilePath, out var fileMeta))
             fileMeta = new FileMetaData(
@@ -227,17 +227,17 @@ public class ArchiveService(
             );
 
         _currentArchiveRun.Files[localFilePath] = fileMeta;
-        await CheckIfRunComplete(stoppingToken);
+        await CheckIfRunComplete(cancellationToken);
     }
 
-    public async Task CompleteArchiveRun(string archiveRunRunId, CancellationToken stoppingToken)
+    public async Task CompleteArchiveRun(string archiveRunRunId, CancellationToken cancellationToken)
     {
-        await CheckIfRunComplete(stoppingToken);
-        if (stoppingToken.IsCancellationRequested && !_tcs.Task.IsCompleted) _tcs.TrySetCanceled(stoppingToken);
+        await CheckIfRunComplete(cancellationToken);
+        if (cancellationToken.IsCancellationRequested && !_tcs.Task.IsCompleted) _tcs.TrySetCanceled(cancellationToken);
         await _tcs.Task;
     }
 
-    private async Task CheckIfRunComplete(CancellationToken stoppingToken)
+    private async Task CheckIfRunComplete(CancellationToken cancellationToken)
     {
         var complete = _currentArchiveRun.Files.Values.All(f => f.Status is FileStatus.Processed or FileStatus.Skipped);
         if (complete)
@@ -257,12 +257,12 @@ public class ArchiveService(
             _tcs.TrySetResult();
         }
 
-        await mediator.SaveArchiveRun(_currentArchiveRun, stoppingToken);
+        await mediator.SaveArchiveRun(_currentArchiveRun, cancellationToken);
     }
 }
 
 public interface IS3Service
 {
-    Task<bool> RunExists(string runId, CancellationToken stoppingToken);
-    Task<ArchiveRun> GetArchive(string runId, CancellationToken stoppingToken);
+    Task<bool> RunExists(string runId, CancellationToken cancellationToken);
+    Task<ArchiveRun> GetArchive(string runId, CancellationToken cancellationToken);
 }

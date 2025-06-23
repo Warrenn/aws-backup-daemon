@@ -1,7 +1,8 @@
+using System.Text;
+using System.Text.Json;
 using Amazon.SQS.Model;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using System.Security.Cryptography;
 
 namespace aws_backup;
 
@@ -13,20 +14,20 @@ public class SqsPollingOrchestration(
     IContextResolver contextResolver
 ) : BackgroundService
 {
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        var sqs = await clientFactory.CreateSqsClient(configuration, stoppingToken);
+        var sqs = await clientFactory.CreateSqsClient(configuration, cancellationToken);
 
         var queueUrl = configuration.QueueUrl;
         var waitTimeSeconds = configuration.SqsWaitTimeSeconds;
         var maxNumberOfMessages = configuration.SqsMaxNumberOfMessages;
         var visibilityTimeout = configuration.SqsVisibilityTimeout;
         var retryDelay = configuration.SqsRetryDelaySeconds;
-        var sqsDecryptionKey = await contextResolver.ResolveSqsDecryptionKey(configuration);
+        var sqsDecryptionKey = await contextResolver.ResolveSqsDecryptionKey(configuration, cancellationToken);
 
         logger.LogInformation("Starting SQS polling on {Url}", queueUrl);
 
-        while (!stoppingToken.IsCancellationRequested)
+        while (!cancellationToken.IsCancellationRequested)
         {
             ReceiveMessageResponse resp;
             try
@@ -37,7 +38,7 @@ public class SqsPollingOrchestration(
                     WaitTimeSeconds = waitTimeSeconds, // long poll
                     MaxNumberOfMessages = maxNumberOfMessages, // batch up to 10
                     VisibilityTimeout = visibilityTimeout // allow 60s to process
-                }, stoppingToken);
+                }, cancellationToken);
             }
             catch (OperationCanceledException)
             {
@@ -46,8 +47,8 @@ public class SqsPollingOrchestration(
             catch (Exception ex)
             {
                 logger.LogError(ex, "Error receiving messages, retrying in {retryDelay} seconds", retryDelay);
-                
-                await Task.Delay(TimeSpan.FromSeconds(retryDelay), stoppingToken);
+
+                await Task.Delay(TimeSpan.FromSeconds(retryDelay), cancellationToken);
                 continue;
             }
 
@@ -58,30 +59,53 @@ public class SqsPollingOrchestration(
                 try
                 {
                     logger.LogInformation("Received message {Id}", msg.MessageId);
-                    var body = msg.Body;
-                    if (string.IsNullOrWhiteSpace(body)) continue;
+                    var messageString = msg.Body;
+                    if (string.IsNullOrWhiteSpace(messageString)) continue;
+                    if (configuration.EncryptSQS) messageString = AesHelper.DecryptString(msg.Body, sqsDecryptionKey);
 
-                    if (configuration.EncryptSQS)
+                    var utf8 = Encoding.UTF8.GetBytes(messageString);
+                    var reader = new Utf8JsonReader(utf8, true, default);
+                    if (!JsonDocument.TryParseValue(ref reader, out var jsonDocument))
                     {
-                        var encryptedData = Convert.FromBase64String(body);
-                        var iv = encryptedData[..16]; // first 16 bytes are IV
-                        using var aes = Aes.Create();
-                        aes.Key = sqsDecryptionKey;
-                        aes.IV = iv;
-                        aes.Mode = CipherMode.CBC;
-                        
-                        await using var decryptStream = new CryptoStream(
-                            respStream,
-                            aes.CreateDecryptor(),
-                            CryptoStreamMode.Read);
+                        logger.LogError("Received message {Id} but no json document", msg.MessageId);
+                        continue;
                     }
 
-                    await mediator.ProcessSqsMessage(body, stoppingToken);
+                    var rootElement = jsonDocument.RootElement;
 
-                    await sqs.DeleteMessageAsync(queueUrl, msg.ReceiptHandle, stoppingToken);
+                    if (!rootElement.TryGetProperty("command", out var commandElement))
+                    {
+                        logger.LogWarning("Message {Id} does not contain a 'command' property, skipping",
+                            msg.MessageId);
+                        continue;
+                    }
+
+                    var command = commandElement.GetString();
+                    switch (command)
+                    {
+                        case "restore-backup":
+#pragma warning disable IL2026
+#pragma warning disable IL3050
+                            var restoreRequest = rootElement.GetProperty("body")
+                                .Deserialize<RestoreRequest>(
+                                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+#pragma warning restore IL3050
+#pragma warning restore IL2026
+                            if (restoreRequest is null) continue;
+                            
+                            await mediator.RestoreBackup(restoreRequest, cancellationToken);
+                            break;
+                        default:
+                            logger.LogWarning("Unknown command '{Command}' in message {Id}, skipping",
+                                command, msg.MessageId);
+                            break;
+                    }
+
+
+                    await sqs.DeleteMessageAsync(queueUrl, msg.ReceiptHandle, cancellationToken);
                     logger.LogInformation("Deleted message {Id} from SQS", msg.MessageId);
                 }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
                     break;
                 }

@@ -13,23 +13,23 @@ public abstract class ArchiveFilesOrchestration(
 {
     private Task[] _workers = [];
 
-    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override Task ExecuteAsync(CancellationToken cancellationToken)
     {
         // Spin up N worker loops
         _workers = new Task[configuration.ReadConcurrency];
         for (var i = 0; i < _workers.Length; i++)
-            _workers[i] = Task.Run(() => WorkerLoopAsync(stoppingToken), stoppingToken);
+            _workers[i] = Task.Run(() => WorkerLoopAsync(cancellationToken), cancellationToken);
 
         // Return a task that completes when all workers finish
         return Task.WhenAll(_workers);
     }
 
-    private async Task WorkerLoopAsync(CancellationToken ct)
+    private async Task WorkerLoopAsync(CancellationToken cancellationToken)
     {
-        await foreach (var (runId, filePath) in mediator.GetArchiveFiles(ct))
+        await foreach (var (runId, filePath) in mediator.GetArchiveFiles(cancellationToken))
             try
             {
-                var requireProcessing = await archiveService.DoesFileRequireProcessing(runId, filePath, ct);
+                var requireProcessing = await archiveService.DoesFileRequireProcessing(runId, filePath, cancellationToken);
                 if (!requireProcessing)
                 {
                     logger.LogInformation("Skipping {File} for {RunId} - already processed", filePath, runId);
@@ -37,30 +37,30 @@ public abstract class ArchiveFilesOrchestration(
                 }
 
                 logger.LogInformation("Processing {File} for {RunId}", filePath, runId);
-                var result = await processor.ProcessFileAsync(filePath, ct);
-                await archiveService.ReportProcessingResult(runId, result, ct);
+                var result = await processor.ProcessFileAsync(filePath, cancellationToken);
+                await archiveService.ReportProcessingResult(runId, result, cancellationToken);
                 if (configuration.KeepTimeStamps)
                 {
                     FileHelper.GetTimestamps(filePath, out var created, out var modified);
-                    await archiveService.UpdateTimeStamps(runId, result.LocalFilePath, created, modified, ct);
+                    await archiveService.UpdateTimeStamps(runId, result.LocalFilePath, created, modified, cancellationToken);
                 }
 
                 if (configuration.KeepOwnerGroup)
                 {
-                    var (owner, group) = await FileHelper.GetOwnerGroupAsync(filePath, ct);
-                    await archiveService.UpdateOwnerGroup(runId, result.LocalFilePath, owner, group, ct);
+                    var (owner, group) = await FileHelper.GetOwnerGroupAsync(filePath, cancellationToken);
+                    await archiveService.UpdateOwnerGroup(runId, result.LocalFilePath, owner, group, cancellationToken);
                 }
 
                 var aclEntries = FileHelper.GetFileAcl(filePath);
-                await archiveService.UpdateAclEntries(runId, result.LocalFilePath, aclEntries, ct);
+                await archiveService.UpdateAclEntries(runId, result.LocalFilePath, aclEntries, cancellationToken);
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 break;
             }
             catch (Exception ex)
             {
-                await mediator.RetryFile(runId, filePath, ex, ct);
+                await mediator.RetryFile(runId, filePath, ex, cancellationToken);
             }
     }
 

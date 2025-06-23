@@ -4,115 +4,147 @@ namespace aws_backup;
 
 public interface IMediator
 {
-    IAsyncEnumerable<(string runId, string fullFilePath)> GetArchiveFiles(CancellationToken cancellationToken);
-
-    IAsyncEnumerable<RunRequest> RunRequests(CancellationToken cancellationToken);
-
+    //retries
     IAsyncEnumerable<(string runId, string filePath, Exception exception)> GetRetries(
         CancellationToken cancellationToken);
 
+    ValueTask RetryFile(string archiveRunId, string filePath, Exception exception, CancellationToken cancellationToken);
+
+    //archive files
+    IAsyncEnumerable<(string runId, string fullFilePath)> GetArchiveFiles(CancellationToken cancellationToken);
+    ValueTask ProcessFile(string archiveRunId, string filePath, CancellationToken cancellationToken);
+
+    //data chunks
     IAsyncEnumerable<DataChunkDetails> GetChunks(CancellationToken cancellationToken);
+    ValueTask ProcessChunk(DataChunkDetails dataChunkDetails, CancellationToken cancellationToken);
 
-    IAsyncEnumerable<(ArchiveRun archive, string key)> GetArchiveState(CancellationToken cancellationToken);
+    //archive state
+    IAsyncEnumerable<(ArchiveRun archiveRun, string key)> GetArchiveState(CancellationToken cancellationToken);
+    ValueTask SaveArchiveRun(ArchiveRun currentArchiveRun, CancellationToken cancellationToken);
 
+    //data chunks manifest
     IAsyncEnumerable<(string key, DataChunkManifest manifest)> GetDataChunksManifest(
         CancellationToken cancellationToken);
 
-    ValueTask RetryFile(string archiveRunId, string filePath, Exception exception, CancellationToken cancellationToken);
-    ValueTask ProcessFile(string archiveRunId, string filePath, CancellationToken cancellationToken);
-    ValueTask ProcessChunk(DataChunkDetails dataChunkDetails, CancellationToken cancellationToken);
-    ValueTask SaveArchiveRun(ArchiveRun currentArchiveRun, CancellationToken stoppingToken);
-    ValueTask SaveChunkManifest(DataChunkManifest manifest, CancellationToken stoppingToken);
-    ValueTask ProcessSqsMessage(string body, CancellationToken stoppingToken);
-    IAsyncEnumerable<T> GetRestoreRequests<T>(CancellationToken stoppingToken) where T : allows ref struct;
+    ValueTask SaveChunkManifest(DataChunkManifest manifest, CancellationToken cancellationToken);
+
+    //restore requests
+    IAsyncEnumerable<RestoreRequest> GetRestoreRequests(CancellationToken cancellationToken);
+    ValueTask RestoreBackup(RestoreRequest restoreRequest, CancellationToken cancellationToken);
+
+    //run requests
+    IAsyncEnumerable<RunRequest> GetRunRequests(CancellationToken cancellationToken);
+    ValueTask ScheduleRunRequest(RunRequest runRequest, CancellationToken cancellationToken);
+
+    //restore runs
+    ValueTask SaveRestoreRun(RestoreRun restoreRun, CancellationToken cancellationToken);
+    
+    //download files from S3
+    ValueTask DownloadFileFromS3(DownloadFileFromS3Request downloadFileFromS3Request, CancellationToken cancellationToken);
+    
+    //save S3 restore chunk manifest
+    ValueTask SaveS3RestoreChunkManifest(S3RestoreChunkManifest current, CancellationToken cancellationToken);
+    ValueTask ScheduleDeepArchiveRestore(CloudChunkDetails chunkDetails, CancellationToken cancellationToken);
 }
 
 public class Mediator(
     IContextResolver resolver) : IMediator
 {
-    private readonly Channel<(string runId, string fullFilePath)> _archiveFilesChannel =
-        Channel.CreateUnbounded<(string runId, string fullFilePath)>();
-
-    private readonly Channel<(ArchiveRun archive, string key)> _archiveStateChannel =
-        Channel.CreateUnbounded<(ArchiveRun archive, string key)>();
-
-    private readonly Channel<(string key, DataChunkManifest manifest)> _chunkManifestChannel =
-        Channel.CreateUnbounded<(string key, DataChunkManifest manifest)>();
-
-    private readonly Channel<RunRequest> _requestsChannel = Channel.CreateUnbounded<RunRequest>();
-
-    private readonly Channel<(string runId, string filePath, Exception exception)> _retriesChannel =
+    //retries
+    private readonly Channel<(string runId, string filePath, Exception exception)> _retryChannel =
         Channel.CreateUnbounded<(string runId, string filePath, Exception exception)>();
-
-    private readonly Channel<DataChunkDetails> _uploadChunksChannel =
-        Channel.CreateUnbounded<DataChunkDetails>();
-
-    public IAsyncEnumerable<(string runId, string fullFilePath)> GetArchiveFiles(CancellationToken cancellationToken)
-    {
-        return _archiveFilesChannel.Reader.ReadAllAsync(cancellationToken);
-    }
-
-    public IAsyncEnumerable<RunRequest> RunRequests(CancellationToken cancellationToken)
-    {
-        return _requestsChannel.Reader.ReadAllAsync(cancellationToken);
-    }
 
     public IAsyncEnumerable<(string runId, string filePath, Exception exception)> GetRetries(
         CancellationToken cancellationToken)
     {
-        return _retriesChannel.Reader.ReadAllAsync(cancellationToken);
-    }
-
-    public IAsyncEnumerable<DataChunkDetails> GetChunks(CancellationToken cancellationToken)
-    {
-        return _uploadChunksChannel.Reader.ReadAllAsync(cancellationToken);
-    }
-
-    public IAsyncEnumerable<(ArchiveRun archive, string key)> GetArchiveState(CancellationToken cancellationToken)
-    {
-        return _archiveStateChannel.Reader.ReadAllAsync(cancellationToken);
-    }
-
-    public IAsyncEnumerable<(string key, DataChunkManifest manifest)> GetDataChunksManifest(
-        CancellationToken stoppingToken)
-    {
-        return _chunkManifestChannel.Reader.ReadAllAsync(stoppingToken);
+        return _retryChannel.Reader.ReadAllAsync(cancellationToken);
     }
 
     public ValueTask RetryFile(string archiveRunId, string filePath, Exception exception,
         CancellationToken cancellationToken)
     {
-        return _retriesChannel.Writer.WriteAsync((runId: archiveRunId, filePath, exception), cancellationToken);
+        throw new NotImplementedException();
     }
 
-    public ValueTask ProcessFile(string archiveRunId, string filePath, CancellationToken cancellationToken)
-    {
-        return _archiveFilesChannel.Writer.WriteAsync((runId: archiveRunId, filePath), cancellationToken);
-    }
-
-    public ValueTask ProcessChunk(DataChunkDetails dataChunkDetails, CancellationToken cancellationToken)
-    {
-        return _uploadChunksChannel.Writer.WriteAsync(dataChunkDetails, cancellationToken);
-    }
-
-    public ValueTask SaveArchiveRun(ArchiveRun currentArchiveRun, CancellationToken stoppingToken)
-    {
-        var key = resolver.ResolveArchiveKey(currentArchiveRun.RunId);
-        return _archiveStateChannel.Writer.WriteAsync((archive: currentArchiveRun, key), stoppingToken);
-    }
-
-    public ValueTask SaveChunkManifest(DataChunkManifest manifest, CancellationToken stoppingToken)
-    {
-        var key = resolver.ResolveChunkManifestKey();
-        return _chunkManifestChannel.Writer.WriteAsync((key, manifest), stoppingToken);
-    }
-
-    public ValueTask ProcessSqsMessage(string body, CancellationToken stoppingToken)
+    //archive files
+    public IAsyncEnumerable<(string runId, string fullFilePath)> GetArchiveFiles(CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public IAsyncEnumerable<T> GetRestoreRequests<T>(CancellationToken stoppingToken) where T : allows ref struct
+    public ValueTask ProcessFile(string archiveRunId, string filePath, CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    //data chunks
+    public IAsyncEnumerable<DataChunkDetails> GetChunks(CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    public ValueTask ProcessChunk(DataChunkDetails dataChunkDetails, CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    //archive state
+    public IAsyncEnumerable<(ArchiveRun archiveRun, string key)> GetArchiveState(CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    public ValueTask SaveArchiveRun(ArchiveRun currentArchiveRun, CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    //data chunks manifest
+    public IAsyncEnumerable<(string key, DataChunkManifest manifest)> GetDataChunksManifest(
+        CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    public ValueTask SaveChunkManifest(DataChunkManifest manifest, CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    //restore requests
+    public IAsyncEnumerable<RestoreRequest> GetRestoreRequests(CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    public ValueTask RestoreBackup(RestoreRequest restoreRequest, CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    //run requests
+    public IAsyncEnumerable<RunRequest> GetRunRequests(CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    public ValueTask ScheduleRunRequest(RunRequest runRequest, CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    //restore runs
+    public ValueTask SaveRestoreRun(RestoreRun restoreRun, CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    public ValueTask DownloadFileFromS3(DownloadFileFromS3Request downloadFileFromS3Request, CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    public ValueTask SaveS3RestoreChunkManifest(S3RestoreChunkManifest current, CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }

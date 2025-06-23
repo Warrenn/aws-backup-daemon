@@ -10,17 +10,17 @@ public class ArchiveRunOrchestration(
     IFileLister fileLister,
     ILogger<ArchiveRunOrchestration> logger) : BackgroundService
 {
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         // This service is responsible for processing archive runs.
         // It will read from the archiveQueue and process each archive.
-        await foreach (var runRequest in mediator.RunRequests(stoppingToken))
+        await foreach (var runRequest in mediator.GetRunRequests(cancellationToken))
         {
-            var archiveRun = await archiveService.LookupArchiveRun(runRequest.RunId, stoppingToken);
+            var archiveRun = await archiveService.LookupArchiveRun(runRequest.RunId, cancellationToken);
             if (archiveRun is null)
             {
                 logger.Log(LogLevel.Information, "Creating new archive run for {RunId}", runRequest.RunId);
-                archiveRun = await archiveService.StartNewArchiveRun(runRequest, configuration, stoppingToken);
+                archiveRun = await archiveService.StartNewArchiveRun(runRequest, configuration, cancellationToken);
             }
 
             if (archiveRun.Status == ArchiveRunStatus.Completed) continue;
@@ -29,7 +29,7 @@ public class ArchiveRunOrchestration(
             if (File.Exists(configuration.IgnoreFile))
                 try
                 {
-                    ignorePatterns = (await File.ReadAllLinesAsync(configuration.IgnoreFile, stoppingToken))
+                    ignorePatterns = (await File.ReadAllLinesAsync(configuration.IgnoreFile, cancellationToken))
                         .Select(l => l.Trim())
                         .Where(l => !string.IsNullOrWhiteSpace(l) && !l.StartsWith('#'))
                         .ToArray();
@@ -41,11 +41,11 @@ public class ArchiveRunOrchestration(
 
             foreach (var filePath in fileLister.GetAllFiles(runRequest.PathsToArchive, ignorePatterns))
             {
-                await archiveService.RecordLocalFile(archiveRun.RunId, filePath, stoppingToken);
-                await mediator.ProcessFile(archiveRun.RunId, filePath, stoppingToken);
+                await archiveService.RecordLocalFile(archiveRun.RunId, filePath, cancellationToken);
+                await mediator.ProcessFile(archiveRun.RunId, filePath, cancellationToken);
             }
 
-            await archiveService.CompleteArchiveRun(archiveRun.RunId, stoppingToken);
+            await archiveService.CompleteArchiveRun(archiveRun.RunId, cancellationToken);
         }
     }
 }
