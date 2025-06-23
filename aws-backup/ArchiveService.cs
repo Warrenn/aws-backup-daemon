@@ -260,9 +260,3 @@ public class ArchiveService(
         await mediator.SaveArchiveRun(_currentArchiveRun, cancellationToken);
     }
 }
-
-public interface IS3Service
-{
-    Task<bool> RunExists(string runId, CancellationToken cancellationToken);
-    Task<ArchiveRun> GetArchive(string runId, CancellationToken cancellationToken);
-}

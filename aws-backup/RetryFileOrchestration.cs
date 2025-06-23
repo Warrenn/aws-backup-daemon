@@ -11,8 +11,8 @@ public class RetryFileOrchestration(
     IArchiveService archiveService,
     ILogger<RetryFileOrchestration> logger) : BackgroundService
 {
-    private readonly Dictionary<string, Exception> _failedFiles = [];
-    private readonly Dictionary<string, int> _retryAttempts = [];
+    private readonly ConcurrentDictionary<string, Exception> _failedFiles = [];
+    private readonly ConcurrentDictionary<string, int> _retryAttempts = [];
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _timers = [];
 
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
@@ -42,7 +42,7 @@ public class RetryFileOrchestration(
 
             if (attemptNo > configuration.RetryLimit)
             {
-                _failedFiles.Add(filePath, exception);
+                _failedFiles.TryAdd(filePath, exception);
                 await archiveService.RecordFailedFile(runId, filePath, exception, cancellationToken);
                 continue;
             }

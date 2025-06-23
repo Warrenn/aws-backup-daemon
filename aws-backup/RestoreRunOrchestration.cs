@@ -16,7 +16,7 @@ public class RestoreOrchestration(
         //await a IAsyncEnumerable<RestoreRequest> from the mediator
         await foreach (var restoreRequest in mediator.GetRestoreRequests(cancellationToken))
         {
-            if (string.IsNullOrWhiteSpace(restoreRequest.RunId) ||
+            if (string.IsNullOrWhiteSpace(restoreRequest.ArchiveRunId) ||
                 string.IsNullOrWhiteSpace(restoreRequest.RestorePaths))
             {
                 logger.LogWarning("Received invalid restore request with null RunId or RestorePaths");
@@ -30,32 +30,34 @@ public class RestoreOrchestration(
             var matcher = restoreRequest
                 .RestorePaths.Split(':')
                 .Aggregate(new Matcher(), (m, filePath) => m.AddInclude(filePath));
-            var archiveRun = await archiveService.LookupArchiveRun(restoreRequest.RunId, cancellationToken);
+            var archiveRun = await archiveService.LookupArchiveRun(restoreRequest.ArchiveRunId, cancellationToken);
             if (archiveRun is null)
             {
-                logger.LogWarning("No archive run found for RunId {RunId}", restoreRequest.RunId);
+                logger.LogWarning("No archive run found for RunId {RunId}", restoreRequest.ArchiveRunId);
                 continue;
             }
 
             var requestedFiles = (
                 from file in archiveRun.Files.Keys
                 where matcher.Match(file).HasMatches
+                let metadata = archiveRun.Files[file]
                 select new
                 {
                     file,
-                    chunkIds = archiveRun
-                        .Files[file]
+                    chunkIds = metadata
                         .Chunks
                         .OrderBy(c => c.ChunkIndex)
                         .Select(c => c.Key)
-                        .ToArray()
+                        .ToArray(),
+                    metadata.OriginalSize
                 }).ToDictionary(
                 i => i.file,
                 i => new RestoreFileMetaData
                 {
                     Chunks = i.chunkIds,
                     Status = FileRestoreStatus.PendingDeepArchiveRestore,
-                    FilePath = i.file
+                    FilePath = i.file,
+                    Size = i.OriginalSize ?? 0
                 }
             );
 
@@ -63,7 +65,7 @@ public class RestoreOrchestration(
             {
                 RestoreId = restoreId,
                 RestorePaths = restoreRequest.RestorePaths,
-                ArchiveRunId = restoreRequest.RunId,
+                ArchiveRunId = restoreRequest.ArchiveRunId,
                 RequestedAt = restoreRequest.RequestedAt,
                 Status = RestoreRunStatus.Processing,
                 RequestedFiles = requestedFiles

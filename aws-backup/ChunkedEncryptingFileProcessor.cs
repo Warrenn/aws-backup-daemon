@@ -114,7 +114,7 @@ public class ChunkedEncryptingFileProcessor(
             aes.GenerateIV(); // unique per chunk
 
             // write the IV at the file start
-            chunkFileFs.Write(aes.IV, 0, aes.IV.Length);
+            chunkFileFs.Write(aes.IV, 0, 16);
 
             // 4) crypto + gzip stream
             cryptoStream = new CryptoStream(chunkFileFs, aes.CreateEncryptor(), CryptoStreamMode.Write);

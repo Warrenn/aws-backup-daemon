@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Amazon.S3;
 
 namespace aws_backup;
@@ -14,7 +15,7 @@ public enum S3RestoreStatus
     ReadyToRestore
 }
 
-public class S3RestoreChunkManifest : SortedDictionary<ByteArrayKey, S3RestoreStatus>
+public class S3RestoreChunkManifest : ConcurrentDictionary<ByteArrayKey, S3RestoreStatus>
 {
     public static S3RestoreChunkManifest Current { get; } = new();
 }
@@ -32,12 +33,15 @@ public class RestoreFileMetaData
     public required ByteArrayKey[] Chunks { get; init; }
     public FileRestoreStatus Status { get; set; } = FileRestoreStatus.PendingDeepArchiveRestore;
     public required string FilePath { get; init; }
+    
+    public required long Size { get; init; }
 }
 
 public record DownloadFileFromS3Request(
     string RestoreId,
     string FilePath,
-    CloudChunkDetails[] CloudChunkDetails);
+    CloudChunkDetails[] CloudChunkDetails,
+    long Size);
 
 public record S3ChunkData(
     ByteArrayKey Hash,
@@ -47,7 +51,10 @@ public record S3ChunkData(
     public S3RestoreStatus Status { get; set; }
 }
 
-public record RestoreRequest(string RunId, string RestorePaths, DateTimeOffset RequestedAt);
+public record RestoreRequest(
+    string ArchiveRunId, 
+    string RestorePaths, 
+    DateTimeOffset RequestedAt);
 
 public class RestoreRun
 {
@@ -71,11 +78,12 @@ public interface IRestoreService
         CancellationToken cancellationToken);
 
     Task ReportDownloadComplete(DownloadFileFromS3Request request, CancellationToken cancellationToken);
-    Task ReportDownloadFailed(DownloadFileFromS3Request request, string reason, CancellationToken cancellationToken);
+    Task ReportDownloadFailed(DownloadFileFromS3Request request, Exception reason, CancellationToken cancellationToken);
 }
 
 public class RestoreService(
-    IMediator mediator
+    IMediator mediator,
+    IS3Service s3Service
 ) : IRestoreService
 {
     //List of RestoreRun objects
@@ -83,7 +91,7 @@ public class RestoreService(
 
     public string ResolveId(RestoreRequest restoreRequest)
     {
-        return restoreRequest.RequestedAt.ToString("yyyyMMdd-HHmmss") + "--" + restoreRequest.RunId;
+        return restoreRequest.RequestedAt.ToString("yyyyMMdd-HHmmss") + "--" + restoreRequest.ArchiveRunId;
     }
 
     public Task<RestoreRun?> LookupRestoreRun(string restoreId, CancellationToken cancellationToken)
@@ -102,7 +110,7 @@ public class RestoreService(
                 if (S3RestoreChunkManifest.Current.TryGetValue(key, out var status)) continue;
 
                 var chunkDetails = DataChunkManifest.Current[key];
-                await mediator.ScheduleDeepArchiveRestore(chunkDetails, cancellationToken);
+                await s3Service.ScheduleDeepArchiveRecovery(chunkDetails, cancellationToken);
 
                 status = S3RestoreStatus.PendingDeepArchiveRestore;
                 S3RestoreChunkManifest.Current[key] = status;
@@ -119,7 +127,8 @@ public class RestoreService(
             await mediator.DownloadFileFromS3(new DownloadFileFromS3Request(
                 restoreRun.RestoreId,
                 metaData.FilePath,
-                cloudChunkDetails
+                cloudChunkDetails,
+                metaData.Size
             ), cancellationToken);
 
             metaData.Status = FileRestoreStatus.PendingS3Download;
@@ -168,7 +177,8 @@ public class RestoreService(
                     await mediator.DownloadFileFromS3(new DownloadFileFromS3Request(
                         restoreRun.RestoreId,
                         fileMeta.FilePath,
-                        cloudChunkDetails
+                        cloudChunkDetails,
+                        fileMeta.Size
                     ), cancellationToken);
 
                     fileMeta.Status = FileRestoreStatus.PendingS3Download;
@@ -203,7 +213,7 @@ public class RestoreService(
             }
 
             if (!scheduleDownload) return;
-            await mediator.ScheduleDeepArchiveRestore(DataChunkManifest.Current[chunkKey.Value], cancellationToken);
+            await s3Service.ScheduleDeepArchiveRecovery(DataChunkManifest.Current[chunkKey.Value], cancellationToken);
         }
     }
 
@@ -222,12 +232,13 @@ public class RestoreService(
         _restoreRuns.Remove(restoreRun.RestoreId);
     }
 
-    public async Task ReportDownloadFailed(DownloadFileFromS3Request request, string reason, CancellationToken cancellationToken)
+    public async Task ReportDownloadFailed(DownloadFileFromS3Request request, Exception reason,
+        CancellationToken cancellationToken)
     {
         if (!_restoreRuns.TryGetValue(request.RestoreId, out var restoreRun)) return;
         if (!restoreRun.RequestedFiles.TryGetValue(request.FilePath, out var fileMeta)) return;
         fileMeta.Status = FileRestoreStatus.Failed;
-        restoreRun.FailedFiles[request.FilePath] = reason;
+        restoreRun.FailedFiles[request.FilePath] = reason.Message;
         await mediator.SaveRestoreRun(restoreRun, cancellationToken);
         var runComplete = restoreRun.RequestedFiles.Values.All(f =>
             f.Status is FileRestoreStatus.Completed or FileRestoreStatus.Failed);
@@ -236,20 +247,5 @@ public class RestoreService(
         restoreRun.CompletedAt = DateTimeOffset.UtcNow;
         await mediator.SaveRestoreRun(restoreRun, cancellationToken);
         _restoreRuns.Remove(restoreRun.RestoreId);
-    }
-
-    private async Task UpdateRestoreRuns(CancellationToken cancellationToken)
-    {
-        var restoreRuns = _restoreRuns.Values.ToList();
-        foreach (var restoreRun in restoreRuns)
-        {
-            var runComplete = restoreRun.RequestedFiles.Values.All(f =>
-                f.Status is FileRestoreStatus.Completed or FileRestoreStatus.Failed);
-            if (!runComplete) continue;
-            restoreRun.Status = RestoreRunStatus.Completed;
-            restoreRun.CompletedAt = DateTimeOffset.UtcNow;
-            await mediator.SaveRestoreRun(restoreRun, cancellationToken);
-            _restoreRuns.Remove(restoreRun.RestoreId);
-        }
     }
 }

@@ -1,71 +1,59 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
-using Amazon.S3;
 using Amazon.S3.Model;
 
 namespace aws_backup;
 
-public class S3ChunkedFileReconstructor
+public interface IS3ChunkedFileReconstructor
 {
-    private readonly byte[] _aesKey;
-    private readonly long _originalFileSize;
-    private readonly int _bufferSize;
-    private readonly int _chunkSize;
-    private readonly int _maxConcurrency;
-    private readonly IAmazonS3 _s3;
+    Task ReconstructAsync(
+        DownloadFileFromS3Request request,
+        CancellationToken cancellationToken);
+}
 
-    /// <param name="aesKey">32-byte AES-256 key</param>
-    /// <param name="originalFileSize"></param>
-    /// <param name="chunkSize">original chunk size (e.g. 5 MiB)</param>
-    /// <param name="maxConcurrency">how many chunks to process in parallel</param>
-    /// <param name="bufferSize">read/write buffer (~80 KiB default)</param>
-    public S3ChunkedFileReconstructor(
-        IAmazonS3 s3Client,
-        byte[] aesKey,
-        long originalFileSize,
-        int chunkSize = 5 * 1024 * 1024,
-        int maxConcurrency = 4,
-        int bufferSize = 80 * 1024)
-    {
-        _s3 = s3Client;
-        _aesKey = aesKey ?? throw new ArgumentNullException(nameof(aesKey));
-        _originalFileSize = originalFileSize;
-        _chunkSize = chunkSize;
-        _maxConcurrency = maxConcurrency;
-        _bufferSize = bufferSize;
-    }
-
+public class S3ChunkedFileReconstructor(
+    Configuration configuration,
+    IContextResolver contextResolver,
+    IAwsClientFactory awsClientFactory
+) : IS3ChunkedFileReconstructor
+{
     public async Task ReconstructAsync(
-        string bucketName,
-        string keyPrefix, // e.g. "myfile.bin"
-        int totalChunks, // e.g. 10
-        string outputFilePath,
-        CancellationToken cancellationToken = default)
+        DownloadFileFromS3Request request,
+        CancellationToken cancellationToken)
     {
+        var s3 = await awsClientFactory.CreateS3Client(configuration, cancellationToken);
+        var destinationFolder = contextResolver.ResolveRestoreFolder(configuration, request.RestoreId);
+        var outputFilePath = Path.Combine(destinationFolder, request.FilePath);
+        var bufferSize = configuration.ReadBufferSize;
+        var chunkSize = configuration.ChunkSizeBytes;
+        var maxDownloadConcurrency = configuration.MaxDownloadConcurrency;
+        var originalFileSize = request.Size;
+        var aesKey = await contextResolver.ResolveAesKey(configuration, cancellationToken);
+
         // Ensure output file exists and is sized (optional)
         await using (var pre = new FileStream(
                          outputFilePath,
                          FileMode.Create,
                          FileAccess.Write,
                          FileShare.Write,
-                         _bufferSize, FileOptions.None))
+                         bufferSize, FileOptions.None))
         {
             // set length to chunkSize * totalChunks (last chunk may write less)
-            pre.SetLength(_originalFileSize);
+            pre.SetLength(originalFileSize);
         }
 
-        var sem = new SemaphoreSlim(_maxConcurrency);
+        var sem = new SemaphoreSlim(maxDownloadConcurrency);
 
-        var tasks = Enumerable.Range(0, totalChunks).Select(async idx =>
+        var tasks = Enumerable.Range(0, request.CloudChunkDetails.Length).Select(async idx =>
         {
+            var (key, bucketName, _) = request.CloudChunkDetails[idx];
             await sem.WaitAsync(cancellationToken);
             try
             {
-                var chunkKey = $"{keyPrefix}.chunk{idx:D4}.gz.aes";
-                var resp = await _s3.GetObjectAsync(new GetObjectRequest
+                var resp = await s3.GetObjectAsync(new GetObjectRequest
                 {
                     BucketName = bucketName,
-                    Key = chunkKey
+                    Key = key
                 }, cancellationToken);
 
                 await using var respStream = resp.ResponseStream;
@@ -76,7 +64,8 @@ public class S3ChunkedFileReconstructor
 
                 // 2) decrypt + decompress
                 using var aes = Aes.Create();
-                aes.Key = _aesKey;
+                aes.KeySize = 256;
+                aes.Key = aesKey;
                 aes.IV = iv;
                 aes.Mode = CipherMode.CBC;
 
@@ -95,11 +84,11 @@ public class S3ChunkedFileReconstructor
                     FileMode.Open,
                     FileAccess.Write,
                     FileShare.Write,
-                    _bufferSize, FileOptions.None);
+                    bufferSize, FileOptions.None);
 
-                outFs.Seek((long)idx * _chunkSize, SeekOrigin.Begin);
+                outFs.Seek(idx * chunkSize, SeekOrigin.Begin);
 
-                var buf = new byte[_bufferSize];
+                var buf = new byte[bufferSize];
                 int read;
                 while ((read = await gzipStream.ReadAsync(buf, cancellationToken)) > 0)
                     await outFs.WriteAsync(buf.AsMemory(0, read), cancellationToken);
@@ -117,7 +106,7 @@ public class S3ChunkedFileReconstructor
             FileMode.Open,
             FileAccess.Write,
             FileShare.None);
-        
-        fs.SetLength(_originalFileSize);
+
+        fs.SetLength(originalFileSize);
     }
 }

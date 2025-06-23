@@ -9,17 +9,17 @@ public class StateUploadOrchestration(
     ILogger<StateUploadOrchestration> logger,
     Configuration configuration) : BackgroundService
 {
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         var archiveTask = Task.Run(async () =>
         {
-            await foreach (var (archive, key) in mediator.GetArchiveState(stoppingToken))
+            await foreach (var (archive, key) in mediator.GetArchiveState(cancellationToken))
                 try
                 {
-                    await hotStorageService.UploadAsync(key, archive, stoppingToken);
-                    await Task.Delay(configuration.MsDelayBetweenArchiveSaves, stoppingToken);
+                    await hotStorageService.UploadAsync(key, archive, cancellationToken);
+                    await Task.Delay(configuration.MsDelayBetweenArchiveSaves, cancellationToken);
                 }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
                     break;
                 }
@@ -29,17 +29,17 @@ public class StateUploadOrchestration(
                         archive.RunId, key);
                     // Optionally, you can rethrow or handle the exception as needed
                 }
-        }, stoppingToken);
+        }, cancellationToken);
 
         var uploadManifestTask = Task.Run(async () =>
         {
-            await foreach (var (key, manifest) in mediator.GetDataChunksManifest(stoppingToken))
+            await foreach (var (key, manifest) in mediator.GetDataChunksManifest(cancellationToken))
                 try
                 {
-                    await hotStorageService.UploadAsync(key, manifest, stoppingToken);
-                    await Task.Delay(configuration.MsDelayBetweenManifestSaves, stoppingToken);
+                    await hotStorageService.UploadAsync(key, manifest, cancellationToken);
+                    await Task.Delay(configuration.MsDelayBetweenManifestSaves, cancellationToken);
                 }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
                     break;
                 }
@@ -48,7 +48,7 @@ public class StateUploadOrchestration(
                     logger.LogError(ex, "Error processing hot storage upload manifest for key {Key}", key);
                     // Optionally, you can rethrow or handle the exception as needed
                 }
-        }, stoppingToken);
+        }, cancellationToken);
 
         await Task.WhenAll(uploadManifestTask, archiveTask);
     }

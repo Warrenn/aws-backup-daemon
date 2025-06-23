@@ -16,6 +16,7 @@ public interface IContextResolver
     string ResolveChunkManifestKey();
     Task<byte[]> ResolveSqsDecryptionKey(Configuration configuration, CancellationToken cancellationToken);
     string ResolveRestoreLocation(string file, Configuration configuration);
+    string ResolveRestoreFolder(Configuration configuration, string requestRestoreId);
 }
 
 public class ContextResolver : IContextResolver
@@ -76,6 +77,11 @@ public class ContextResolver : IContextResolver
     }
 
     public string ResolveRestoreLocation(string file, Configuration configuration)
+    {
+        throw new NotImplementedException();
+    }
+
+    public string ResolveRestoreFolder(Configuration configuration, string requestRestoreId)
     {
         throw new NotImplementedException();
     }

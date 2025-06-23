@@ -38,13 +38,14 @@ public interface IMediator
 
     //restore runs
     ValueTask SaveRestoreRun(RestoreRun restoreRun, CancellationToken cancellationToken);
-    
+
     //download files from S3
-    ValueTask DownloadFileFromS3(DownloadFileFromS3Request downloadFileFromS3Request, CancellationToken cancellationToken);
-    
+    ValueTask DownloadFileFromS3(DownloadFileFromS3Request downloadFileFromS3Request,
+        CancellationToken cancellationToken);
+    IAsyncEnumerable<DownloadFileFromS3Request> GetDownloadRequests(CancellationToken cancellationToken);
+
     //save S3 restore chunk manifest
     ValueTask SaveS3RestoreChunkManifest(S3RestoreChunkManifest current, CancellationToken cancellationToken);
-    ValueTask ScheduleDeepArchiveRestore(CloudChunkDetails chunkDetails, CancellationToken cancellationToken);
 }
 
 public class Mediator(
@@ -139,12 +140,23 @@ public class Mediator(
         throw new NotImplementedException();
     }
 
-    public ValueTask DownloadFileFromS3(DownloadFileFromS3Request downloadFileFromS3Request, CancellationToken cancellationToken)
+    public ValueTask DownloadFileFromS3(DownloadFileFromS3Request downloadFileFromS3Request,
+        CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    public IAsyncEnumerable<DownloadFileFromS3Request> GetDownloadRequests(CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
     public ValueTask SaveS3RestoreChunkManifest(S3RestoreChunkManifest current, CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    public ValueTask ScheduleDeepArchiveRestore(CloudChunkDetails chunkDetails, CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }

@@ -8,7 +8,7 @@ public class Configuration
     public string IgnoreFile { get; set; }
     public int ReadConcurrency { get; set; }
     public int UploadS3Concurrency { get; set; }
-    public int RestoreFileConcurrency { get; set; }
+    public int RestoreS3Concurrency { get; set; }
     public long ChunkSizeBytes { get; set; }
     public int ReadBufferSize { get; set; }
     public long FileRetryDelay { get; set; }
@@ -46,4 +46,6 @@ public class Configuration
     public int SqsVisibilityTimeout { get; set; }
     public int RestoreConcurrency { get; set; }
     public long SqsRetryDelaySeconds { get; set; }
+    public int StorageClassCheckDelay { get; set; }
+    public int MaxDownloadConcurrency { get; set; }
 }

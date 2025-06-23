@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Amazon.S3;
 
 namespace aws_backup;
@@ -7,7 +8,7 @@ public record CloudChunkDetails(
     string BucketName, // S3 bucket name
     ByteArrayKey Hash);
 
-public class DataChunkManifest : SortedDictionary<ByteArrayKey, CloudChunkDetails>
+public class DataChunkManifest : ConcurrentDictionary<ByteArrayKey, CloudChunkDetails>
 {
     public static DataChunkManifest Current { get; } = new();
 }
@@ -48,7 +49,7 @@ public class DataChunkService(
             key,
             bucketName,
             chunk.Key);
-        dataChunkManifest.Add(chunk.Key, cloudChunkDetails);
+        dataChunkManifest.TryAdd(chunk.Key, cloudChunkDetails);
 
         await mediator.SaveChunkManifest(dataChunkManifest, cancellationToken);
     }
