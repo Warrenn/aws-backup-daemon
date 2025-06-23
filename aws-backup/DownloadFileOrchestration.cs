@@ -55,7 +55,7 @@ public class DownloadFileOrchestration(
                 if (_retryAttempts.TryGetValue(key, out var attempts))
                     attemptNo = attempts + 1;
 
-                if (attemptNo > configuration.RetryLimit)
+                if (attemptNo > configuration.DownloadRetryLimit)
                 {
                     await restoreService.ReportDownloadFailed(downloadRequest, exception, cancellationToken);
                     continue;

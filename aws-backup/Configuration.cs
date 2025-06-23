@@ -48,4 +48,5 @@ public class Configuration
     public long SqsRetryDelaySeconds { get; set; }
     public int StorageClassCheckDelay { get; set; }
     public int MaxDownloadConcurrency { get; set; }
+    public int DownloadRetryLimit { get; set; }
 }
