@@ -32,6 +32,16 @@ public interface IContextResolver
     bool ResolveCheckDownloadHash();
     int ResolveUploadAttemptLimit();
     int ResolveUploadRetryDelay();
+    int ResolveUploadConcurrency();
+    long ResolveS3PartSize();
+    int ResolveStorageCheckDelay();
+    string ResolveQueueUrl();
+    int? ResolveSqsWaitTimeSeconds();
+    int? ResolveSqsMaxNumberOfMessages();
+    int? ResolveSqsVisibilityTimeout();
+    long ResolveSqsRetryDelaySeconds();
+    bool ResolveEncryptSQS();
+    int ResolveDelayBetweenUploads();
 }
 
 public class ContextResolver : IContextResolver
@@ -172,6 +182,56 @@ public class ContextResolver : IContextResolver
     }
 
     public int ResolveUploadRetryDelay()
+    {
+        throw new NotImplementedException();
+    }
+
+    public int ResolveUploadConcurrency()
+    {
+        throw new NotImplementedException();
+    }
+
+    public long ResolveS3PartSize()
+    {
+        throw new NotImplementedException();
+    }
+
+    public int ResolveStorageCheckDelay()
+    {
+        throw new NotImplementedException();
+    }
+
+    public string ResolveQueueUrl()
+    {
+        throw new NotImplementedException();
+    }
+
+    public int? ResolveSqsWaitTimeSeconds()
+    {
+        throw new NotImplementedException();
+    }
+
+    public int? ResolveSqsMaxNumberOfMessages()
+    {
+        throw new NotImplementedException();
+    }
+
+    public int? ResolveSqsVisibilityTimeout()
+    {
+        throw new NotImplementedException();
+    }
+
+    public long ResolveSqsRetryDelaySeconds()
+    {
+        throw new NotImplementedException();
+    }
+
+    public bool ResolveEncryptSQS()
+    {
+        throw new NotImplementedException();
+    }
+
+    public int ResolveDelayBetweenUploads()
     {
         throw new NotImplementedException();
     }

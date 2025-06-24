@@ -22,7 +22,7 @@ public interface IHotStorageService
                                     DynamicallyAccessedMemberTypes.PublicNestedTypes |
                                     DynamicallyAccessedMemberTypes.PublicParameterlessConstructor |
                                     DynamicallyAccessedMemberTypes.PublicProperties)]
-        T>(string key, T obj, CancellationToken ct = default);
+        T>(string key, T obj, CancellationToken cancellationToken);
 
     Task<T> DownloadAsync<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicConstructors |
@@ -37,13 +37,12 @@ public interface IHotStorageService
                                     DynamicallyAccessedMemberTypes.PublicNestedTypes |
                                     DynamicallyAccessedMemberTypes.PublicParameterlessConstructor |
                                     DynamicallyAccessedMemberTypes.PublicProperties)]
-        T>(string key, CancellationToken ct = default);
+        T>(string key, CancellationToken cancellationToken);
 }
 
 public class HotStorageService(
     IAwsClientFactory awsClientFactory,
-    IContextResolver contextResolver,
-    Configuration configuration) : IHotStorageService
+    IContextResolver contextResolver) : IHotStorageService
 {
     public async Task UploadAsync<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicConstructors |
@@ -58,14 +57,14 @@ public class HotStorageService(
                                     DynamicallyAccessedMemberTypes.PublicNestedTypes |
                                     DynamicallyAccessedMemberTypes.PublicParameterlessConstructor |
                                     DynamicallyAccessedMemberTypes.PublicProperties)]
-        T>(string key, T obj, CancellationToken ct)
+        T>(string key, T obj, CancellationToken cancellationToken)
     {
         // 1) Create the pipe
         var pipe = new Pipe();
-        var s3 = await awsClientFactory.CreateS3Client(configuration, ct);
-        var bucketName = contextResolver.ResolveS3BucketName(configuration);
-        var partSizeBytes = configuration.S3PartSize;
-        var storageClass = contextResolver.ResolveHotStorage(configuration);
+        var s3 = await awsClientFactory.CreateS3Client(cancellationToken);
+        var bucketName = contextResolver.ResolveS3BucketName();
+        var partSizeBytes = contextResolver.ResolveS3PartSize();
+        var storageClass = contextResolver.ResolveHotStorage();
 
         // 2) Kick off the upload task, reading from the pipe's reader as a Stream
         var uploadTask = Task.Run(async () =>
@@ -82,8 +81,8 @@ public class HotStorageService(
                 StorageClass = storageClass,
                 AutoCloseStream = true
             };
-            await transfer.UploadAsync(req, ct);
-        }, ct);
+            await transfer.UploadAsync(req, cancellationToken);
+        }, cancellationToken);
 
         // 3) In this thread, serialize → gzip → pipe.Writer
         await using (var writerStream = pipe.Writer.AsStream())
@@ -110,13 +109,13 @@ public class HotStorageService(
                                     DynamicallyAccessedMemberTypes.PublicNestedTypes |
                                     DynamicallyAccessedMemberTypes.PublicParameterlessConstructor |
                                     DynamicallyAccessedMemberTypes.PublicProperties)]
-        T>(string key, CancellationToken ct)
+        T>(string key, CancellationToken cancellationToken)
     {
-        var s3 = await awsClientFactory.CreateS3Client(configuration, ct);
-        var bucketName = contextResolver.ResolveS3BucketName(configuration);
+        var s3 = await awsClientFactory.CreateS3Client(cancellationToken);
+        var bucketName = contextResolver.ResolveS3BucketName();
         using var resp = await s3.GetObjectAsync(
             new GetObjectRequest { BucketName = bucketName, Key = key },
-            ct);
+            cancellationToken);
 
         await using var gzip = new GZipStream(resp.ResponseStream, CompressionMode.Decompress, false);
         return Serializer.Deserialize<T>(gzip)!;

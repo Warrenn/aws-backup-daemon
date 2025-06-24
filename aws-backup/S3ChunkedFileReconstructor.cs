@@ -10,11 +10,11 @@ public interface IS3ChunkedFileReconstructor
         DownloadFileFromS3Request request,
         CancellationToken cancellationToken);
 
-    Task<bool> VerifyDownloadHashAsync(DownloadFileFromS3Request downloadRequest, string localFilePath, CancellationToken cancellationToken);
+    Task<bool> VerifyDownloadHashAsync(DownloadFileFromS3Request downloadRequest, string localFilePath,
+        CancellationToken cancellationToken);
 }
 
 public class S3ChunkedFileReconstructor(
-    Configuration configuration,
     IContextResolver contextResolver,
     IAwsClientFactory awsClientFactory
 ) : IS3ChunkedFileReconstructor
@@ -23,12 +23,12 @@ public class S3ChunkedFileReconstructor(
         DownloadFileFromS3Request request,
         CancellationToken cancellationToken)
     {
-        var s3 = await awsClientFactory.CreateS3Client(configuration, cancellationToken);
+        var s3 = await awsClientFactory.CreateS3Client(cancellationToken);
         var destinationFolder = contextResolver.ResolveRestoreFolder(request.RestoreId);
         var outputFilePath = Path.Combine(destinationFolder, request.FilePath);
-        var bufferSize = configuration.ReadBufferSize;
-        var chunkSize = configuration.ChunkSizeBytes;
-        var maxDownloadConcurrency = configuration.MaxDownloadConcurrency;
+        var bufferSize = contextResolver.ResolveReadBufferSize();
+        var chunkSize = contextResolver.ResolveChunkSizeBytes();
+        var maxDownloadConcurrency = contextResolver.ResolveReadConcurrency();
         var originalFileSize = request.Size;
         var aesKey = await contextResolver.ResolveAesKey(cancellationToken);
 
@@ -110,13 +110,15 @@ public class S3ChunkedFileReconstructor(
             FileShare.None);
 
         fs.SetLength(originalFileSize);
-        
+
         return outputFilePath;
     }
 
     public async Task<bool> VerifyDownloadHashAsync(DownloadFileFromS3Request downloadRequest, string localFilePath,
         CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        await using var stream = File.OpenRead(localFilePath);
+        var hash = await SHA256.HashDataAsync(stream, cancellationToken);
+        return hash.AsSpan().SequenceEqual(downloadRequest.Checksum ?? []);
     }
 }

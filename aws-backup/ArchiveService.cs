@@ -64,17 +64,22 @@ public interface IArchiveService
     Task UpdateTimeStamps(string runId, string localFilePath, DateTimeOffset created, DateTimeOffset modified,
         CancellationToken cancellationToken);
 
-    Task UpdateOwnerGroup(string runId, string localFilePath, string owner, string group, CancellationToken cancellationToken);
+    Task UpdateOwnerGroup(string runId, string localFilePath, string owner, string group,
+        CancellationToken cancellationToken);
+
     Task UpdateAclEntries(string runId, string filePath, AclEntry[] aclEntries, CancellationToken cancellationToken);
-    Task RecordFailedFile(string archiveRunId, string filePath, Exception exception, CancellationToken cancellationToken);
+
+    Task RecordFailedFile(string archiveRunId, string filePath, Exception exception,
+        CancellationToken cancellationToken);
+
     Task RecordLocalFile(string archiveRunRunId, string filePath, CancellationToken cancellationToken);
     Task CompleteArchiveRun(string archiveRunRunId, CancellationToken cancellationToken);
+    bool FileIsSkipped(string parentFile);
 }
 
 public class ArchiveService(
     IS3Service s3Service,
-    IMediator mediator,
-    IContextResolver contextResolver
+    IMediator mediator
 ) : IArchiveService
 {
     private ArchiveRun _currentArchiveRun = null!;
@@ -102,7 +107,8 @@ public class ArchiveService(
         return _currentArchiveRun;
     }
 
-    public async Task<bool> DoesFileRequireProcessing(string archiveRunId, string filePath, CancellationToken cancellationToken)
+    public async Task<bool> DoesFileRequireProcessing(string archiveRunId, string filePath,
+        CancellationToken cancellationToken)
     {
         if (_currentArchiveRun.Files.TryGetValue(filePath, out var fileMeta))
             return fileMeta.Status is not FileStatus.Processed and not FileStatus.Skipped;
@@ -124,7 +130,8 @@ public class ArchiveService(
         return false;
     }
 
-    public async Task ReportProcessingResult(string archiveRunId, FileProcessResult result, CancellationToken cancellationToken)
+    public async Task ReportProcessingResult(string archiveRunId, FileProcessResult result,
+        CancellationToken cancellationToken)
     {
         var fileMeta = new FileMetaData(
             result.LocalFilePath,
@@ -170,7 +177,8 @@ public class ArchiveService(
         await CheckIfRunComplete(cancellationToken);
     }
 
-    public async Task UpdateAclEntries(string runId, string localFilePath, AclEntry[] aclEntries, CancellationToken cancellationToken)
+    public async Task UpdateAclEntries(string runId, string localFilePath, AclEntry[] aclEntries,
+        CancellationToken cancellationToken)
     {
         if (!_currentArchiveRun.Files.TryGetValue(localFilePath, out var fileMeta)) return;
         var updatedMeta = fileMeta with
@@ -232,6 +240,12 @@ public class ArchiveService(
         await CheckIfRunComplete(cancellationToken);
         if (cancellationToken.IsCancellationRequested && !_tcs.Task.IsCompleted) _tcs.TrySetCanceled(cancellationToken);
         await _tcs.Task;
+    }
+
+    public bool FileIsSkipped(string localFilePath)
+    {
+        if (!_currentArchiveRun.Files.TryGetValue(localFilePath, out var fileMeta)) return false;
+        return fileMeta.Status == FileStatus.Skipped;
     }
 
     private async Task CheckIfRunComplete(CancellationToken cancellationToken)

@@ -15,14 +15,14 @@ public record FileProcessResult(
 
 public interface IChunkedEncryptingFileProcessor
 {
-    Task<FileProcessResult> ProcessFileAsync(string inputPath, CancellationToken cancellationToken);
+    Task<FileProcessResult> ProcessFileAsync(string runId, string inputPath, CancellationToken cancellationToken);
 }
 
 public class ChunkedEncryptingFileProcessor(
     IContextResolver contextResolver,
     IMediator mediator) : IChunkedEncryptingFileProcessor
 {
-    public async Task<FileProcessResult> ProcessFileAsync(string inputPath,
+    public async Task<FileProcessResult> ProcessFileAsync(string runId, string inputPath,
         CancellationToken cancellationToken = default)
     {
         // full-file hasher
@@ -139,7 +139,7 @@ public class ChunkedEncryptingFileProcessor(
                 bytesInChunk
             );
             chunks.Add(chunkData);
-            await mediator.ProcessChunk(chunkData, cancellationToken);
+            await mediator.ProcessChunk((runId, inputPath, chunkData), cancellationToken);
 
             // prepare for next chunk
             chunkIndex++;

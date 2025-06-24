@@ -6,18 +6,19 @@ namespace aws_backup;
 public class StateUploadOrchestration(
     IHotStorageService hotStorageService,
     IMediator mediator,
-    ILogger<StateUploadOrchestration> logger,
-    Configuration configuration) : BackgroundService
+    IContextResolver contextResolver,
+    ILogger<StateUploadOrchestration> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
+        var delayBetweenUploads = contextResolver.ResolveDelayBetweenUploads();
         var archiveTask = Task.Run(async () =>
         {
             await foreach (var (archive, key) in mediator.GetArchiveState(cancellationToken))
                 try
                 {
                     await hotStorageService.UploadAsync(key, archive, cancellationToken);
-                    await Task.Delay(configuration.MsDelayBetweenArchiveSaves, cancellationToken);
+                    await Task.Delay(delayBetweenUploads, cancellationToken);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -37,7 +38,7 @@ public class StateUploadOrchestration(
                 try
                 {
                     await hotStorageService.UploadAsync(key, manifest, cancellationToken);
-                    await Task.Delay(configuration.MsDelayBetweenManifestSaves, cancellationToken);
+                    await Task.Delay(delayBetweenUploads, cancellationToken);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {

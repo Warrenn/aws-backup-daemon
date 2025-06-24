@@ -17,7 +17,7 @@ public interface IS3Service
     Task ScheduleDeepArchiveRecovery(CloudChunkDetails cloudChunkDetails, CancellationToken cancellationToken);
 
     Task<IEnumerable<S3StorageInfo>>
-        GetStorageClasses(Configuration configuration, CancellationToken cancellationToken);
+        GetStorageClasses(CancellationToken cancellationToken);
 }
 
 public class S3Service : IS3Service
@@ -48,8 +48,7 @@ public class S3Service : IS3Service
         throw new NotImplementedException();
     }
 
-    public async Task<IEnumerable<S3StorageInfo>> GetStorageClasses(Configuration configuration,
-        CancellationToken cancellationToken)
+    public async Task<IEnumerable<S3StorageInfo>> GetStorageClasses(CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }

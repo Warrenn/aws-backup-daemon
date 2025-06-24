@@ -7,7 +7,6 @@ using Microsoft.Extensions.Logging;
 namespace aws_backup;
 
 public class SqsPollingOrchestration(
-    Configuration configuration,
     IAwsClientFactory clientFactory,
     ILogger<SqsPollingOrchestration> logger,
     IMediator mediator,
@@ -16,14 +15,14 @@ public class SqsPollingOrchestration(
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        var sqs = await clientFactory.CreateSqsClient(configuration, cancellationToken);
+        var sqs = await clientFactory.CreateSqsClient(cancellationToken);
 
-        var queueUrl = configuration.QueueUrl;
-        var waitTimeSeconds = configuration.SqsWaitTimeSeconds;
-        var maxNumberOfMessages = configuration.SqsMaxNumberOfMessages;
-        var visibilityTimeout = configuration.SqsVisibilityTimeout;
-        var retryDelay = configuration.SqsRetryDelaySeconds;
-        var sqsDecryptionKey = await contextResolver.ResolveSqsDecryptionKey(configuration, cancellationToken);
+        var queueUrl = contextResolver.ResolveQueueUrl();
+        var waitTimeSeconds = contextResolver.ResolveSqsWaitTimeSeconds();
+        var maxNumberOfMessages = contextResolver.ResolveSqsMaxNumberOfMessages();
+        var visibilityTimeout = contextResolver.ResolveSqsVisibilityTimeout();
+        var retryDelay = contextResolver.ResolveSqsRetryDelaySeconds();
+        var sqsDecryptionKey = await contextResolver.ResolveSqsDecryptionKey(cancellationToken);
 
         logger.LogInformation("Starting SQS polling on {Url}", queueUrl);
 
@@ -61,7 +60,7 @@ public class SqsPollingOrchestration(
                     logger.LogInformation("Received message {Id}", msg.MessageId);
                     var messageString = msg.Body;
                     if (string.IsNullOrWhiteSpace(messageString)) continue;
-                    if (configuration.EncryptSQS) messageString = AesHelper.DecryptString(msg.Body, sqsDecryptionKey);
+                    if (contextResolver.ResolveEncryptSQS()) messageString = AesHelper.DecryptString(msg.Body, sqsDecryptionKey);
 
                     var utf8 = Encoding.UTF8.GetBytes(messageString);
                     var reader = new Utf8JsonReader(utf8, true, default);
