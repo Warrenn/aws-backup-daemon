@@ -122,6 +122,8 @@ public class ChunkedEncryptingFileProcessor(
 
         async Task FinalizeChunkAsync()
         {
+            if (chunkHasher is null) return;
+
             // finalize chunk hash
             chunkHasher.TransformFinalBlock([], 0, 0);
 

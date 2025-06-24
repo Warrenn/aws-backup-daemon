@@ -15,7 +15,7 @@ public class ArchiveFilesOrchestration(
 
     protected override Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        var readConcurrency = contextResolver.ResolveReadConcurrency();
+        var readConcurrency = contextResolver.NoOfConcurrentDownloadsPerFile();
 
         _workers = new Task[readConcurrency];
         for (var i = 0; i < _workers.Length; i++)

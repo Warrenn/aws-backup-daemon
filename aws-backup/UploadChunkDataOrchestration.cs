@@ -19,7 +19,7 @@ public class UploadChunkDataOrchestration(
 
     protected override Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        var uploadConcurrency = contextResolver.ResolveUploadConcurrency();
+        var uploadConcurrency = contextResolver.NoOfS3FilesToUploadConcurrently();
         // Spin up N worker loops
         _workers = new Task[uploadConcurrency];
         for (var i = 0; i < _workers.Length; i++)

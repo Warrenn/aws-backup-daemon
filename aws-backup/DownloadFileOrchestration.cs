@@ -22,7 +22,7 @@ public class DownloadFileOrchestration(
 
     protected override Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        var restoreS3Concurrency = contextResolver.ResolveRestoreS3Concurrency();
+        var restoreS3Concurrency = contextResolver.NoOfS3FilesToDownloadConcurrently();
         // Spin up N worker loops
         _workers = new Task[restoreS3Concurrency + 1];
         _workers[0] = Task.Run(() => RetryFailedAttempts(cancellationToken), cancellationToken);

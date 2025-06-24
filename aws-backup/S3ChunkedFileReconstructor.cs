@@ -28,7 +28,7 @@ public class S3ChunkedFileReconstructor(
         var outputFilePath = Path.Combine(destinationFolder, request.FilePath);
         var bufferSize = contextResolver.ResolveReadBufferSize();
         var chunkSize = contextResolver.ResolveChunkSizeBytes();
-        var maxDownloadConcurrency = contextResolver.ResolveReadConcurrency();
+        var maxDownloadConcurrency = contextResolver.NoOfConcurrentDownloadsPerFile();
         var originalFileSize = request.Size;
         var aesKey = await contextResolver.ResolveAesKey(cancellationToken);
 

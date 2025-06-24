@@ -10,14 +10,11 @@ public interface IContextResolver
     string ResolveS3Key(DataChunkDetails chunk);
     string ResolveCacheFolder();
     Task<byte[]> ResolveAesKey(CancellationToken cancellationToken);
-    Func<int, string, Exception, TimeSpan> ResolveRetryTimeAlgorithm();
     S3StorageClass ResolveHotStorage();
     string ResolveArchiveKey(string runId);
-    string ResolveChunkManifestKey();
     Task<byte[]> ResolveSqsDecryptionKey(CancellationToken cancellationToken);
-    string ResolveRestoreLocation(string file);
     string ResolveRestoreFolder(string requestRestoreId);
-    int ResolveReadConcurrency();
+    int NoOfConcurrentDownloadsPerFile();
     bool ResolveKeepTimeStamps();
     bool ResolveKeepOwnerGroup();
     bool ResolveKeepAclEntries();
@@ -25,14 +22,14 @@ public interface IContextResolver
     string? ResolveIgnoreFilePath();
     int ResolveReadBufferSize();
     long ResolveChunkSizeBytes();
-    int ResolveRestoreS3Concurrency();
+    int NoOfS3FilesToDownloadConcurrently();
     int ResolveDownloadRetryDelay();
     int ResolveDownloadAttemptLimit();
     int ResolveRetryCheckInterval();
     bool ResolveCheckDownloadHash();
     int ResolveUploadAttemptLimit();
     int ResolveUploadRetryDelay();
-    int ResolveUploadConcurrency();
+    int NoOfS3FilesToUploadConcurrently();
     long ResolveS3PartSize();
     int ResolveStorageCheckDelay();
     string ResolveQueueUrl();
@@ -111,7 +108,7 @@ public class ContextResolver : IContextResolver
         throw new NotImplementedException();
     }
 
-    public int ResolveReadConcurrency()
+    public int NoOfConcurrentDownloadsPerFile()
     {
         throw new NotImplementedException();
     }
@@ -151,7 +148,7 @@ public class ContextResolver : IContextResolver
         throw new NotImplementedException();
     }
 
-    public int ResolveRestoreS3Concurrency()
+    public int NoOfS3FilesToDownloadConcurrently()
     {
         throw new NotImplementedException();
     }
@@ -186,7 +183,7 @@ public class ContextResolver : IContextResolver
         throw new NotImplementedException();
     }
 
-    public int ResolveUploadConcurrency()
+    public int NoOfS3FilesToUploadConcurrently()
     {
         throw new NotImplementedException();
     }
