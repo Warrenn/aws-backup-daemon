@@ -4,84 +4,99 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
+internal record FailedUploadAttempt(
+    string RunId,
+    string FilePath,
+    DateTimeOffset NextAttemptAt,
+    Exception Exception,
+    int AttemptNo);
+
 public class RetryFileOrchestration(
     IMediator mediator,
     IContextResolver contextResolver,
-    Configuration configuration,
     IArchiveService archiveService,
     ILogger<RetryFileOrchestration> logger) : BackgroundService
 {
-    private readonly ConcurrentDictionary<string, Exception> _failedFiles = [];
-    private readonly ConcurrentDictionary<string, int> _retryAttempts = [];
-    private readonly ConcurrentDictionary<string, CancellationTokenSource> _timers = [];
+    private readonly ConcurrentDictionary<string, FailedUploadAttempt> _retryAttempts = [];
+    private Task[] _workers = [];
 
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
+        _workers = new Task[2];
         var currentRunId = "";
-        await foreach (var (runId, filePath, exception) in mediator.GetRetries(cancellationToken))
+
+        _workers[0] = Task.Run(async () =>
         {
-            if (currentRunId != runId)
+            await foreach (var (runId, filePath, exception) in mediator.GetRetries(cancellationToken))
             {
-                currentRunId = runId;
-                _failedFiles.Clear();
-                _retryAttempts.Clear();
-                foreach (var (_, t) in _timers)
+                if (currentRunId != runId)
                 {
-                    await t.CancelAsync();
-                    t.Dispose();
+                    currentRunId = runId;
+                    _retryAttempts.Clear();
                 }
 
-                _timers.Clear();
+                var key = $"{runId}::{filePath}";
+                var uploadAttemptLimit = contextResolver.ResolveUploadAttemptLimit();
+                var uploadRetryDelay = contextResolver.ResolveUploadRetryDelay();
+
+                if (_retryAttempts.TryGetValue(key, out var existingAttempt) &&
+                    existingAttempt.AttemptNo > uploadAttemptLimit)
+                {
+                    await archiveService.RecordFailedFile(runId, filePath, exception, cancellationToken);
+                    logger.LogWarning("Download attempt limit reached for {FilePath} in archive Run {RestoreId}",
+                        filePath, runId);
+
+                    _retryAttempts.TryRemove(key, out _);
+                    continue;
+                }
+
+                var addedAttempt = new FailedUploadAttempt(
+                    runId,
+                    filePath,
+                    DateTimeOffset.UtcNow.AddSeconds(uploadRetryDelay),
+                    exception,
+                    1);
+
+                if (_retryAttempts.TryRemove(key, out var retryAttempt))
+                    addedAttempt = addedAttempt with
+                    {
+                        AttemptNo = retryAttempt.AttemptNo + 1
+                    };
+
+                _retryAttempts.TryAdd(key, addedAttempt);
             }
+        }, cancellationToken);
 
-            if (_failedFiles.ContainsKey(filePath)) continue;
 
-            var attemptNo = 0;
-            if (_retryAttempts.TryGetValue(filePath, out var attempts))
-                attemptNo = attempts + 1;
-
-            if (attemptNo > configuration.RetryLimit)
+        _workers[1] = Task.Run(async () =>
+        {
+            while (!cancellationToken.IsCancellationRequested)
             {
-                _failedFiles.TryAdd(filePath, exception);
-                await archiveService.RecordFailedFile(runId, filePath, exception, cancellationToken);
-                continue;
+                var attempts = _retryAttempts.Values.ToList();
+                foreach (var attempt in attempts)
+                {
+                    var now = DateTimeOffset.UtcNow;
+                    if (now < attempt.NextAttemptAt) continue;
+
+                    await mediator.ProcessFile(attempt.RunId, attempt.FilePath, cancellationToken);
+                }
+
+                await Task.Delay(contextResolver.ResolveRetryCheckInterval(), cancellationToken);
             }
+        }, cancellationToken);
 
-            var timeAlg = contextResolver.ResolveRetryTimeAlgorithm(configuration);
-            _retryAttempts[filePath] = attemptNo;
-            var retryDelay = timeAlg(attemptNo, filePath, exception);
+        await Task.WhenAll(_workers);
+    }
 
-            if (_timers.TryRemove(filePath, out var existingSource))
-            {
-                await existingSource.CancelAsync();
-                existingSource.Dispose();
-            }
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        // Signal no more items
+        // (Producer side should call sharedChannel.Writer.Complete())
+        await base.StopAsync(cancellationToken);
 
-            var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            _timers[filePath] = cts;
-            var key = filePath;
-
-            // fire‐and‐forget the async work
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await Task.Delay(retryDelay, cts.Token);
-                    await mediator.ProcessFile(runId, key, cts.Token);
-                }
-                catch (OperationCanceledException)
-                {
-                }
-                catch (Exception e)
-                {
-                    logger.LogError(e, "Error processing retry for file {FilePath} in archive {runId}",
-                        key, runId);
-                }
-                finally
-                {
-                    if (_timers.TryRemove(key, out var oldCts)) oldCts.Dispose();
-                }
-            }, cts.Token);
-        }
+        // Wait for any in-flight work to finish (optional timeout)
+        using var timeoutCts =
+            new CancellationTokenSource(TimeSpan.FromSeconds(contextResolver.ResolveShutdownTimeoutSeconds()));
+        await Task.WhenAny(Task.WhenAll(_workers), Task.Delay(-1, timeoutCts.Token));
     }
 }

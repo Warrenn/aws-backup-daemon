@@ -6,9 +6,11 @@ namespace aws_backup;
 
 public interface IS3ChunkedFileReconstructor
 {
-    Task ReconstructAsync(
+    Task<string> ReconstructAsync(
         DownloadFileFromS3Request request,
         CancellationToken cancellationToken);
+
+    Task<bool> VerifyDownloadHashAsync(DownloadFileFromS3Request downloadRequest, string localFilePath, CancellationToken cancellationToken);
 }
 
 public class S3ChunkedFileReconstructor(
@@ -17,18 +19,18 @@ public class S3ChunkedFileReconstructor(
     IAwsClientFactory awsClientFactory
 ) : IS3ChunkedFileReconstructor
 {
-    public async Task ReconstructAsync(
+    public async Task<string> ReconstructAsync(
         DownloadFileFromS3Request request,
         CancellationToken cancellationToken)
     {
         var s3 = await awsClientFactory.CreateS3Client(configuration, cancellationToken);
-        var destinationFolder = contextResolver.ResolveRestoreFolder(configuration, request.RestoreId);
+        var destinationFolder = contextResolver.ResolveRestoreFolder(request.RestoreId);
         var outputFilePath = Path.Combine(destinationFolder, request.FilePath);
         var bufferSize = configuration.ReadBufferSize;
         var chunkSize = configuration.ChunkSizeBytes;
         var maxDownloadConcurrency = configuration.MaxDownloadConcurrency;
         var originalFileSize = request.Size;
-        var aesKey = await contextResolver.ResolveAesKey(configuration, cancellationToken);
+        var aesKey = await contextResolver.ResolveAesKey(cancellationToken);
 
         // Ensure output file exists and is sized (optional)
         await using (var pre = new FileStream(
@@ -108,5 +110,13 @@ public class S3ChunkedFileReconstructor(
             FileShare.None);
 
         fs.SetLength(originalFileSize);
+        
+        return outputFilePath;
+    }
+
+    public async Task<bool> VerifyDownloadHashAsync(DownloadFileFromS3Request downloadRequest, string localFilePath,
+        CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
     }
 }

@@ -42,7 +42,6 @@ public class ArchiveRun
     public required string RunId { get; init; }
     public required string CronSchedule { get; init; }
     public required ArchiveRunStatus Status { get; set; } = ArchiveRunStatus.Processing;
-    public required Configuration Configuration { get; init; } = new();
     public required DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
 
     public DateTimeOffset? CompletedAt { get; set; }
@@ -57,8 +56,7 @@ public interface IArchiveService
 {
     Task<ArchiveRun?> LookupArchiveRun(string runId, CancellationToken cancellationToken);
 
-    Task<ArchiveRun> StartNewArchiveRun(RunRequest request, Configuration configuration,
-        CancellationToken cancellationToken);
+    Task<ArchiveRun> StartNewArchiveRun(RunRequest request, CancellationToken cancellationToken);
 
     Task<bool> DoesFileRequireProcessing(string archiveRunId, string filePath, CancellationToken cancellationToken);
     Task ReportProcessingResult(string archiveRunId, FileProcessResult result, CancellationToken cancellationToken);
@@ -75,7 +73,8 @@ public interface IArchiveService
 
 public class ArchiveService(
     IS3Service s3Service,
-    IMediator mediator
+    IMediator mediator,
+    IContextResolver contextResolver
 ) : IArchiveService
 {
     private ArchiveRun _currentArchiveRun = null!;
@@ -88,15 +87,13 @@ public class ArchiveService(
         return await s3Service.GetArchive(runId, cancellationToken);
     }
 
-    public async Task<ArchiveRun> StartNewArchiveRun(RunRequest request, Configuration configuration,
-        CancellationToken cancellationToken)
+    public async Task<ArchiveRun> StartNewArchiveRun(RunRequest request, CancellationToken cancellationToken)
     {
         _currentArchiveRun = new ArchiveRun
         {
             RunId = request.RunId,
             CronSchedule = request.CronSchedule,
             PathsToArchive = request.PathsToArchive,
-            Configuration = configuration,
             CreatedAt = DateTimeOffset.UtcNow,
             Status = ArchiveRunStatus.Processing
         };

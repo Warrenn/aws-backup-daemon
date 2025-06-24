@@ -4,24 +4,29 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
+internal record FailedAttempt(
+    DownloadFileFromS3Request Request,
+    DateTimeOffset NextAttemptAt,
+    Exception Exception,
+    int AttemptNo);
+
 public class DownloadFileOrchestration(
     IMediator mediator,
-    Configuration configuration,
     IS3ChunkedFileReconstructor reconstructor,
     IRestoreService restoreService,
     ILogger<DownloadFileOrchestration> logger,
     IContextResolver contextResolver) : BackgroundService
 {
-    private readonly ConcurrentDictionary<string, DownloadFileFromS3Request> _requestsRetried = [];
-    private readonly ConcurrentDictionary<string, int> _retryAttempts = [];
-    private readonly ConcurrentDictionary<string, CancellationTokenSource> _timers = [];
+    private readonly ConcurrentDictionary<string, FailedAttempt> _retryAttempts = [];
     private Task[] _workers = [];
 
     protected override Task ExecuteAsync(CancellationToken cancellationToken)
     {
+        var restoreS3Concurrency = contextResolver.ResolveRestoreS3Concurrency();
         // Spin up N worker loops
-        _workers = new Task[configuration.RestoreS3Concurrency];
-        for (var i = 0; i < _workers.Length; i++)
+        _workers = new Task[restoreS3Concurrency + 1];
+        _workers[0] = Task.Run(() => RetryFailedAttempts(cancellationToken), cancellationToken);
+        for (var i = 1; i < _workers.Length; i++)
             _workers[i] = Task.Run(() => WorkerLoopAsync(cancellationToken), cancellationToken);
 
         // Return a task that completes when all workers finish
@@ -33,17 +38,71 @@ public class DownloadFileOrchestration(
         await foreach (var downloadRequest in mediator.GetDownloadRequests(cancellationToken))
         {
             var key = $"{downloadRequest.RestoreId}::{downloadRequest.FilePath}";
+            var downloadRetryDelay = contextResolver.ResolveDownloadRetryDelay();
+            var keepTimeStamps = contextResolver.ResolveKeepTimeStamps();
+            var keepOwnerGroup = contextResolver.ResolveKeepOwnerGroup();
+            var keepAclEntries = contextResolver.ResolveKeepAclEntries();
+            var downloadAttemptLimit = contextResolver.ResolveDownloadAttemptLimit();
 
-            _requestsRetried.TryAdd(key, downloadRequest);
+            if (_retryAttempts.TryGetValue(key, out var existingAttempt) &&
+                existingAttempt.AttemptNo > downloadAttemptLimit)
+            {
+                await restoreService.ReportDownloadFailed(
+                    downloadRequest,
+                    existingAttempt.Exception,
+                    cancellationToken);
+                logger.LogWarning("Download attempt limit reached for {FilePath} in restore {RestoreId}",
+                    downloadRequest.FilePath, downloadRequest.RestoreId);
+
+                _retryAttempts.TryRemove(key, out _);
+                continue;
+            }
+
             try
             {
-                await reconstructor.ReconstructAsync(downloadRequest, cancellationToken);
+                var localFilePath = await reconstructor.ReconstructAsync(downloadRequest, cancellationToken);
+                var checkDownloadHash = contextResolver.ResolveCheckDownloadHash();
+                var hashPassed = !checkDownloadHash ||
+                                 await reconstructor.VerifyDownloadHashAsync(downloadRequest, localFilePath,
+                                     cancellationToken);
 
-                _requestsRetried.TryRemove(key, out _);
-                _retryAttempts.TryRemove(key, out _);
-                _timers.TryRemove(key, out _);
+                if (!hashPassed)
+                {
+                    logger.LogWarning("Hash verification failed for {FilePath} in restore {RestoreId}",
+                        downloadRequest.FilePath, downloadRequest.RestoreId);
+
+                    var addedAttempt = new FailedAttempt(
+                        downloadRequest,
+                        DateTimeOffset.UtcNow.AddSeconds(downloadRetryDelay),
+                        new InvalidOperationException("Hash verification failed"),
+                        1);
+
+                    if (_retryAttempts.TryRemove(key, out var retryAttempt))
+                        addedAttempt = addedAttempt with
+                        {
+                            AttemptNo = retryAttempt.AttemptNo + 1
+                        };
+
+                    _retryAttempts.TryAdd(key, addedAttempt);
+                    continue;
+                }
 
                 await restoreService.ReportDownloadComplete(downloadRequest, cancellationToken);
+
+                if (keepTimeStamps)
+                    FileHelper.SetTimestamps(localFilePath, downloadRequest.Created ?? DateTimeOffset.UtcNow,
+                        downloadRequest.LastModified ?? DateTimeOffset.UtcNow);
+
+                if (keepOwnerGroup)
+                    await FileHelper.SetOwnerGroupAsync(
+                        localFilePath,
+                        downloadRequest.Owner ?? "",
+                        downloadRequest.Group ?? "",
+                        cancellationToken);
+
+                if (keepAclEntries) FileHelper.ApplyAcl(downloadRequest.AclEntries ?? [], localFilePath);
+
+                _retryAttempts.TryRemove(key, out _);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -51,53 +110,37 @@ public class DownloadFileOrchestration(
             }
             catch (Exception exception)
             {
-                var attemptNo = 0;
-                if (_retryAttempts.TryGetValue(key, out var attempts))
-                    attemptNo = attempts + 1;
+                var addedAttempt = new FailedAttempt(
+                    downloadRequest,
+                    DateTimeOffset.UtcNow.AddSeconds(downloadRetryDelay),
+                    exception,
+                    1);
 
-                if (attemptNo > configuration.DownloadRetryLimit)
-                {
-                    await restoreService.ReportDownloadFailed(downloadRequest, exception, cancellationToken);
-                    continue;
-                }
-
-                var timeAlg = contextResolver.ResolveRetryTimeAlgorithm(configuration);
-                _retryAttempts[key] = attemptNo;
-                var retryDelay = timeAlg(attemptNo, key, exception);
-
-                if (_timers.TryRemove(key, out var existingSource))
-                {
-                    await existingSource.CancelAsync();
-                    existingSource.Dispose();
-                }
-
-                var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                _timers[key] = cts;
-                var retryKey = key;
-
-                // fire‐and‐forget the async work
-                _ = Task.Run(async () =>
-                {
-                    try
+                if (_retryAttempts.TryRemove(key, out var retryAttempt))
+                    addedAttempt = addedAttempt with
                     {
-                        var retryReq = _requestsRetried.GetValueOrDefault(retryKey, downloadRequest);
-                        await Task.Delay(retryDelay, cts.Token);
-                        await mediator.DownloadFileFromS3(retryReq, cts.Token);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                    }
-                    catch (Exception e)
-                    {
-                        logger.LogError(e, "Error processing restore download for file {FilePath}",
-                            key);
-                    }
-                    finally
-                    {
-                        if (_timers.TryRemove(retryKey, out var oldCts)) oldCts.Dispose();
-                    }
-                }, cts.Token);
+                        AttemptNo = retryAttempt.AttemptNo + 1
+                    };
+
+                _retryAttempts.TryAdd(key, addedAttempt);
             }
+        }
+    }
+
+    private async Task RetryFailedAttempts(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var attempts = _retryAttempts.Values.ToList();
+            foreach (var attempt in attempts)
+            {
+                var now = DateTimeOffset.UtcNow;
+                if (now < attempt.NextAttemptAt) continue;
+
+                await mediator.DownloadFileFromS3(attempt.Request, cancellationToken);
+            }
+
+            await Task.Delay(contextResolver.ResolveRetryCheckInterval(), cancellationToken);
         }
     }
 
@@ -108,7 +151,8 @@ public class DownloadFileOrchestration(
         await base.StopAsync(cancellationToken);
 
         // Wait for any in-flight work to finish (optional timeout)
-        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(configuration.ShutdownTimeoutSeconds));
+        using var timeoutCts =
+            new CancellationTokenSource(TimeSpan.FromSeconds(contextResolver.ResolveShutdownTimeoutSeconds()));
         await Task.WhenAny(Task.WhenAll(_workers), Task.Delay(-1, timeoutCts.Token));
     }
 }

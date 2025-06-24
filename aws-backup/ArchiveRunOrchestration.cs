@@ -6,7 +6,7 @@ namespace aws_backup;
 public class ArchiveRunOrchestration(
     IMediator mediator,
     IArchiveService archiveService,
-    Configuration configuration,
+    IContextResolver contextResolver,
     IFileLister fileLister,
     ILogger<ArchiveRunOrchestration> logger) : BackgroundService
 {
@@ -16,27 +16,28 @@ public class ArchiveRunOrchestration(
         // It will read from the archiveQueue and process each archive.
         await foreach (var runRequest in mediator.GetRunRequests(cancellationToken))
         {
+            var ignoreFilePath = contextResolver.ResolveIgnoreFilePath();
             var archiveRun = await archiveService.LookupArchiveRun(runRequest.RunId, cancellationToken);
             if (archiveRun is null)
             {
                 logger.Log(LogLevel.Information, "Creating new archive run for {RunId}", runRequest.RunId);
-                archiveRun = await archiveService.StartNewArchiveRun(runRequest, configuration, cancellationToken);
+                archiveRun = await archiveService.StartNewArchiveRun(runRequest, cancellationToken);
             }
 
             if (archiveRun.Status == ArchiveRunStatus.Completed) continue;
 
             string[] ignorePatterns = [];
-            if (File.Exists(configuration.IgnoreFile))
+            if (File.Exists(ignoreFilePath))
                 try
                 {
-                    ignorePatterns = (await File.ReadAllLinesAsync(configuration.IgnoreFile, cancellationToken))
+                    ignorePatterns = (await File.ReadAllLinesAsync(ignoreFilePath, cancellationToken))
                         .Select(l => l.Trim())
                         .Where(l => !string.IsNullOrWhiteSpace(l) && !l.StartsWith('#'))
                         .ToArray();
                 }
                 catch (Exception e)
                 {
-                    logger.LogError(e, "Failed to read ignore file {IgnoreFile}", configuration.IgnoreFile);
+                    logger.LogError(e, "Failed to read ignore file {IgnoreFile}", ignoreFilePath);
                 }
 
             foreach (var filePath in fileLister.GetAllFiles(runRequest.PathsToArchive, ignorePatterns))

@@ -28,20 +28,34 @@ public enum FileRestoreStatus
     Failed
 }
 
-public class RestoreFileMetaData
+public record RestoreFileMetaData(
+    ByteArrayKey[] Chunks,
+    string FilePath,
+    long Size
+)
 {
-    public required ByteArrayKey[] Chunks { get; init; }
+    public DateTimeOffset? LastModified { get; set; }
+    public DateTimeOffset? Created { get; set; }
+    public AclEntry[]? AclEntries { get; set; }
+    public string? Owner { get; set; }
+    public string? Group { get; set; }
+    public byte[]? Checksum { get; set; }
     public FileRestoreStatus Status { get; set; } = FileRestoreStatus.PendingDeepArchiveRestore;
-    public required string FilePath { get; init; }
-    
-    public required long Size { get; init; }
 }
 
 public record DownloadFileFromS3Request(
     string RestoreId,
     string FilePath,
     CloudChunkDetails[] CloudChunkDetails,
-    long Size);
+    long Size)
+{
+    public DateTimeOffset? LastModified { get; set; }
+    public DateTimeOffset? Created { get; set; }
+    public AclEntry[]? AclEntries { get; set; }
+    public string? Owner { get; set; }
+    public string? Group { get; set; }
+    public byte[]? Checksum { get; set; }
+}
 
 public record S3ChunkData(
     ByteArrayKey Hash,
@@ -52,8 +66,8 @@ public record S3ChunkData(
 }
 
 public record RestoreRequest(
-    string ArchiveRunId, 
-    string RestorePaths, 
+    string ArchiveRunId,
+    string RestorePaths,
     DateTimeOffset RequestedAt);
 
 public class RestoreRun
@@ -129,7 +143,15 @@ public class RestoreService(
                 metaData.FilePath,
                 cloudChunkDetails,
                 metaData.Size
-            ), cancellationToken);
+            )
+            {
+                LastModified = metaData.LastModified,
+                Created = metaData.Created,
+                AclEntries = metaData.AclEntries,
+                Owner = metaData.Owner,
+                Group = metaData.Group,
+                Checksum = metaData.Checksum
+            }, cancellationToken);
 
             metaData.Status = FileRestoreStatus.PendingS3Download;
         }
@@ -179,7 +201,15 @@ public class RestoreService(
                         fileMeta.FilePath,
                         cloudChunkDetails,
                         fileMeta.Size
-                    ), cancellationToken);
+                    )
+                    {
+                        LastModified = fileMeta.LastModified,
+                        Created = fileMeta.Created,
+                        AclEntries = fileMeta.AclEntries,
+                        Owner = fileMeta.Owner,
+                        Group = fileMeta.Group,
+                        Checksum = fileMeta.Checksum
+                    }, cancellationToken);
 
                     fileMeta.Status = FileRestoreStatus.PendingS3Download;
                 }

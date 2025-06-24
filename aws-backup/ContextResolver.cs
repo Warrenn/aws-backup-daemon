@@ -4,59 +4,74 @@ namespace aws_backup;
 
 public interface IContextResolver
 {
-    string ResolveS3BucketName(Configuration configuration);
-    S3StorageClass ResolveColdStorage(Configuration configuration);
-    ServerSideEncryptionMethod ResolveServerSideEncryptionMethod(Configuration configuration);
-    string ResolveS3Key(DataChunkDetails chunk, Configuration configuration);
-    string ResolveCacheFolder(Configuration configuration);
-    Task<byte[]> ResolveAesKey(Configuration configuration, CancellationToken cancellationToken);
-    Func<int, string, Exception, TimeSpan> ResolveRetryTimeAlgorithm(Configuration configuration);
-    S3StorageClass ResolveHotStorage(Configuration configuration);
+    string ResolveS3BucketName();
+    S3StorageClass ResolveColdStorage();
+    ServerSideEncryptionMethod ResolveServerSideEncryptionMethod();
+    string ResolveS3Key(DataChunkDetails chunk);
+    string ResolveCacheFolder();
+    Task<byte[]> ResolveAesKey(CancellationToken cancellationToken);
+    Func<int, string, Exception, TimeSpan> ResolveRetryTimeAlgorithm();
+    S3StorageClass ResolveHotStorage();
     string ResolveArchiveKey(string runId);
     string ResolveChunkManifestKey();
-    Task<byte[]> ResolveSqsDecryptionKey(Configuration configuration, CancellationToken cancellationToken);
-    string ResolveRestoreLocation(string file, Configuration configuration);
-    string ResolveRestoreFolder(Configuration configuration, string requestRestoreId);
+    Task<byte[]> ResolveSqsDecryptionKey(CancellationToken cancellationToken);
+    string ResolveRestoreLocation(string file);
+    string ResolveRestoreFolder(string requestRestoreId);
+    int ResolveReadConcurrency();
+    bool ResolveKeepTimeStamps();
+    bool ResolveKeepOwnerGroup();
+    bool ResolveKeepAclEntries();
+    int ResolveShutdownTimeoutSeconds();
+    string? ResolveIgnoreFilePath();
+    int ResolveReadBufferSize();
+    long ResolveChunkSizeBytes();
+    int ResolveRestoreS3Concurrency();
+    int ResolveDownloadRetryDelay();
+    int ResolveDownloadAttemptLimit();
+    int ResolveRetryCheckInterval();
+    bool ResolveCheckDownloadHash();
+    int ResolveUploadAttemptLimit();
+    int ResolveUploadRetryDelay();
 }
 
 public class ContextResolver : IContextResolver
 {
-    public string ResolveS3BucketName(Configuration configuration)
+    public string ResolveS3BucketName()
     {
-        return configuration.S3BucketName;
+        throw new NotImplementedException(nameof(ResolveS3BucketName));
     }
 
-    public S3StorageClass ResolveColdStorage(Configuration configuration)
+    public S3StorageClass ResolveColdStorage()
     {
         throw new NotImplementedException(nameof(ResolveColdStorage));
     }
 
-    public ServerSideEncryptionMethod ResolveServerSideEncryptionMethod(Configuration configuration)
+    public ServerSideEncryptionMethod ResolveServerSideEncryptionMethod()
     {
         throw new NotImplementedException(nameof(ResolveServerSideEncryptionMethod));
     }
 
-    public string ResolveS3Key(DataChunkDetails chunk, Configuration configuration)
+    public string ResolveS3Key(DataChunkDetails chunk)
     {
         throw new NotImplementedException(nameof(ResolveS3Key));
     }
 
-    public string ResolveCacheFolder(Configuration configuration)
+    public string ResolveCacheFolder()
     {
         throw new NotImplementedException(nameof(ResolveCacheFolder));
     }
 
-    public Task<byte[]> ResolveAesKey(Configuration configuration, CancellationToken cancellationToken)
+    public Task<byte[]> ResolveAesKey(CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public Func<int, string, Exception, TimeSpan> ResolveRetryTimeAlgorithm(Configuration configuration)
+    public Func<int, string, Exception, TimeSpan> ResolveRetryTimeAlgorithm()
     {
         throw new NotImplementedException(nameof(ResolveRetryTimeAlgorithm));
     }
 
-    public S3StorageClass ResolveHotStorage(Configuration configuration)
+    public S3StorageClass ResolveHotStorage()
     {
         throw new NotImplementedException();
     }
@@ -71,23 +86,93 @@ public class ContextResolver : IContextResolver
         throw new NotImplementedException();
     }
 
-    public Task<byte[]> ResolveSqsDecryptionKey(Configuration configuration, CancellationToken cancellationToken)
+    public Task<byte[]> ResolveSqsDecryptionKey(CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public string ResolveRestoreLocation(string file, Configuration configuration)
+    public string ResolveRestoreLocation(string file)
     {
         throw new NotImplementedException();
     }
 
-    public string ResolveRestoreFolder(Configuration configuration, string requestRestoreId)
+    public string ResolveRestoreFolder(string requestRestoreId)
     {
         throw new NotImplementedException();
     }
 
-    public Task<byte[]> ResolveAesKey(Configuration configuration)
+    public int ResolveReadConcurrency()
     {
-        throw new NotImplementedException(nameof(ResolveAesKey));
+        throw new NotImplementedException();
+    }
+
+    public bool ResolveKeepTimeStamps()
+    {
+        throw new NotImplementedException();
+    }
+
+    public bool ResolveKeepOwnerGroup()
+    {
+        throw new NotImplementedException();
+    }
+
+    public bool ResolveKeepAclEntries()
+    {
+        throw new NotImplementedException();
+    }
+
+    public int ResolveShutdownTimeoutSeconds()
+    {
+        throw new NotImplementedException();
+    }
+
+    public string? ResolveIgnoreFilePath()
+    {
+        throw new NotImplementedException();
+    }
+
+    public int ResolveReadBufferSize()
+    {
+        throw new NotImplementedException();
+    }
+
+    public long ResolveChunkSizeBytes()
+    {
+        throw new NotImplementedException();
+    }
+
+    public int ResolveRestoreS3Concurrency()
+    {
+        throw new NotImplementedException();
+    }
+
+    public int ResolveDownloadRetryDelay()
+    {
+        throw new NotImplementedException();
+    }
+
+    public int ResolveDownloadAttemptLimit()
+    {
+        throw new NotImplementedException();
+    }
+
+    public int ResolveRetryCheckInterval()
+    {
+        throw new NotImplementedException();
+    }
+
+    public bool ResolveCheckDownloadHash()
+    {
+        throw new NotImplementedException();
+    }
+
+    public int ResolveUploadAttemptLimit()
+    {
+        throw new NotImplementedException();
+    }
+
+    public int ResolveUploadRetryDelay()
+    {
+        throw new NotImplementedException();
     }
 }

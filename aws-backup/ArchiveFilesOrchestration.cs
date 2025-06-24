@@ -3,20 +3,20 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
-public abstract class ArchiveFilesOrchestration(
+public class ArchiveFilesOrchestration(
     IMediator mediator,
     IChunkedEncryptingFileProcessor processor,
     IArchiveService archiveService,
     ILogger<ArchiveFilesOrchestration> logger,
-    Configuration configuration)
+    IContextResolver contextResolver)
     : BackgroundService
 {
     private Task[] _workers = [];
-
     protected override Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        // Spin up N worker loops
-        _workers = new Task[configuration.ReadConcurrency];
+        var readConcurrency = contextResolver.ResolveReadConcurrency();
+
+        _workers = new Task[readConcurrency];
         for (var i = 0; i < _workers.Length; i++)
             _workers[i] = Task.Run(() => WorkerLoopAsync(cancellationToken), cancellationToken);
 
@@ -29,6 +29,10 @@ public abstract class ArchiveFilesOrchestration(
         await foreach (var (runId, filePath) in mediator.GetArchiveFiles(cancellationToken))
             try
             {
+                var keepTimeStamps = contextResolver.ResolveKeepTimeStamps();
+                var keepOwnerGroup = contextResolver.ResolveKeepOwnerGroup();
+                var keepAclEntries = contextResolver.ResolveKeepAclEntries();
+                
                 var requireProcessing = await archiveService.DoesFileRequireProcessing(runId, filePath, cancellationToken);
                 if (!requireProcessing)
                 {
@@ -39,18 +43,20 @@ public abstract class ArchiveFilesOrchestration(
                 logger.LogInformation("Processing {File} for {RunId}", filePath, runId);
                 var result = await processor.ProcessFileAsync(filePath, cancellationToken);
                 await archiveService.ReportProcessingResult(runId, result, cancellationToken);
-                if (configuration.KeepTimeStamps)
+                if (keepTimeStamps)
                 {
                     FileHelper.GetTimestamps(filePath, out var created, out var modified);
                     await archiveService.UpdateTimeStamps(runId, result.LocalFilePath, created, modified, cancellationToken);
                 }
 
-                if (configuration.KeepOwnerGroup)
+                if (keepOwnerGroup)
                 {
                     var (owner, group) = await FileHelper.GetOwnerGroupAsync(filePath, cancellationToken);
                     await archiveService.UpdateOwnerGroup(runId, result.LocalFilePath, owner, group, cancellationToken);
                 }
 
+                if(!keepAclEntries) continue;
+                
                 var aclEntries = FileHelper.GetFileAcl(filePath);
                 await archiveService.UpdateAclEntries(runId, result.LocalFilePath, aclEntries, cancellationToken);
             }
@@ -71,7 +77,7 @@ public abstract class ArchiveFilesOrchestration(
         await base.StopAsync(cancellationToken);
 
         // Wait for any in-flight work to finish (optional timeout)
-        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(configuration.ShutdownTimeoutSeconds));
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(contextResolver.ResolveShutdownTimeoutSeconds()));
         await Task.WhenAny(Task.WhenAll(_workers), Task.Delay(-1, timeoutCts.Token));
     }
 }

@@ -19,7 +19,6 @@ public interface IChunkedEncryptingFileProcessor
 }
 
 public class ChunkedEncryptingFileProcessor(
-    Configuration configuration,
     IContextResolver contextResolver,
     IMediator mediator) : IChunkedEncryptingFileProcessor
 {
@@ -29,10 +28,10 @@ public class ChunkedEncryptingFileProcessor(
         // full-file hasher
         using var fullHasher = SHA256.Create();
         var chunks = new List<DataChunkDetails>();
-        var bufferSize = configuration.ReadBufferSize;
-        var chunkSize = configuration.ChunkSizeBytes;
-        var cacheFolder = contextResolver.ResolveCacheFolder(configuration);
-        var aesKey = await contextResolver.ResolveAesKey(configuration, cancellationToken);
+        var bufferSize = contextResolver.ResolveReadBufferSize();
+        var chunkSize = contextResolver.ResolveChunkSizeBytes();
+        var cacheFolder = contextResolver.ResolveCacheFolder();
+        var aesKey = await contextResolver.ResolveAesKey(cancellationToken);
 
         // open for read, disallow writers
         await using var fs = new FileStream(

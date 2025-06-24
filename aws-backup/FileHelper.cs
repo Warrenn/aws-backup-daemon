@@ -36,6 +36,9 @@ public static class FileHelper
     public static async Task SetOwnerGroupAsync(string path, string owner, string group,
         CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(owner)) return;
+        if (string.IsNullOrWhiteSpace(group)) group = owner;
+
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             // PowerShell script to Set-Acl owner and (optionally) group entry
@@ -103,8 +106,9 @@ public static class FileHelper
                $"{((mode & exec) > 0 ? "x" : "-")}";
     }
 
-    public static void ApplyAcl(AclEntry[] acls, string targetPath)
+    public static void ApplyAcl(AclEntry[]? acls, string targetPath)
     {
+        if (acls is null || acls.Length == 0) return;
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             ApplyWindowsAcl(acls, targetPath);
         else
@@ -181,14 +185,14 @@ public static class FileHelper
         modified = File.GetLastWriteTimeUtc(path);
     }
 
-    public static void SetTimestamps(string path, DateTime created, DateTime modified)
+    public static void SetTimestamps(string path, DateTimeOffset created, DateTimeOffset modified)
     {
         // Set creation time (Local)
         // Optionally set UTC instead:
-        File.SetCreationTimeUtc(path, created);
+        File.SetCreationTimeUtc(path, created.DateTime.ToUniversalTime());
 
         // Set last‐write (modified) time (Local)
         // Optionally set UTC instead:
-        File.SetLastWriteTimeUtc(path, modified);
+        File.SetLastWriteTimeUtc(path, modified.DateTime.ToUniversalTime());
     }
 }

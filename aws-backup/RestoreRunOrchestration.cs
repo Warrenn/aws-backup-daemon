@@ -49,15 +49,23 @@ public class RestoreOrchestration(
                         .OrderBy(c => c.ChunkIndex)
                         .Select(c => c.Key)
                         .ToArray(),
-                    metadata.OriginalSize
+                    metadata.OriginalSize,
+                    metadata
                 }).ToDictionary(
                 i => i.file,
-                i => new RestoreFileMetaData
+                i => new RestoreFileMetaData(
+                    Chunks : i.chunkIds,
+                    FilePath : i.file,
+                    Size : i.OriginalSize ?? 0
+                )
                 {
-                    Chunks = i.chunkIds,
                     Status = FileRestoreStatus.PendingDeepArchiveRestore,
-                    FilePath = i.file,
-                    Size = i.OriginalSize ?? 0
+                    LastModified = i.metadata.LastModified,
+                    Created = i.metadata.Created,
+                    Owner = i.metadata.Owner,
+                    Group = i.metadata.Group,
+                    AclEntries = i.metadata.AclEntries,
+                    Checksum = i.metadata.HashKey
                 }
             );
 
