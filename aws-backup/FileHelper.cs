@@ -21,6 +21,16 @@ public static class FileHelper
             return (owner, "");
         }
 
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            var (osxStdOut, _, _) = await CommandLine.RunProcessAsync(
+                "stat",
+                $"-f \"%Su:%Sg\" \"{path}\"",
+                cancellationToken);
+            var osxStrings = osxStdOut.Trim().Split(':', 2);
+            return osxStrings.Length == 2 ? (osxStrings[0], osxStrings[1]) : ("", "");
+        }
+
         // stat --format '%U:%G' path
         var (output, _, _) = await CommandLine.RunProcessAsync(
             "stat",
@@ -43,10 +53,12 @@ public static class FileHelper
         {
             // PowerShell script to Set-Acl owner and (optionally) group entry
             // Owner
-            var psOwner = $"-NoProfile -Command " +
-                          $"'$acl=Get-Acl -Path \"{path}\"; " +
-                          $"$acl.SetOwner([System.Security.Principal.NTAccount]\"{owner}\"); " +
-                          $"Set-Acl -Path \"{path}\" -AclObject $acl'";
+            var psOwner = $"""
+                           -NoProfile -Command 
+                           '$acl=Get-Acl -Path "{path}";
+                           $acl.SetOwner([System.Security.Principal.NTAccount]"{owner}"); 
+                           Set-Acl -Path "{path}" -AclObject $acl'
+                           """;
             await CommandLine.RunProcessAsync("powershell", psOwner, cancellationToken);
 
             // (Windows has no single "group owner"; you'd typically add a group ACE instead.)
@@ -189,10 +201,10 @@ public static class FileHelper
     {
         // Set creation time (Local)
         // Optionally set UTC instead:
-        File.SetCreationTimeUtc(path, created.DateTime.ToUniversalTime());
+        File.SetCreationTimeUtc(path, created.DateTime);
 
         // Set last‐write (modified) time (Local)
         // Optionally set UTC instead:
-        File.SetLastWriteTimeUtc(path, modified.DateTime.ToUniversalTime());
+        File.SetLastWriteTimeUtc(path, modified.DateTime);
     }
 }

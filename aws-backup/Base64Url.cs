@@ -19,7 +19,7 @@ public static class Base64Url
     /// <summary>
     /// Convenience overload for encoding a UTF8 string.
     /// </summary>
-    public static string Encode(string text)
+    public static string EncodeUtf8(string text)
     {
         return Encode(Encoding.UTF8.GetBytes(text));
     }
@@ -51,7 +51,7 @@ public static class Base64Url
     /// <summary>
     /// Convenience overload for decoding a URL-safe Base64 string to a UTF8 string.
     /// </summary>
-    public static string DecodeToString(string urlSafe)
+    public static string DecodeUrl64ToUtf8(string urlSafe)
     {
         var bytes = Decode(urlSafe);
         return Encoding.UTF8.GetString(bytes);

@@ -20,8 +20,8 @@ public class CronJobOrchestration(
         configurationMonitor.OnChange((config, _) =>
         {
             if (config.CronSchedule == cronExpression.ToString()) return;
-            scheduleCts.Cancel();
             cronExpression = CronExpression.Parse(config.CronSchedule, CronFormat.Standard);
+            scheduleCts.Cancel();
             scheduleCts = new CancellationTokenSource();
         });
 
