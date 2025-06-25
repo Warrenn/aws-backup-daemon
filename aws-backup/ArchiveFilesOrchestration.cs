@@ -30,9 +30,9 @@ public class ArchiveFilesOrchestration(
         await foreach (var (runId, filePath) in mediator.GetArchiveFiles(cancellationToken))
             try
             {
-                var keepTimeStamps = contextResolver.ResolveKeepTimeStamps();
-                var keepOwnerGroup = contextResolver.ResolveKeepOwnerGroup();
-                var keepAclEntries = contextResolver.ResolveKeepAclEntries();
+                var keepTimeStamps = contextResolver.KeepTimeStamps();
+                var keepOwnerGroup = contextResolver.KeepOwnerGroup();
+                var keepAclEntries = contextResolver.KeepAclEntries();
 
                 var requireProcessing =
                     await archiveService.DoesFileRequireProcessing(runId, filePath, cancellationToken);
@@ -81,7 +81,7 @@ public class ArchiveFilesOrchestration(
 
         // Wait for any in-flight work to finish (optional timeout)
         using var timeoutCts =
-            new CancellationTokenSource(TimeSpan.FromSeconds(contextResolver.ResolveShutdownTimeoutSeconds()));
+            new CancellationTokenSource(TimeSpan.FromSeconds(contextResolver.ShutdownTimeoutSeconds()));
         await Task.WhenAny(Task.WhenAll(_workers), Task.Delay(-1, timeoutCts.Token));
     }
 }

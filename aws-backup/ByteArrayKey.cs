@@ -19,7 +19,7 @@ public readonly struct ByteArrayKey : IEquatable<ByteArrayKey>
         return _hash == other._hash
                && _data.AsSpan().SequenceEqual(other._data);
     }
-
+    
     public override bool Equals(object? obj)
     {
         return obj is ByteArrayKey other && Equals(other);

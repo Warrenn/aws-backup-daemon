@@ -8,7 +8,8 @@ public class RestoreOrchestration(
     IMediator mediator,
     IArchiveService archiveService,
     IRestoreService restoreService,
-    ILogger<ArchiveFilesOrchestration> logger
+    ILogger<ArchiveFilesOrchestration> logger,
+    IContextResolver contextResolver
 ) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
@@ -23,7 +24,7 @@ public class RestoreOrchestration(
                 continue;
             }
 
-            var restoreId = restoreService.ResolveId(restoreRequest);
+            var restoreId = contextResolver.RestoreId(restoreRequest);
             var restoreRun = await restoreService.LookupRestoreRun(restoreId, cancellationToken);
             if (restoreRun != null) continue;
 
@@ -47,16 +48,16 @@ public class RestoreOrchestration(
                     chunkIds = metadata
                         .Chunks
                         .OrderBy(c => c.ChunkIndex)
-                        .Select(c => c.Key)
+                        .Select(c => new ByteArrayKey(c.HashKey))
                         .ToArray(),
                     metadata.OriginalSize,
                     metadata
                 }).ToDictionary(
                 i => i.file,
                 i => new RestoreFileMetaData(
-                    Chunks : i.chunkIds,
-                    FilePath : i.file,
-                    Size : i.OriginalSize ?? 0
+                    i.chunkIds,
+                    i.file,
+                    i.OriginalSize ?? 0
                 )
                 {
                     Status = FileRestoreStatus.PendingDeepArchiveRestore,

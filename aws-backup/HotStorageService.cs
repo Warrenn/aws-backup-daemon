@@ -62,9 +62,9 @@ public class HotStorageService(
         // 1) Create the pipe
         var pipe = new Pipe();
         var s3 = await awsClientFactory.CreateS3Client(cancellationToken);
-        var bucketName = contextResolver.ResolveS3BucketName();
-        var partSizeBytes = contextResolver.ResolveS3PartSize();
-        var storageClass = contextResolver.ResolveHotStorage();
+        var bucketName = contextResolver.S3BucketId();
+        var partSizeBytes = contextResolver.S3PartSize();
+        var storageClass = contextResolver.HotStorage();
 
         // 2) Kick off the upload task, reading from the pipe's reader as a Stream
         var uploadTask = Task.Run(async () =>
@@ -112,7 +112,7 @@ public class HotStorageService(
         T>(string key, CancellationToken cancellationToken)
     {
         var s3 = await awsClientFactory.CreateS3Client(cancellationToken);
-        var bucketName = contextResolver.ResolveS3BucketName();
+        var bucketName = contextResolver.S3BucketId();
         using var resp = await s3.GetObjectAsync(
             new GetObjectRequest { BucketName = bucketName, Key = key },
             cancellationToken);

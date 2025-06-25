@@ -28,10 +28,10 @@ public class ChunkedEncryptingFileProcessor(
         // full-file hasher
         using var fullHasher = SHA256.Create();
         var chunks = new List<DataChunkDetails>();
-        var bufferSize = contextResolver.ResolveReadBufferSize();
-        var chunkSize = contextResolver.ResolveChunkSizeBytes();
-        var cacheFolder = contextResolver.ResolveCacheFolder();
-        var aesKey = await contextResolver.ResolveAesKey(cancellationToken);
+        var bufferSize = contextResolver.ReadBufferSize();
+        var chunkSize = contextResolver.ChunkSizeBytes();
+        var cacheFolder = contextResolver.LocalCacheFolder();
+        var aesKey = await contextResolver.AesFileEncryptionKey(cancellationToken);
 
         // open for read, disallow writers
         await using var fs = new FileStream(
@@ -99,7 +99,7 @@ public class ChunkedEncryptingFileProcessor(
             if (!Directory.Exists(cacheFolder))
                 Directory.CreateDirectory(cacheFolder);
 
-            var fileNameHash = Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(inputPath)));
+            var fileNameHash = Base64Url.Encode(SHA256.HashData(Encoding.UTF8.GetBytes(inputPath)));
             var outPath = $"{Path.Combine(cacheFolder, fileNameHash)}.chunk{chunkIndex:D4}.gz.aes";
             if (File.Exists(outPath)) File.Delete(outPath);
             chunkFileFs = new FileStream(outPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
@@ -137,7 +137,7 @@ public class ChunkedEncryptingFileProcessor(
             var chunkData = new DataChunkDetails(
                 chunkFileFs.Name,
                 chunkIndex,
-                new ByteArrayKey(chunkHasher.Hash ?? []),
+                chunkHasher.Hash,
                 bytesInChunk
             );
             chunks.Add(chunkData);

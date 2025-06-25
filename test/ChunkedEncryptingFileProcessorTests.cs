@@ -1,5 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
+using Amazon;
+using Amazon.S3;
+using Amazon.S3.Transfer;
 using aws_backup;
 using Moq;
 
@@ -23,6 +26,88 @@ public class ChunkedEncryptingFileProcessorTests : IDisposable
         if (File.Exists(_tempFile)) File.Delete(_tempFile);
     }
 
+
+    [Fact]
+    public async Task ProcessFileAsync_OneChunk_MultipleHashForCSV()
+    {
+        var tempFile = "/Users/warrennenslin/Downloads/ETH.csv";
+        var bucketName = "tierpoint-rclone20250616161037532500000002";
+        var s3Client = new AmazonS3Client(new AmazonS3Config
+        {
+            RegionEndpoint = RegionEndpoint.USEast1
+        }); // Assuming you have a valid S3 client setup
+
+        // Arrange: create a small file (less than chunk size)
+        // Mock context resolver
+        var ctxMock = new Mock<IContextResolver>();
+        var folder = "/Users/warrennenslin/workbench/experiment/aws-backup";
+        ctxMock.Setup(c => c.ReadBufferSize()).Returns(1024); // small buffer
+        ctxMock.Setup(c => c.ChunkSizeBytes()).Returns(1048576); // chunk size bigger than content
+        ctxMock.Setup(c => c.LocalRestoreFolder(It.IsAny<string>())).Returns(folder);
+        ctxMock.Setup(c => c.LocalCacheFolder()).Returns(folder);
+        ctxMock.Setup(c => c.NoOfConcurrentDownloadsPerFile()).Returns(2);
+        var aesKey = Convert.FromBase64String("rShkO4lOEPhNlNJ/LRokw2h4G0HDpe4rMnvG4WGFqwA=");
+        ctxMock.Setup(c => c.AesFileEncryptionKey(It.IsAny<CancellationToken>())).ReturnsAsync(aesKey);
+
+        var factoryMock = new Mock<IAwsClientFactory>();
+        factoryMock
+            .Setup(f => f.CreateS3Client(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(s3Client); // Mock S3 client
+
+        // Mock mediator
+        var mediatorMock = new Mock<IMediator>();
+        mediatorMock
+            .Setup(m => m.ProcessChunk(It.IsAny<(string, string, DataChunkDetails)>(), It.IsAny<CancellationToken>()))
+            .Returns(ValueTask.CompletedTask)
+            .Verifiable();
+
+        var processor = new ChunkedEncryptingFileProcessor(ctxMock.Object, mediatorMock.Object);
+        var reconstructor = new S3ChunkedFileReconstructor(ctxMock.Object, factoryMock.Object);
+
+        // Act
+        var result = await processor.ProcessFileAsync("run1", tempFile, CancellationToken.None);
+
+
+        var uploadDetails = new List<CloudChunkDetails>();
+        var utility = new TransferUtility(s3Client);
+        foreach (var chunkDetail in result.Chunks)
+        {
+            var fileName = Path.GetFileName(chunkDetail.LocalFilePath);
+            uploadDetails.Add(new CloudChunkDetails(fileName, bucketName, chunkDetail.HashKey));
+            await utility.UploadAsync(
+                chunkDetail.LocalFilePath,
+                bucketName,
+                fileName);
+        }
+
+        var destFile = await reconstructor.ReconstructAsync(
+            new DownloadFileFromS3Request(
+                "run1",
+                Path.Combine(folder, Path.GetFileName(tempFile)),
+                uploadDetails.ToArray(),
+                result.OriginalSize),
+            CancellationToken.None);
+
+        Assert.True(File.Exists(destFile));
+
+        // Assert
+        // Full file hash should equal SHA256 of content
+        using var sha = SHA256.Create();
+        var content = await File.ReadAllBytesAsync(tempFile);
+        var expectedHash = sha.ComputeHash(content);
+        Assert.Equal(expectedHash, result.FullFileHash);
+        Assert.Equal(tempFile, result.LocalFilePath);
+        Assert.Equal(content.Length, result.OriginalSize);
+
+        // Single chunk recorded
+        var chunk = result.Chunks[0];
+        Assert.Equal(0, chunk.ChunkIndex);
+        Assert.Equal(content.Length, result.OriginalSize);
+
+        // Ensure chunk file exists
+        Assert.True(File.Exists(chunk.LocalFilePath));
+    }
+
     [Fact]
     public async Task ProcessFileAsync_OneChunk_CreatesSingleChunkAndComputesHash()
     {
@@ -32,12 +117,11 @@ public class ChunkedEncryptingFileProcessorTests : IDisposable
 
         // Mock context resolver
         var ctxMock = new Mock<IContextResolver>();
-        ctxMock.Setup(c => c.ResolveReadBufferSize()).Returns(4); // small buffer
-        ctxMock.Setup(c => c.ResolveChunkSizeBytes()).Returns(16); // chunk size bigger than content
-        ctxMock.Setup(c => c.ResolveCacheFolder()).Returns(_cacheDir);
-        var aesKey = new byte[32];
-        RandomNumberGenerator.Fill(aesKey);
-        ctxMock.Setup(c => c.ResolveAesKey(It.IsAny<CancellationToken>())).ReturnsAsync(aesKey);
+        ctxMock.Setup(c => c.ReadBufferSize()).Returns(4); // small buffer
+        ctxMock.Setup(c => c.ChunkSizeBytes()).Returns(16); // chunk size bigger than content
+        ctxMock.Setup(c => c.LocalCacheFolder()).Returns(_cacheDir);
+        var aesKey = Convert.FromBase64String("rShkO4lOEPhNlNJ/LRokw2h4G0HDpe4rMnvG4WGFqwA=");
+        ctxMock.Setup(c => c.AesFileEncryptionKey(It.IsAny<CancellationToken>())).ReturnsAsync(aesKey);
 
         // Mock mediator
         var mediatorMock = new Mock<IMediator>();
@@ -81,12 +165,11 @@ public class ChunkedEncryptingFileProcessorTests : IDisposable
 
         // Mock context resolver
         var ctxMock = new Mock<IContextResolver>();
-        ctxMock.Setup(c => c.ResolveReadBufferSize()).Returns(8);
-        ctxMock.Setup(c => c.ResolveChunkSizeBytes()).Returns(8);
-        ctxMock.Setup(c => c.ResolveCacheFolder()).Returns(_cacheDir);
-        var aesKey = new byte[32];
-        RandomNumberGenerator.Fill(aesKey);
-        ctxMock.Setup(c => c.ResolveAesKey(It.IsAny<CancellationToken>())).ReturnsAsync(aesKey);
+        ctxMock.Setup(c => c.ReadBufferSize()).Returns(8);
+        ctxMock.Setup(c => c.ChunkSizeBytes()).Returns(8);
+        ctxMock.Setup(c => c.LocalCacheFolder()).Returns(_cacheDir);
+        var aesKey = Convert.FromBase64String("rShkO4lOEPhNlNJ/LRokw2h4G0HDpe4rMnvG4WGFqwA=");
+        ctxMock.Setup(c => c.AesFileEncryptionKey(It.IsAny<CancellationToken>())).ReturnsAsync(aesKey);
 
         // Mock mediator
         var mediatorMock = new Mock<IMediator>();

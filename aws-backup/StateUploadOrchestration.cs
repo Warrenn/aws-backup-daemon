@@ -11,7 +11,7 @@ public class StateUploadOrchestration(
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        var delayBetweenUploads = contextResolver.ResolveDelayBetweenUploads();
+        var delayBetweenUploads = contextResolver.DelayBetweenUploadsSeconds();
         var archiveTask = Task.Run(async () =>
         {
             await foreach (var (archive, key) in mediator.GetArchiveState(cancellationToken))

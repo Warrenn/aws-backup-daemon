@@ -17,12 +17,12 @@ public class SqsPollingOrchestration(
     {
         var sqs = await clientFactory.CreateSqsClient(cancellationToken);
 
-        var queueUrl = contextResolver.ResolveQueueUrl();
-        var waitTimeSeconds = contextResolver.ResolveSqsWaitTimeSeconds();
-        var maxNumberOfMessages = contextResolver.ResolveSqsMaxNumberOfMessages();
-        var visibilityTimeout = contextResolver.ResolveSqsVisibilityTimeout();
-        var retryDelay = contextResolver.ResolveSqsRetryDelaySeconds();
-        var sqsDecryptionKey = await contextResolver.ResolveSqsDecryptionKey(cancellationToken);
+        var queueUrl = contextResolver.SqsQueueUrl();
+        var waitTimeSeconds = contextResolver.SqsWaitTimeSeconds();
+        var maxNumberOfMessages = contextResolver.SqsMaxNumberOfMessages();
+        var visibilityTimeout = contextResolver.SqsVisibilityTimeout();
+        var retryDelay = contextResolver.SqsRetryDelaySeconds();
+        var sqsDecryptionKey = await contextResolver.SqsEncryptionKey(cancellationToken);
 
         logger.LogInformation("Starting SQS polling on {Url}", queueUrl);
 
@@ -60,7 +60,7 @@ public class SqsPollingOrchestration(
                     logger.LogInformation("Received message {Id}", msg.MessageId);
                     var messageString = msg.Body;
                     if (string.IsNullOrWhiteSpace(messageString)) continue;
-                    if (contextResolver.ResolveEncryptSQS()) messageString = AesHelper.DecryptString(msg.Body, sqsDecryptionKey);
+                    if (contextResolver.EncryptSqs()) messageString = AesHelper.DecryptString(msg.Body, sqsDecryptionKey);
 
                     var utf8 = Encoding.UTF8.GetBytes(messageString);
                     var reader = new Utf8JsonReader(utf8, true, default);

@@ -62,3 +62,7 @@ CodeCoverage/
 TestResult.xml
 nunit-*.xml
 /_ReSharper.Caches/
+.env
+.DS_Store
+ETH.csv
+*.chunk*.gz.aes

@@ -6,7 +6,7 @@ namespace aws_backup;
 public record CloudChunkDetails(
     string S3Key, // S3 key for the chunk
     string BucketName, // S3 bucket name
-    ByteArrayKey Hash);
+    byte[] Hash);
 
 public class DataChunkManifest : ConcurrentDictionary<ByteArrayKey, CloudChunkDetails>
 {
@@ -16,7 +16,7 @@ public class DataChunkManifest : ConcurrentDictionary<ByteArrayKey, CloudChunkDe
 public record DataChunkDetails(
     string LocalFilePath,
     int ChunkIndex,
-    ByteArrayKey Key,
+    byte[] HashKey,
     long Size
 );
 
@@ -35,21 +35,23 @@ public class DataChunkService(
     public bool ChunkRequiresUpload(DataChunkDetails chunk)
     {
         var dataChunkManifest = DataChunkManifest.Current;
-        return dataChunkManifest.ContainsKey(chunk.Key);
+        var key = new ByteArrayKey(chunk.HashKey);
+        return dataChunkManifest.ContainsKey(key);
     }
 
-    public async Task MarkChunkAsUploaded(DataChunkDetails chunk, string key, string bucketName,
+    public async Task MarkChunkAsUploaded(DataChunkDetails chunk, string s3Key, string bucketName,
         CancellationToken cancellationToken)
     {
         var dataChunkManifest = DataChunkManifest.Current;
-        if (dataChunkManifest.ContainsKey(chunk.Key))
+        var hashKey = new ByteArrayKey(chunk.HashKey);
+        if (dataChunkManifest.ContainsKey(hashKey))
             // If the chunk is already in the manifest, we don't need to re-add it
             return;
         var cloudChunkDetails = new CloudChunkDetails(
-            key,
+            s3Key,
             bucketName,
-            chunk.Key);
-        dataChunkManifest.TryAdd(chunk.Key, cloudChunkDetails);
+            chunk.HashKey);
+        dataChunkManifest.TryAdd(hashKey, cloudChunkDetails);
 
         await mediator.SaveChunkManifest(dataChunkManifest, cancellationToken);
     }

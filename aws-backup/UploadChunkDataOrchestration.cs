@@ -43,8 +43,8 @@ public class UploadChunkDataOrchestration(
             }
 
             var uploadAttempts = 0;
-            var maxUploadAttempts = contextResolver.ResolveUploadAttemptLimit();
-            var uploadRetryDelay = contextResolver.ResolveUploadRetryDelay();
+            var maxUploadAttempts = contextResolver.UploadAttemptLimit();
+            var uploadRetryDelay = contextResolver.UploadRetryDelaySeconds();
 
             retryUpload:
             try
@@ -62,11 +62,11 @@ public class UploadChunkDataOrchestration(
                 }
 
                 var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
-                var bucketName = contextResolver.ResolveS3BucketName();
-                var storageClass = contextResolver.ResolveColdStorage();
-                var serverSideEncryptionMethod = contextResolver.ResolveServerSideEncryptionMethod();
-                var s3PartSize = contextResolver.ResolveS3PartSize();
-                var key = contextResolver.ResolveS3Key(chunk);
+                var bucketName = contextResolver.S3BucketId();
+                var storageClass = contextResolver.ColdStorage();
+                var serverSideEncryptionMethod = contextResolver.ServerSideEncryptionMethod();
+                var s3PartSize = contextResolver.S3PartSize();
+                var key = contextResolver.ChunkS3Key(chunk);
 
                 // upload the chunk file to S3
                 var transferUtil = new TransferUtility(s3Client);
@@ -143,7 +143,7 @@ public class UploadChunkDataOrchestration(
 
         // Wait for any in-flight work to finish (optional timeout)
         using var timeoutCts =
-            new CancellationTokenSource(TimeSpan.FromSeconds(contextResolver.ResolveShutdownTimeoutSeconds()));
+            new CancellationTokenSource(TimeSpan.FromSeconds(contextResolver.ShutdownTimeoutSeconds()));
         await Task.WhenAny(Task.WhenAll(_workers), Task.Delay(-1, timeoutCts.Token));
     }
 }

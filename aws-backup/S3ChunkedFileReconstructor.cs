@@ -24,13 +24,13 @@ public class S3ChunkedFileReconstructor(
         CancellationToken cancellationToken)
     {
         var s3 = await awsClientFactory.CreateS3Client(cancellationToken);
-        var destinationFolder = contextResolver.ResolveRestoreFolder(request.RestoreId);
+        var destinationFolder = contextResolver.LocalRestoreFolder(request.RestoreId);
         var outputFilePath = Path.Combine(destinationFolder, request.FilePath);
-        var bufferSize = contextResolver.ResolveReadBufferSize();
-        var chunkSize = contextResolver.ResolveChunkSizeBytes();
+        var bufferSize = contextResolver.ReadBufferSize();
+        var chunkSize = contextResolver.ChunkSizeBytes();
         var maxDownloadConcurrency = contextResolver.NoOfConcurrentDownloadsPerFile();
         var originalFileSize = request.Size;
-        var aesKey = await contextResolver.ResolveAesKey(cancellationToken);
+        var aesKey = await contextResolver.AesFileEncryptionKey(cancellationToken);
 
         // Ensure output file exists and is sized (optional)
         await using (var pre = new FileStream(

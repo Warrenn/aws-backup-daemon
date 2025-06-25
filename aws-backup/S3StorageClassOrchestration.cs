@@ -10,7 +10,7 @@ public class S3StorageClassOrchestration(
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        var storageCheckDelay = resolver.ResolveStorageCheckDelay();
+        var storageCheckDelay = resolver.StorageCheckDelaySeconds();
 
         while (!cancellationToken.IsCancellationRequested)
         {

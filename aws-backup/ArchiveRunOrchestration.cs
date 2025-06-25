@@ -16,7 +16,7 @@ public class ArchiveRunOrchestration(
         // It will read from the archiveQueue and process each archive.
         await foreach (var runRequest in mediator.GetRunRequests(cancellationToken))
         {
-            var ignoreFilePath = contextResolver.ResolveIgnoreFilePath();
+            var ignoreFilePath = contextResolver.LocalIgnoreFile();
             var archiveRun = await archiveService.LookupArchiveRun(runRequest.RunId, cancellationToken);
             if (archiveRun is null)
             {
@@ -37,7 +37,7 @@ public class ArchiveRunOrchestration(
                 }
                 catch (Exception e)
                 {
-                    logger.LogError(e, "Failed to read ignore file {IgnoreFile}", ignoreFilePath);
+                    logger.LogError(e, "Failed to read ignore file {LocalIgnoreFile}", ignoreFilePath);
                 }
 
             foreach (var filePath in fileLister.GetAllFiles(runRequest.PathsToArchive, ignorePatterns))

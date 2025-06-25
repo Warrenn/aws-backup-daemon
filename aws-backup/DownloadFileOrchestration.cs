@@ -38,11 +38,11 @@ public class DownloadFileOrchestration(
         await foreach (var downloadRequest in mediator.GetDownloadRequests(cancellationToken))
         {
             var key = $"{downloadRequest.RestoreId}::{downloadRequest.FilePath}";
-            var downloadRetryDelay = contextResolver.ResolveDownloadRetryDelay();
-            var keepTimeStamps = contextResolver.ResolveKeepTimeStamps();
-            var keepOwnerGroup = contextResolver.ResolveKeepOwnerGroup();
-            var keepAclEntries = contextResolver.ResolveKeepAclEntries();
-            var downloadAttemptLimit = contextResolver.ResolveDownloadAttemptLimit();
+            var downloadRetryDelay = contextResolver.DownloadRetryDelaySeconds();
+            var keepTimeStamps = contextResolver.KeepTimeStamps();
+            var keepOwnerGroup = contextResolver.KeepOwnerGroup();
+            var keepAclEntries = contextResolver.KeepAclEntries();
+            var downloadAttemptLimit = contextResolver.DownloadAttemptLimit();
 
             if (_retryAttempts.TryGetValue(key, out var existingAttempt) &&
                 existingAttempt.AttemptNo > downloadAttemptLimit)
@@ -61,7 +61,7 @@ public class DownloadFileOrchestration(
             try
             {
                 var localFilePath = await reconstructor.ReconstructAsync(downloadRequest, cancellationToken);
-                var checkDownloadHash = contextResolver.ResolveCheckDownloadHash();
+                var checkDownloadHash = contextResolver.CheckDownloadHash();
                 var hashPassed = !checkDownloadHash ||
                                  await reconstructor.VerifyDownloadHashAsync(downloadRequest, localFilePath,
                                      cancellationToken);
@@ -140,7 +140,7 @@ public class DownloadFileOrchestration(
                 await mediator.DownloadFileFromS3(attempt.Request, cancellationToken);
             }
 
-            await Task.Delay(contextResolver.ResolveRetryCheckInterval(), cancellationToken);
+            await Task.Delay(contextResolver.RetryCheckIntervalSeconds(), cancellationToken);
         }
     }
 
@@ -152,7 +152,7 @@ public class DownloadFileOrchestration(
 
         // Wait for any in-flight work to finish (optional timeout)
         using var timeoutCts =
-            new CancellationTokenSource(TimeSpan.FromSeconds(contextResolver.ResolveShutdownTimeoutSeconds()));
+            new CancellationTokenSource(TimeSpan.FromSeconds(contextResolver.ShutdownTimeoutSeconds()));
         await Task.WhenAny(Task.WhenAll(_workers), Task.Delay(-1, timeoutCts.Token));
     }
 }

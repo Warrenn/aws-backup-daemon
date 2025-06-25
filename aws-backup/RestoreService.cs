@@ -84,11 +84,11 @@ public class RestoreRun
 
 public interface IRestoreService
 {
-    string ResolveId(RestoreRequest restoreRequest);
+
     Task<RestoreRun?> LookupRestoreRun(string restoreId, CancellationToken cancellationToken);
     Task InitiateRestoreRun(RestoreRun restoreRun, CancellationToken cancellationToken);
 
-    Task ReportS3Storage(string bucketId, string key, S3StorageClass storageClass,
+    Task ReportS3Storage(string bucketId, string s3Key, S3StorageClass storageClass,
         CancellationToken cancellationToken);
 
     Task ReportDownloadComplete(DownloadFileFromS3Request request, CancellationToken cancellationToken);
@@ -97,16 +97,13 @@ public interface IRestoreService
 
 public class RestoreService(
     IMediator mediator,
-    IS3Service s3Service
+    IS3Service s3Service,
+    S3RestoreChunkManifest restoreManifest,
+    DataChunkManifest dataChunkManifest
 ) : IRestoreService
 {
     //List of RestoreRun objects
     private readonly Dictionary<string, RestoreRun> _restoreRuns = [];
-
-    public string ResolveId(RestoreRequest restoreRequest)
-    {
-        return restoreRequest.RequestedAt.ToString("yyyyMMdd-HHmmss") + "--" + restoreRequest.ArchiveRunId;
-    }
 
     public Task<RestoreRun?> LookupRestoreRun(string restoreId, CancellationToken cancellationToken)
     {
@@ -121,21 +118,21 @@ public class RestoreService(
         {
             foreach (var key in metaData.Chunks)
             {
-                if (S3RestoreChunkManifest.Current.TryGetValue(key, out var status)) continue;
+                if (restoreManifest.TryGetValue(key, out var status)) continue;
 
-                var chunkDetails = DataChunkManifest.Current[key];
+                var chunkDetails = dataChunkManifest[key];
                 await s3Service.ScheduleDeepArchiveRecovery(chunkDetails, cancellationToken);
 
                 status = S3RestoreStatus.PendingDeepArchiveRestore;
-                S3RestoreChunkManifest.Current[key] = status;
+                restoreManifest[key] = status;
             }
 
             var readyToRestore =
-                metaData.Chunks.All(c => S3RestoreChunkManifest.Current[c] is S3RestoreStatus.ReadyToRestore);
+                metaData.Chunks.All(c => restoreManifest[c] is S3RestoreStatus.ReadyToRestore);
             if (readyToRestore) continue;
 
             var cloudChunkDetails = metaData.Chunks
-                .Select(c => DataChunkManifest.Current[c])
+                .Select(c => dataChunkManifest[c])
                 .ToArray();
 
             await mediator.DownloadFileFromS3(new DownloadFileFromS3Request(
@@ -156,18 +153,18 @@ public class RestoreService(
             metaData.Status = FileRestoreStatus.PendingS3Download;
         }
 
-        await mediator.SaveS3RestoreChunkManifest(S3RestoreChunkManifest.Current, cancellationToken);
+        await mediator.SaveS3RestoreChunkManifest(restoreManifest, cancellationToken);
         await mediator.SaveRestoreRun(restoreRun, cancellationToken);
     }
 
-    public async Task ReportS3Storage(string bucketId, string key, S3StorageClass storageClass,
+    public async Task ReportS3Storage(string bucketId, string s3Key, S3StorageClass storageClass,
         CancellationToken cancellationToken)
     {
-        var chunkKey = DataChunkManifest.Current.Values.FirstOrDefault(d => d.S3Key == key && d.BucketName == bucketId)
-            ?.Hash;
-        if (chunkKey is null) return;
+        var matchingDataChunk = dataChunkManifest.Values.FirstOrDefault(d => d.S3Key == s3Key && d.BucketName == bucketId);
+        if (matchingDataChunk is null) return;
 
-        if (!S3RestoreChunkManifest.Current.TryGetValue(chunkKey.Value, out var status))
+        var hashKey = new ByteArrayKey(matchingDataChunk.Hash);
+        if (!restoreManifest.TryGetValue(hashKey, out var status))
             return;
 
         if (status == S3RestoreStatus.ReadyToRestore && storageClass != S3StorageClass.DeepArchive)
@@ -177,23 +174,23 @@ public class RestoreService(
 
         if (status == S3RestoreStatus.PendingDeepArchiveRestore && storageClass != S3StorageClass.DeepArchive)
         {
-            S3RestoreChunkManifest.Current[chunkKey.Value] = S3RestoreStatus.ReadyToRestore;
-            await mediator.SaveS3RestoreChunkManifest(S3RestoreChunkManifest.Current, cancellationToken);
+            restoreManifest[hashKey] = S3RestoreStatus.ReadyToRestore;
+            await mediator.SaveS3RestoreChunkManifest(restoreManifest, cancellationToken);
 
             foreach (var restoreRun in _restoreRuns.Values)
             {
                 var runChanged = false;
-                foreach (var fileMeta in restoreRun.RequestedFiles.Values.Where(f => f.Chunks.Contains(chunkKey.Value)))
+                foreach (var fileMeta in restoreRun.RequestedFiles.Values.Where(f => f.Chunks.Contains(hashKey)))
                 {
                     var allReadyToRestore = fileMeta.Chunks
-                        .All(c => S3RestoreChunkManifest.Current[c] == S3RestoreStatus.ReadyToRestore);
+                        .All(c => restoreManifest[c] == S3RestoreStatus.ReadyToRestore);
                     if (!allReadyToRestore ||
                         fileMeta.Status is FileRestoreStatus.Completed or FileRestoreStatus.Failed) continue;
 
                     runChanged = true;
 
                     var cloudChunkDetails = fileMeta.Chunks
-                        .Select(c => DataChunkManifest.Current[c])
+                        .Select(c => dataChunkManifest[c])
                         .ToArray();
 
                     await mediator.DownloadFileFromS3(new DownloadFileFromS3Request(
@@ -221,14 +218,14 @@ public class RestoreService(
 
         if (status == S3RestoreStatus.ReadyToRestore && storageClass == S3StorageClass.DeepArchive)
         {
-            S3RestoreChunkManifest.Current[chunkKey.Value] = S3RestoreStatus.PendingDeepArchiveRestore;
-            await mediator.SaveS3RestoreChunkManifest(S3RestoreChunkManifest.Current, cancellationToken);
+            restoreManifest[hashKey] = S3RestoreStatus.PendingDeepArchiveRestore;
+            await mediator.SaveS3RestoreChunkManifest(restoreManifest, cancellationToken);
 
             var scheduleDownload = false;
             foreach (var restoreRun in _restoreRuns.Values)
             {
                 var runChanged = false;
-                foreach (var fileMeta in restoreRun.RequestedFiles.Values.Where(f => f.Chunks.Contains(chunkKey.Value)))
+                foreach (var fileMeta in restoreRun.RequestedFiles.Values.Where(f => f.Chunks.Contains(hashKey)))
                 {
                     if (fileMeta.Status is FileRestoreStatus.Completed or FileRestoreStatus.Failed) continue;
                     scheduleDownload = true;
@@ -243,7 +240,7 @@ public class RestoreService(
             }
 
             if (!scheduleDownload) return;
-            await s3Service.ScheduleDeepArchiveRecovery(DataChunkManifest.Current[chunkKey.Value], cancellationToken);
+            await s3Service.ScheduleDeepArchiveRecovery(dataChunkManifest[hashKey], cancellationToken);
         }
     }
 

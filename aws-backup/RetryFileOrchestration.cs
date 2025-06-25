@@ -36,8 +36,8 @@ public class RetryFileOrchestration(
                 }
 
                 var key = $"{runId}::{filePath}";
-                var uploadAttemptLimit = contextResolver.ResolveUploadAttemptLimit();
-                var uploadRetryDelay = contextResolver.ResolveUploadRetryDelay();
+                var uploadAttemptLimit = contextResolver.UploadAttemptLimit();
+                var uploadRetryDelay = contextResolver.UploadRetryDelaySeconds();
 
                 if (_retryAttempts.TryGetValue(key, out var existingAttempt) &&
                     existingAttempt.AttemptNo > uploadAttemptLimit)
@@ -81,7 +81,7 @@ public class RetryFileOrchestration(
                     await mediator.ProcessFile(attempt.RunId, attempt.FilePath, cancellationToken);
                 }
 
-                await Task.Delay(contextResolver.ResolveRetryCheckInterval(), cancellationToken);
+                await Task.Delay(contextResolver.RetryCheckIntervalSeconds(), cancellationToken);
             }
         }, cancellationToken);
 
@@ -96,7 +96,7 @@ public class RetryFileOrchestration(
 
         // Wait for any in-flight work to finish (optional timeout)
         using var timeoutCts =
-            new CancellationTokenSource(TimeSpan.FromSeconds(contextResolver.ResolveShutdownTimeoutSeconds()));
+            new CancellationTokenSource(TimeSpan.FromSeconds(contextResolver.ShutdownTimeoutSeconds()));
         await Task.WhenAny(Task.WhenAll(_workers), Task.Delay(-1, timeoutCts.Token));
     }
 }
