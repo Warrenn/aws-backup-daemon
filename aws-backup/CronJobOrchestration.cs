@@ -5,57 +5,82 @@ using Microsoft.Extensions.Options;
 
 namespace aws_backup;
 
+public interface ICronScheduler
+{
+    /// <summary>
+    ///     Returns the next occurrence *after* the given time, or null if never.
+    /// </summary>
+    DateTimeOffset? GetNext(DateTimeOffset afterUtc);
+}
+
+public interface ICronSchedulerFactory
+{
+    ICronScheduler Create(string cron);
+}
+
+public class CronosSchedulerFactory : ICronSchedulerFactory
+{
+    public ICronScheduler Create(string cron)
+    {
+        return new CronosScheduler(cron);
+    }
+}
+
+public class CronosScheduler(string cron) : ICronScheduler
+{
+    private readonly CronExpression _expr = CronExpression.Parse(cron, CronFormat.Standard);
+
+    public DateTimeOffset? GetNext(DateTimeOffset afterUtc)
+    {
+        return _expr.GetNextOccurrence(afterUtc, TimeZoneInfo.Utc);
+    }
+}
+
+public interface IClock
+{
+    DateTimeOffset UtcNow { get; }
+}
+
 public class CronJobOrchestration(
     IOptionsMonitor<Configuration> configurationMonitor,
     Func<CancellationToken, Task> job,
+    IClock clock,
+    ICronSchedulerFactory cronSchedulerFactory,
     ILogger<CronJobOrchestration> logger)
     : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         CancellationTokenSource scheduleCts = new();
-        var cronSchedule = configurationMonitor.CurrentValue.CronSchedule;
-        var cronExpression = CronExpression.Parse(cronSchedule, CronFormat.Standard);
+        var scheduler = cronSchedulerFactory.Create(configurationMonitor.CurrentValue.CronSchedule);
 
         configurationMonitor.OnChange((config, _) =>
         {
-            if (config.CronSchedule == cronExpression.ToString()) return;
-            cronExpression = CronExpression.Parse(config.CronSchedule, CronFormat.Standard);
+            scheduler = cronSchedulerFactory.Create(config.CronSchedule);
             scheduleCts.Cancel();
             scheduleCts = new CancellationTokenSource();
         });
 
         logger.LogInformation("CronJobService started with schedule '{Schedule}' in zone '{Zone}'",
-            cronExpression, TimeZoneInfo.Utc.Id);
+            configurationMonitor.CurrentValue.CronSchedule, TimeZoneInfo.Utc.Id);
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            // 1) Compute next run time
-            var nextUtc = cronExpression.GetNextOccurrence(
-                DateTimeOffset.UtcNow,
-                TimeZoneInfo.Utc
-            );
+            var now = clock.UtcNow;
+            var next = scheduler.GetNext(now);
+            if (next == null) break;
 
-            if (!nextUtc.HasValue)
-            {
-                logger.LogWarning("Cron expression '{Schedule}' will not occur again.", cronExpression);
-                break;
-            }
-
-            var delay = nextUtc.Value - DateTimeOffset.UtcNow;
+            var delay = next.Value - now;
             if (delay.TotalMilliseconds <= 0)
                 // If we're already past it (due to drift), skip ahead
                 continue;
 
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(
                 cancellationToken, scheduleCts.Token);
-            logger.LogInformation("Next run at {NextRun}", nextUtc.Value);
             try
             {
                 // 2) Wait until it's time (or until shutdown)
                 await Task.Delay(delay, linked.Token);
-
-                //if (cronExpressionChanged) continue;
             }
             catch (OperationCanceledException)
             {
