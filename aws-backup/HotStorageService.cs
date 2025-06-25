@@ -1,63 +1,24 @@
 using System.Diagnostics.CodeAnalysis;
 using System.IO.Compression;
 using System.IO.Pipelines;
+using System.Text.Json;
 using Amazon.S3.Model;
 using Amazon.S3.Transfer;
-using ProtoBuf;
 
 namespace aws_backup;
 
 public interface IHotStorageService
 {
-    Task UploadAsync<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicConstructors |
-                                    DynamicallyAccessedMemberTypes.NonPublicFields |
-                                    DynamicallyAccessedMemberTypes.NonPublicMethods |
-                                    DynamicallyAccessedMemberTypes.NonPublicNestedTypes |
-                                    DynamicallyAccessedMemberTypes.NonPublicProperties |
-                                    DynamicallyAccessedMemberTypes.None |
-                                    DynamicallyAccessedMemberTypes.PublicConstructors |
-                                    DynamicallyAccessedMemberTypes.PublicFields |
-                                    DynamicallyAccessedMemberTypes.PublicMethods |
-                                    DynamicallyAccessedMemberTypes.PublicNestedTypes |
-                                    DynamicallyAccessedMemberTypes.PublicParameterlessConstructor |
-                                    DynamicallyAccessedMemberTypes.PublicProperties)]
-        T>(string key, T obj, CancellationToken cancellationToken);
+    Task UploadAsync<T>(string key, T obj, CancellationToken cancellationToken);
 
-    Task<T> DownloadAsync<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicConstructors |
-                                    DynamicallyAccessedMemberTypes.NonPublicFields |
-                                    DynamicallyAccessedMemberTypes.NonPublicMethods |
-                                    DynamicallyAccessedMemberTypes.NonPublicNestedTypes |
-                                    DynamicallyAccessedMemberTypes.NonPublicProperties |
-                                    DynamicallyAccessedMemberTypes.None |
-                                    DynamicallyAccessedMemberTypes.PublicConstructors |
-                                    DynamicallyAccessedMemberTypes.PublicFields |
-                                    DynamicallyAccessedMemberTypes.PublicMethods |
-                                    DynamicallyAccessedMemberTypes.PublicNestedTypes |
-                                    DynamicallyAccessedMemberTypes.PublicParameterlessConstructor |
-                                    DynamicallyAccessedMemberTypes.PublicProperties)]
-        T>(string key, CancellationToken cancellationToken);
+    Task<T> DownloadAsync<T>(string key, CancellationToken cancellationToken);
 }
 
 public class HotStorageService(
     IAwsClientFactory awsClientFactory,
     IContextResolver contextResolver) : IHotStorageService
 {
-    public async Task UploadAsync<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicConstructors |
-                                    DynamicallyAccessedMemberTypes.NonPublicFields |
-                                    DynamicallyAccessedMemberTypes.NonPublicMethods |
-                                    DynamicallyAccessedMemberTypes.NonPublicNestedTypes |
-                                    DynamicallyAccessedMemberTypes.NonPublicProperties |
-                                    DynamicallyAccessedMemberTypes.None |
-                                    DynamicallyAccessedMemberTypes.PublicConstructors |
-                                    DynamicallyAccessedMemberTypes.PublicFields |
-                                    DynamicallyAccessedMemberTypes.PublicMethods |
-                                    DynamicallyAccessedMemberTypes.PublicNestedTypes |
-                                    DynamicallyAccessedMemberTypes.PublicParameterlessConstructor |
-                                    DynamicallyAccessedMemberTypes.PublicProperties)]
-        T>(string key, T obj, CancellationToken cancellationToken)
+    public async Task UploadAsync<T>(string key, T obj, CancellationToken cancellationToken)
     {
         // 1) Create the pipe
         var pipe = new Pipe();
@@ -77,7 +38,7 @@ public class HotStorageService(
                 Key = key,
                 InputStream = readerStream,
                 PartSize = partSizeBytes,
-                ContentType = "application/x-protobuf",
+                ContentType     = "application/json",
                 StorageClass = storageClass,
                 AutoCloseStream = true
             };
@@ -86,9 +47,9 @@ public class HotStorageService(
 
         // 3) In this thread, serialize → gzip → pipe.Writer
         await using (var writerStream = pipe.Writer.AsStream())
-        await using (var gzip = new GZipStream(writerStream, CompressionLevel.Optimal, false))
+        await using (var gzip = new GZipStream(writerStream, CompressionLevel.SmallestSize, false))
         {
-            Serializer.Serialize(gzip, obj);
+            await JsonSerializer.SerializeAsync(gzip, obj, Json.Options, cancellationToken);
         }
         // disposing gzip and writerStream will complete the pipe for the reader
 
@@ -96,20 +57,7 @@ public class HotStorageService(
         await uploadTask;
     }
 
-    public async Task<T> DownloadAsync<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicConstructors |
-                                    DynamicallyAccessedMemberTypes.NonPublicFields |
-                                    DynamicallyAccessedMemberTypes.NonPublicMethods |
-                                    DynamicallyAccessedMemberTypes.NonPublicNestedTypes |
-                                    DynamicallyAccessedMemberTypes.NonPublicProperties |
-                                    DynamicallyAccessedMemberTypes.None |
-                                    DynamicallyAccessedMemberTypes.PublicConstructors |
-                                    DynamicallyAccessedMemberTypes.PublicFields |
-                                    DynamicallyAccessedMemberTypes.PublicMethods |
-                                    DynamicallyAccessedMemberTypes.PublicNestedTypes |
-                                    DynamicallyAccessedMemberTypes.PublicParameterlessConstructor |
-                                    DynamicallyAccessedMemberTypes.PublicProperties)]
-        T>(string key, CancellationToken cancellationToken)
+    public async Task<T> DownloadAsync<T>(string key, CancellationToken cancellationToken)
     {
         var s3 = await awsClientFactory.CreateS3Client(cancellationToken);
         var bucketName = contextResolver.S3BucketId();
@@ -118,6 +66,6 @@ public class HotStorageService(
             cancellationToken);
 
         await using var gzip = new GZipStream(resp.ResponseStream, CompressionMode.Decompress, false);
-        return Serializer.Deserialize<T>(gzip)!;
+        return await JsonSerializer.DeserializeAsync<T>(gzip, Json.Options, cancellationToken);
     }
 }

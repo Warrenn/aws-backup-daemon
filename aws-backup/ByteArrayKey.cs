@@ -1,5 +1,9 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace aws_backup;
 
+[JsonConverter(typeof(ByteArrayKeyConverter))]
 public readonly struct ByteArrayKey : IEquatable<ByteArrayKey>
 {
     private readonly byte[] _data;
@@ -38,5 +42,36 @@ public readonly struct ByteArrayKey : IEquatable<ByteArrayKey>
     public static bool operator !=(ByteArrayKey a, ByteArrayKey b)
     {
         return !a.Equals(b);
+    }
+    
+    public ReadOnlySpan<byte> AsSpan() => _data.AsSpan();
+
+    public byte[] ToArray()
+    {
+        return _data;
+    }
+}
+
+public class ByteArrayKeyConverter : JsonConverter<ByteArrayKey>
+{
+    public override ByteArrayKey Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options)
+    {
+        // Expect the key as a Base64 string
+        var b64 = reader.GetString() 
+                  ?? throw new JsonException("Expected Base64 string for ByteArrayKey");
+        var bytes = Convert.FromBase64String(b64);
+        return new ByteArrayKey(bytes);
+    }
+
+    public override void Write(
+        Utf8JsonWriter writer,
+        ByteArrayKey value,
+        JsonSerializerOptions options)
+    {
+        // Emit the underlying bytes as Base64
+        writer.WriteStringValue(Convert.ToBase64String(value.ToArray()));
     }
 }

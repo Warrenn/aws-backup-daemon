@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace aws_backup;
 
 public enum ArchiveRunStatus
@@ -49,7 +51,8 @@ public class ArchiveRun
     public long? OriginalSize { get; set; }
     public int? TotalFiles { get; set; }
     public int? TotalSkippedFiles { get; set; }
-    public Dictionary<string, FileMetaData> Files { get; } = new();
+
+    [JsonInclude] public Dictionary<string, FileMetaData> Files { get; init; } = new();
 }
 
 public interface IArchiveService

@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Amazon.S3;
 
 namespace aws_backup;
@@ -15,6 +17,7 @@ public enum S3RestoreStatus
     ReadyToRestore
 }
 
+[JsonConverter(typeof(S3RestoreChunkManifestConverter))]
 public class S3RestoreChunkManifest : ConcurrentDictionary<ByteArrayKey, S3RestoreStatus>
 {
     public static S3RestoreChunkManifest Current { get; } = new();
@@ -57,14 +60,6 @@ public record DownloadFileFromS3Request(
     public byte[]? Checksum { get; set; }
 }
 
-public record S3ChunkData(
-    ByteArrayKey Hash,
-    string S3Key, // S3 key for the chunk
-    string BucketName)
-{
-    public S3RestoreStatus Status { get; set; }
-}
-
 public record RestoreRequest(
     string ArchiveRunId,
     string RestorePaths,
@@ -79,12 +74,12 @@ public class RestoreRun
     public required DateTimeOffset RequestedAt { get; init; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? CompletedAt { get; set; }
     public Dictionary<string, RestoreFileMetaData> RequestedFiles { get; init; } = new();
-    public Dictionary<string, string> FailedFiles { get; init; } = new();
+
+    [JsonInclude] public Dictionary<string, string> FailedFiles { get; init; } = new();
 }
 
 public interface IRestoreService
 {
-
     Task<RestoreRun?> LookupRestoreRun(string restoreId, CancellationToken cancellationToken);
     Task InitiateRestoreRun(RestoreRun restoreRun, CancellationToken cancellationToken);
 
@@ -160,7 +155,8 @@ public class RestoreService(
     public async Task ReportS3Storage(string bucketId, string s3Key, S3StorageClass storageClass,
         CancellationToken cancellationToken)
     {
-        var matchingDataChunk = dataChunkManifest.Values.FirstOrDefault(d => d.S3Key == s3Key && d.BucketName == bucketId);
+        var matchingDataChunk =
+            dataChunkManifest.Values.FirstOrDefault(d => d.S3Key == s3Key && d.BucketName == bucketId);
         if (matchingDataChunk is null) return;
 
         var hashKey = new ByteArrayKey(matchingDataChunk.Hash);
@@ -274,5 +270,67 @@ public class RestoreService(
         restoreRun.CompletedAt = DateTimeOffset.UtcNow;
         await mediator.SaveRestoreRun(restoreRun, cancellationToken);
         _restoreRuns.Remove(restoreRun.RestoreId);
+    }
+}
+
+public class S3RestoreChunkManifestConverter
+    : JsonConverter<S3RestoreChunkManifest>
+{
+    public override S3RestoreChunkManifest? Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.StartArray)
+            throw new JsonException();
+
+        var manifest = new S3RestoreChunkManifest();
+        while (reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.EndArray)
+                return manifest;
+
+            // expect a two‐element array [ key, status ]
+            if (reader.TokenType != JsonTokenType.StartArray)
+                throw new JsonException();
+
+            // read key (Base64Url string)
+            reader.Read();
+            var keyBase64 = reader.GetString()!;
+            var keyBytes = Convert.FromBase64String(keyBase64);
+            var key = new ByteArrayKey(keyBytes);
+
+            // read status (enum string)
+            reader.Read();
+            var statusName = reader.GetString()!;
+            if (!Enum.TryParse<S3RestoreStatus>(statusName, out var status))
+                throw new JsonException($"Unknown status '{statusName}'");
+
+            // close inner array
+            reader.Read(); // EndArray
+
+            manifest[key] = status;
+        }
+
+        throw new JsonException("Unexpected end of JSON");
+    }
+
+    public override void Write(
+        Utf8JsonWriter writer,
+        S3RestoreChunkManifest value,
+        JsonSerializerOptions options)
+    {
+        writer.WriteStartArray();
+        foreach (var kv in value)
+        {
+            writer.WriteStartArray();
+            // write Base64 of the key bytes
+            writer.WriteStringValue(Convert.ToBase64String(kv.Key.ToArray()));
+            // write the enum as string
+            writer.WriteStringValue(kv.Value.ToString());
+            writer.WriteEndArray();
+        }
+
+        writer.WriteEndArray();
     }
 }

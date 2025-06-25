@@ -62,7 +62,7 @@ public class RolesAnywhere : ITemporaryCredentialsServer
             ["roleArn"] = roleArn,
             ["trustAnchorArn"] = trustAnchorArn
         };
-        var payload = JsonSerializer.Serialize(payloadObj, new JsonSerializerOptions { WriteIndented = false });
+        var payload = JsonSerializer.Serialize(payloadObj, Json.Options);
         var payloadHash = ToHex(HashSha256(Encoding.UTF8.GetBytes(payload)));
 
         // 6) Headers
