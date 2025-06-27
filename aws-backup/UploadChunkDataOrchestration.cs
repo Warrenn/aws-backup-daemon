@@ -6,13 +6,25 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
+public record UploadChunkRequest(
+    string ArchiveRunId,
+    string ParentFile,
+    DataChunkDetails DataChunkDetails) : RetryState;
+
+public interface IUploadChunksMediator
+{
+    IAsyncEnumerable<UploadChunkRequest> GetChunks(CancellationToken cancellationToken);
+    Task ProcessChunk(UploadChunkRequest request, CancellationToken cancellationToken);
+}
+
 public class UploadChunkDataOrchestration(
-    IMediator mediator,
+    IUploadChunksMediator mediator,
     ILogger<UploadChunkDataOrchestration> logger,
     IAwsClientFactory awsClientFactory,
     IContextResolver contextResolver,
     IDataChunkService dataChunkService,
-    IArchiveService archiveService)
+    IArchiveService archiveService,
+    IRetryMediator retryMediator)
     : BackgroundService
 {
     private Task[] _workers = [];
@@ -31,10 +43,19 @@ public class UploadChunkDataOrchestration(
 
     private async Task WorkerLoopAsync(CancellationToken cancellationToken)
     {
-        await foreach (var (runId, parentFile, chunk) in mediator.GetChunks(cancellationToken))
+        await foreach (var request in mediator.GetChunks(cancellationToken))
         {
+            var (_, parentFile, chunk) = request;
+            request.RetryLimit = contextResolver.UploadAttemptLimit();
+            request.LimitExceeded ??= (state, token) =>
+                archiveService.RecordFailedFile(
+                    ((UploadChunkRequest)state).ArchiveRunId,
+                    ((UploadChunkRequest)state).ParentFile,
+                    state.Exception ?? new Exception("Exceeded limit"),
+                    token);
+
             if (!dataChunkService.ChunkRequiresUpload(chunk) &&
-                !archiveService.FileIsSkipped(parentFile))
+                !archiveService.IsTheFileSkipped(parentFile))
             {
                 logger.LogInformation("Skipping chunk {ChunkIndex} for file {LocalFilePath} - already uploaded",
                     chunk.ChunkIndex, chunk.LocalFilePath);
@@ -42,31 +63,19 @@ public class UploadChunkDataOrchestration(
                 continue;
             }
 
-            var uploadAttempts = 0;
-            var maxUploadAttempts = contextResolver.UploadAttemptLimit();
-            var uploadRetryDelay = contextResolver.UploadRetryDelaySeconds();
-
-            retryUpload:
             try
             {
-                if (uploadAttempts >= maxUploadAttempts)
-                {
-                    logger.LogWarning(
-                        "Max upload attempts reached for chunk {ChunkIndex} for file {LocalFilePath}. Skipping upload.",
-                        chunk.ChunkIndex, chunk.LocalFilePath);
-                    if (File.Exists(chunk.LocalFilePath)) File.Delete(chunk.LocalFilePath);
-                    await archiveService.RecordFailedFile(runId, parentFile,
-                        new Exception("Max upload attempts reached"),
-                        cancellationToken);
-                    continue;
-                }
-
                 var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
                 var bucketName = contextResolver.S3BucketId();
                 var storageClass = contextResolver.ColdStorage();
                 var serverSideEncryptionMethod = contextResolver.ServerSideEncryptionMethod();
                 var s3PartSize = contextResolver.S3PartSize();
-                var key = contextResolver.ChunkS3Key(chunk);
+                var key = contextResolver.ChunkS3Key(
+                    chunk.LocalFilePath,
+                    chunk.ChunkIndex,
+                    chunk.ChunkSize,
+                    chunk.HashKey,
+                    chunk.ChunkSize);
 
                 // upload the chunk file to S3
                 var transferUtil = new TransferUtility(s3Client);
@@ -91,18 +100,14 @@ public class UploadChunkDataOrchestration(
 
                 if (s3CheckSum != localCheckSum)
                 {
-                    logger.LogWarning("Checksum mismatch for chunk {ChunkIndex} for file {LocalFilePath}. " +
-                                      "S3: {S3Checksum}, Local: {LocalChecksum}. Retrying upload...",
+                    logger.LogWarning(
+                        "Checksum mismatch for chunk {ChunkIndex} for file {LocalFilePath}. S3: {S3Checksum}, Local: {LocalChecksum}. Retrying upload...",
                         chunk.ChunkIndex, chunk.LocalFilePath, s3CheckSum, localCheckSum);
 
-                    // Wait before retrying
-                    await Task.Delay(TimeSpan.FromSeconds(uploadRetryDelay), cancellationToken);
-
-                    // Increment the attempt counter
-                    uploadAttempts++;
-
-                    // Retry the upload
-                    goto retryUpload;
+                    request.Exception = new InvalidOperationException(
+                        $"Checksum mismatch for chunk {chunk.ChunkIndex} for file {chunk.LocalFilePath}.S3: {s3CheckSum}, Local: {localCheckSum}");
+                    request.Retry ??= (r, ct) => mediator.ProcessChunk((UploadChunkRequest)r, ct);
+                    await retryMediator.RetryAttempt(request, cancellationToken);
                 }
 
                 await dataChunkService.MarkChunkAsUploaded(chunk, key, bucketName, cancellationToken);
@@ -114,16 +119,9 @@ public class UploadChunkDataOrchestration(
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error processing chunk {ChunkIndex} for file {LocalFilePath}", chunk.ChunkIndex,
-                    chunk.LocalFilePath);
-                // Wait before retrying
-                await Task.Delay(TimeSpan.FromSeconds(uploadRetryDelay), cancellationToken);
-
-                // Increment the attempt counter
-                uploadAttempts++;
-
-                // Retry the upload
-                goto retryUpload;
+                request.Exception = ex;
+                request.Retry ??= (r, ct) => mediator.ProcessChunk((UploadChunkRequest)r, ct);
+                await retryMediator.RetryAttempt(request, cancellationToken);
             }
         }
     }

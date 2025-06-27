@@ -18,15 +18,15 @@ public interface ICronSchedulerFactory
     ICronScheduler Create(string cron);
 }
 
-public class CronosSchedulerFactory : ICronSchedulerFactory
+public class CronSchedulerFactory : ICronSchedulerFactory
 {
     public ICronScheduler Create(string cron)
     {
-        return new CronosScheduler(cron);
+        return new CronScheduler(cron);
     }
 }
 
-public class CronosScheduler(string cron) : ICronScheduler
+public class CronScheduler(string cron) : ICronScheduler
 {
     private readonly CronExpression _expr = CronExpression.Parse(cron, CronFormat.Standard);
 
@@ -36,15 +36,10 @@ public class CronosScheduler(string cron) : ICronScheduler
     }
 }
 
-public interface IClock
-{
-    DateTimeOffset UtcNow { get; }
-}
-
 public class CronJobOrchestration(
     IOptionsMonitor<Configuration> configurationMonitor,
-    Func<CancellationToken, Task> job,
-    IClock clock,
+    IRunRequestMediator mediator,
+    IContextResolver contextResolver,
     ICronSchedulerFactory cronSchedulerFactory,
     ILogger<CronJobOrchestration> logger)
     : BackgroundService
@@ -66,7 +61,7 @@ public class CronJobOrchestration(
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            var now = clock.UtcNow;
+            var now = TimeProvider.System.GetUtcNow();
             var next = scheduler.GetNext(now);
             if (next == null) break;
 
@@ -81,24 +76,26 @@ public class CronJobOrchestration(
             {
                 // 2) Wait until it's time (or until shutdown)
                 await Task.Delay(delay, linked.Token);
+
+                var runId = contextResolver.ArchiveRunId(TimeProvider.System.GetUtcNow());
+                var cronSchedule = configurationMonitor.CurrentValue.CronSchedule;
+                var pathsToArchive = configurationMonitor.CurrentValue.PathsToArchive;
+                var runRequest = new RunRequest(runId, pathsToArchive, cronSchedule);
+                
+                logger.LogInformation("Starting backup {runId} for {pathsToArchive} at {Now}", runId, pathsToArchive,
+                    TimeProvider.System.GetUtcNow());
+                await mediator.ScheduleRunRequest(runRequest, cancellationToken);
             }
             catch (OperationCanceledException)
             {
                 if (cancellationToken.IsCancellationRequested) break;
                 continue;
             }
-
-            // 3) Invoke your job
-            try
-            {
-                logger.LogInformation("Cron job starting at {Now}", DateTimeOffset.UtcNow);
-                await job(cancellationToken);
-                logger.LogInformation("Cron job completed at {Now}", DateTimeOffset.UtcNow);
-            }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 logger.LogError(ex, "Error running cron job");
             }
+
 
             // loop for the next occurrence...
         }

@@ -3,8 +3,15 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
+public interface IRunRequestMediator
+{
+    IAsyncEnumerable<RunRequest> GetRunRequests(CancellationToken cancellationToken);
+    ValueTask ScheduleRunRequest(RunRequest runRequest, CancellationToken cancellationToken);
+}
+
 public class ArchiveRunOrchestration(
-    IMediator mediator,
+    IRunRequestMediator mediator,
+    IArchiveFileMediator archiveFileMediator,
     IArchiveService archiveService,
     IContextResolver contextResolver,
     IFileLister fileLister,
@@ -20,7 +27,7 @@ public class ArchiveRunOrchestration(
             var archiveRun = await archiveService.LookupArchiveRun(runRequest.RunId, cancellationToken);
             if (archiveRun is null)
             {
-                logger.Log(LogLevel.Information, "Creating new archive run for {RunId}", runRequest.RunId);
+                logger.Log(LogLevel.Information, "Creating new archive run for {ArchiveRunId}", runRequest.RunId);
                 archiveRun = await archiveService.StartNewArchiveRun(runRequest, cancellationToken);
             }
 
@@ -43,7 +50,8 @@ public class ArchiveRunOrchestration(
             foreach (var filePath in fileLister.GetAllFiles(runRequest.PathsToArchive, ignorePatterns))
             {
                 await archiveService.RecordLocalFile(archiveRun.RunId, filePath, cancellationToken);
-                await mediator.ProcessFile(archiveRun.RunId, filePath, cancellationToken);
+                var archiveFileRequest = new ArchiveFileRequest(archiveRun.RunId, filePath);
+                await archiveFileMediator.ProcessFile(archiveFileRequest, cancellationToken);
             }
 
             await archiveService.CompleteArchiveRun(archiveRun.RunId, cancellationToken);

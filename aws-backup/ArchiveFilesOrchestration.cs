@@ -3,8 +3,20 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
+public interface IArchiveFileMediator
+{
+    IAsyncEnumerable<ArchiveFileRequest> GetArchiveFiles(CancellationToken cancellationToken);
+    Task ProcessFile(ArchiveFileRequest request, CancellationToken cancellationToken);
+}
+
+public record ArchiveFileRequest(
+    string RunId,
+    string FilePath
+) : RetryState;
+
 public class ArchiveFilesOrchestration(
-    IMediator mediator,
+    IArchiveFileMediator mediator,
+    IRetryMediator retryMediator,
     IChunkedEncryptingFileProcessor processor,
     IArchiveService archiveService,
     ILogger<ArchiveFilesOrchestration> logger,
@@ -27,9 +39,19 @@ public class ArchiveFilesOrchestration(
 
     private async Task WorkerLoopAsync(CancellationToken cancellationToken)
     {
-        await foreach (var (runId, filePath) in mediator.GetArchiveFiles(cancellationToken))
+        await foreach (var request in mediator.GetArchiveFiles(cancellationToken))
             try
             {
+                request.Retry ??= (r, ct) => mediator.ProcessFile((ArchiveFileRequest)r, ct);
+                request.LimitExceeded ??= (state, token) =>
+                    archiveService.RecordFailedFile(
+                        ((ArchiveFileRequest)state).RunId,
+                        ((ArchiveFileRequest)state).FilePath,
+                        state.Exception ?? new Exception("Exceeded limit"),
+                        token);
+
+                var runId = request.RunId;
+                var filePath = request.FilePath;
                 var keepTimeStamps = contextResolver.KeepTimeStamps();
                 var keepOwnerGroup = contextResolver.KeepOwnerGroup();
                 var keepAclEntries = contextResolver.KeepAclEntries();
@@ -38,13 +60,14 @@ public class ArchiveFilesOrchestration(
                     await archiveService.DoesFileRequireProcessing(runId, filePath, cancellationToken);
                 if (!requireProcessing)
                 {
-                    logger.LogInformation("Skipping {File} for {RunId} - already processed", filePath, runId);
+                    logger.LogInformation("Skipping {File} for {ArchiveRunId} - already processed", filePath, runId);
                     continue;
                 }
 
-                logger.LogInformation("Processing {File} for {RunId}", filePath, runId);
+                logger.LogInformation("Processing {File} for {ArchiveRunId}", filePath, runId);
                 var result = await processor.ProcessFileAsync(runId, filePath, cancellationToken);
                 await archiveService.ReportProcessingResult(runId, result, cancellationToken);
+
                 if (keepTimeStamps)
                 {
                     FileHelper.GetTimestamps(filePath, out var created, out var modified);
@@ -69,7 +92,8 @@ public class ArchiveFilesOrchestration(
             }
             catch (Exception ex)
             {
-                await mediator.RetryFile(runId, filePath, ex, cancellationToken);
+                request.Exception = ex;
+                await retryMediator.RetryAttempt(request, cancellationToken);
             }
     }
 

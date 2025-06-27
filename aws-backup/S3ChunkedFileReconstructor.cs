@@ -27,7 +27,6 @@ public class S3ChunkedFileReconstructor(
         var destinationFolder = contextResolver.LocalRestoreFolder(request.RestoreId);
         var outputFilePath = Path.Combine(destinationFolder, request.FilePath);
         var bufferSize = contextResolver.ReadBufferSize();
-        var chunkSize = contextResolver.ChunkSizeBytes();
         var maxDownloadConcurrency = contextResolver.NoOfConcurrentDownloadsPerFile();
         var originalFileSize = request.Size;
         var aesKey = await contextResolver.AesFileEncryptionKey(cancellationToken);
@@ -48,7 +47,7 @@ public class S3ChunkedFileReconstructor(
 
         var tasks = Enumerable.Range(0, request.CloudChunkDetails.Length).Select(async idx =>
         {
-            var (key, bucketName, _) = request.CloudChunkDetails[idx];
+            var (key, bucketName, chunkSize, _) = request.CloudChunkDetails[idx];
             await sem.WaitAsync(cancellationToken);
             try
             {

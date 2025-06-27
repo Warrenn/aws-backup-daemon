@@ -75,9 +75,9 @@ public class ArchiveFilesOrchestrationTests
         archiveServiceMock.Verify(
             a => a.ReportProcessingResult(It.IsAny<string>(), It.IsAny<FileProcessResult>(),
                 It.IsAny<CancellationToken>()), Times.Never);
-        // RetryFile never called
+        // RetryAttempt never called
         mediatorMock.Verify(
-            m => m.RetryFile(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Exception>(),
+            m => m.RetryAttempt(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Exception>(),
                 It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -176,9 +176,9 @@ public class ArchiveFilesOrchestrationTests
         await orch.StartAsync(CancellationToken.None);
         await orch.ExecuteTask;
 
-        // Assert: RetryFile called
+        // Assert: RetryAttempt called
         mediatorMock.Verify(
-            m => m.RetryFile("run3", "file3", It.IsAny<InvalidOperationException>(), It.IsAny<CancellationToken>()),
+            m => m.RetryAttempt("run3", "file3", It.IsAny<InvalidOperationException>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 }

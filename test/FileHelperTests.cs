@@ -24,8 +24,8 @@ public class FileHelperTests : IDisposable
     public void GetAndSetTimestamps_RoundTrips()
     {
         // Arrange
-        var created  = DateTimeOffset.UtcNow.AddDays(-1);
-        var modified = DateTimeOffset.UtcNow.AddHours(-2);
+        var created  = TimeProvider.System.GetUtcNow().AddDays(-1);
+        var modified = TimeProvider.System.GetUtcNow().AddHours(-2);
 
         // Act
         FileHelper.SetTimestamps(_tempFile, created, modified);

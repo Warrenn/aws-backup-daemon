@@ -4,9 +4,18 @@ using System.Text.Json.Serialization;
 
 namespace aws_backup;
 
+public interface IChunkManifestMediator
+{
+    IAsyncEnumerable<(string key, DataChunkManifest manifest)> GetDataChunksManifest(
+        CancellationToken cancellationToken);
+
+    ValueTask SaveChunkManifest(DataChunkManifest manifest, CancellationToken cancellationToken);
+}
+
 public record CloudChunkDetails(
     string S3Key, // S3 key for the chunk
     string BucketName, // S3 bucket name
+    long ChunkSize,
     byte[] Hash);
 
 [JsonConverter(typeof(DataChunkManifestConverter))]
@@ -18,6 +27,7 @@ public class DataChunkManifest : ConcurrentDictionary<ByteArrayKey, CloudChunkDe
 public record DataChunkDetails(
     string LocalFilePath,
     int ChunkIndex,
+    long ChunkSize,
     byte[] HashKey,
     long Size
 );
@@ -31,7 +41,7 @@ public interface IDataChunkService
 }
 
 public class DataChunkService(
-    IMediator mediator
+    IChunkManifestMediator mediator
 ) : IDataChunkService
 {
     public bool ChunkRequiresUpload(DataChunkDetails chunk)
@@ -52,6 +62,7 @@ public class DataChunkService(
         var cloudChunkDetails = new CloudChunkDetails(
             s3Key,
             bucketName,
+            chunk.ChunkSize,
             chunk.HashKey);
         dataChunkManifest.TryAdd(hashKey, cloudChunkDetails);
 
@@ -79,7 +90,7 @@ public class DataChunkManifestConverter : JsonConverter<DataChunkManifest>
             reader.Read();
             var keyBase64 = reader.GetString()!;
             var keyBytes = Convert.FromBase64String(keyBase64);
-            var key      = new ByteArrayKey(keyBytes);
+            var key = new ByteArrayKey(keyBytes);
 
             reader.Read();
             var details = JsonSerializer.Deserialize<CloudChunkDetails>(ref reader, options)!;
@@ -98,10 +109,12 @@ public class DataChunkManifestConverter : JsonConverter<DataChunkManifest>
         foreach (var kv in value)
         {
             writer.WriteStartArray();
-            writer.WriteStringValue(Convert.ToBase64String(kv.Key.ToArray())); // assuming ByteArrayKey exposes the raw bytes
+            writer.WriteStringValue(
+                Convert.ToBase64String(kv.Key.ToArray())); // assuming ByteArrayKey exposes the raw bytes
             JsonSerializer.Serialize(writer, kv.Value, options);
             writer.WriteEndArray();
         }
+
         writer.WriteEndArray();
     }
 }

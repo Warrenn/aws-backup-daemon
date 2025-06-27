@@ -83,8 +83,6 @@ public class SqsPollingOrchestration(
                     switch (command)
                     {
                         case "restore-backup":
-#pragma warning disable IL2026
-#pragma warning disable IL3050
                             var restoreRequest = rootElement.GetProperty("body")
                                 .Deserialize<RestoreRequest>(
                                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true });

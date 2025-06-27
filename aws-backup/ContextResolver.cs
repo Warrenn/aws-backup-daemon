@@ -4,9 +4,24 @@ namespace aws_backup;
 
 public interface IContextResolver
 {
-    string ChunkS3Key(DataChunkDetails chunk);
-    string RestoreId(RestoreRequest restoreRequest);
+    string ChunkS3Key(
+        string localFilePath,
+        int chunkIndex,
+        long chunkSize,
+        byte[] hashKey,
+        long size
+    );
+
+    string RestoreId(
+        string archiveRunId,
+        string restorePaths,
+        DateTimeOffset requestedAt
+    );
+
     string LocalRestoreFolder(string requestRestoreId);
+    string ArchiveRunId(DateTimeOffset utcNow);
+    DateTimeOffset NextRetryTime(int attemptCount);
+
     // s3
     string S3BucketId();
     S3StorageClass ColdStorage();
@@ -40,6 +55,7 @@ public interface IContextResolver
     int? SqsVisibilityTimeout();
     long SqsRetryDelaySeconds();
     bool EncryptSqs();
+    int GeneralRetryLimit();
 }
 
 public class ContextResolver : IContextResolver
@@ -59,11 +75,6 @@ public class ContextResolver : IContextResolver
         throw new NotImplementedException(nameof(ServerSideEncryptionMethod));
     }
 
-    public string ChunkS3Key(DataChunkDetails chunk)
-    {
-        throw new NotImplementedException(nameof(ChunkS3Key));
-    }
-
     public string LocalCacheFolder()
     {
         throw new NotImplementedException(nameof(LocalCacheFolder));
@@ -79,12 +90,17 @@ public class ContextResolver : IContextResolver
         throw new NotImplementedException();
     }
 
-    public string ResolveArchiveKey(string runId)
+    public Task<byte[]> SqsEncryptionKey(CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public Task<byte[]> SqsEncryptionKey(CancellationToken cancellationToken)
+    public string ChunkS3Key(string localFilePath, int chunkIndex, long chunkSize, byte[] hashKey, long size)
+    {
+        throw new NotImplementedException();
+    }
+
+    public string RestoreId(string archiveRunId, string restorePaths, DateTimeOffset requestedAt)
     {
         throw new NotImplementedException();
     }
@@ -214,14 +230,24 @@ public class ContextResolver : IContextResolver
         throw new NotImplementedException();
     }
 
+    public int GeneralRetryLimit()
+    {
+        throw new NotImplementedException();
+    }
+
+    public string ArchiveRunId(DateTimeOffset utcNow)
+    {
+        throw new NotImplementedException();
+    }
+
+    public DateTimeOffset NextRetryTime(int attemptCount)
+    {
+        throw new NotImplementedException();
+    }
+
     public int DelayBetweenUploadsSeconds()
     {
         throw new NotImplementedException();
     }
 
-    public string RestoreId(RestoreRequest restoreRequest)
-    {
-        var requestedSeconds = restoreRequest.RequestedAt.ToUnixTimeSeconds();
-        return $"{requestedSeconds}--{restoreRequest.ArchiveRunId}";
-    }
 }

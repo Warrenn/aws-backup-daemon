@@ -1,6 +1,13 @@
+using System.Collections.Concurrent;
 using System.Text.Json.Serialization;
 
 namespace aws_backup;
+
+public interface IArchiveRunMediator
+{
+    IAsyncEnumerable<(ArchiveRun archiveRun, string key)> GetArchiveState(CancellationToken cancellationToken);
+    ValueTask SaveArchiveRun(ArchiveRun currentArchiveRun, CancellationToken cancellationToken);
+}
 
 public enum ArchiveRunStatus
 {
@@ -21,17 +28,20 @@ public record AclEntry(
     string Type);
 
 public record FileMetaData(
-    string LocalFilePath,
-    long? CompressedSize,
-    long? OriginalSize,
-    DateTimeOffset? LastModified,
-    DateTimeOffset? Created,
-    AclEntry[]? AclEntries,
-    string? Owner,
-    string? Group,
-    FileStatus Status,
-    byte[] HashKey,
-    DataChunkDetails[] Chunks);
+    string LocalFilePath
+)
+{
+    public AclEntry[]? AclEntries { get; set; }
+    public long? CompressedSize { get; set; }
+    public DateTimeOffset? Created { get; set; }
+    public string? Group { get; set; }
+    public byte[] HashKey { get; set; } = [];
+    public DateTimeOffset? LastModified { get; set; }
+    public long? OriginalSize { get; set; }
+    public string? Owner { get; set; }
+    public FileStatus Status { get; set; } = FileStatus.Added;
+    public DataChunkDetails[] Chunks { get; set; } = [];
+}
 
 public record RunRequest(
     string RunId,
@@ -52,7 +62,7 @@ public class ArchiveRun
     public int? TotalFiles { get; set; }
     public int? TotalSkippedFiles { get; set; }
 
-    [JsonInclude] public Dictionary<string, FileMetaData> Files { get; init; } = new();
+    [JsonInclude] public ConcurrentDictionary<string, FileMetaData> Files { get; init; } = new();
 }
 
 public interface IArchiveService
@@ -77,12 +87,12 @@ public interface IArchiveService
 
     Task RecordLocalFile(string archiveRunRunId, string filePath, CancellationToken cancellationToken);
     Task CompleteArchiveRun(string archiveRunRunId, CancellationToken cancellationToken);
-    bool FileIsSkipped(string parentFile);
+    bool IsTheFileSkipped(string parentFile);
 }
 
 public class ArchiveService(
     IS3Service s3Service,
-    IMediator mediator
+    IArchiveRunMediator mediator
 ) : IArchiveService
 {
     private ArchiveRun _currentArchiveRun = null!;
@@ -90,8 +100,11 @@ public class ArchiveService(
 
     public async Task<ArchiveRun?> LookupArchiveRun(string runId, CancellationToken cancellationToken)
     {
+        //first look it up local cache
         if (await s3Service.RunExists(runId, cancellationToken))
             return await Task.FromResult<ArchiveRun?>(null);
+
+        //add it to local cache if not complete
         return await s3Service.GetArchive(runId, cancellationToken);
     }
 
@@ -115,41 +128,28 @@ public class ArchiveService(
     {
         if (_currentArchiveRun.Files.TryGetValue(filePath, out var fileMeta))
             return fileMeta.Status is not FileStatus.Processed and not FileStatus.Skipped;
-        fileMeta = new FileMetaData(
-            filePath,
-            Status: FileStatus.Added,
-            CompressedSize: null,
-            OriginalSize: null,
-            LastModified: null,
-            Created: null,
-            AclEntries: null,
-            Owner: null,
-            Group: null,
-            HashKey: [],
-            Chunks: []
-        );
+
+        fileMeta = new FileMetaData(filePath)
+        {
+            Status = FileStatus.Added
+        };
         _currentArchiveRun.Files[filePath] = fileMeta;
         await CheckIfRunComplete(cancellationToken);
-        return false;
+        return true;
     }
 
     public async Task ReportProcessingResult(string archiveRunId, FileProcessResult result,
         CancellationToken cancellationToken)
     {
-        var fileMeta = new FileMetaData(
-            result.LocalFilePath,
-            Status: FileStatus.Processed,
-            CompressedSize: result.Chunks.Sum(c => c.Size),
-            OriginalSize: result.OriginalSize,
-            LastModified: null,
-            Created: null,
-            AclEntries: null,
-            Owner: null,
-            Group: null,
-            HashKey: result.FullFileHash,
-            Chunks: result.Chunks
-        );
-        _currentArchiveRun.Files[result.LocalFilePath] = fileMeta;
+        var filePath = result.LocalFilePath;
+        if (!_currentArchiveRun.Files.TryGetValue(filePath, out var fileMeta)) return;
+
+        fileMeta.Status = FileStatus.Processed;
+        fileMeta.CompressedSize = result.Chunks.Sum(c => c.Size);
+        fileMeta.OriginalSize = result.OriginalSize;
+        fileMeta.HashKey = result.FullFileHash;
+        fileMeta.Chunks = result.Chunks;
+
         await CheckIfRunComplete(cancellationToken);
     }
 
@@ -196,43 +196,22 @@ public class ArchiveService(
         CancellationToken cancellationToken)
     {
         if (!_currentArchiveRun.Files.TryGetValue(localFilePath, out var fileMeta))
-            fileMeta = new FileMetaData(
-                localFilePath,
-                Status: FileStatus.Skipped,
-                CompressedSize: null,
-                OriginalSize: null,
-                LastModified: null,
-                Created: null,
-                AclEntries: null,
-                Owner: null,
-                Group: null,
-                HashKey: [],
-                Chunks: []
-            );
-        var updatedMeta = fileMeta with
-        {
-            Status = FileStatus.Skipped
-        };
-        _currentArchiveRun.Files[localFilePath] = updatedMeta;
+            fileMeta = new FileMetaData(localFilePath);
+
+        fileMeta.Status = FileStatus.Skipped;
+        _currentArchiveRun.Files[localFilePath] = fileMeta;
         await CheckIfRunComplete(cancellationToken);
     }
 
     public async Task RecordLocalFile(string archiveRunRunId, string localFilePath, CancellationToken cancellationToken)
     {
-        if (!_currentArchiveRun.Files.TryGetValue(localFilePath, out var fileMeta))
-            fileMeta = new FileMetaData(
-                localFilePath,
-                Status: FileStatus.Added,
-                CompressedSize: null,
-                OriginalSize: null,
-                LastModified: null,
-                Created: null,
-                AclEntries: null,
-                Owner: null,
-                Group: null,
-                HashKey: [],
-                Chunks: []
-            );
+        if (string.IsNullOrWhiteSpace(localFilePath)) return;
+        if (_currentArchiveRun.Files.TryGetValue(localFilePath, out _)) return;
+
+        var fileMeta = new FileMetaData(localFilePath)
+        {
+            Status = FileStatus.Added
+        };
 
         _currentArchiveRun.Files[localFilePath] = fileMeta;
         await CheckIfRunComplete(cancellationToken);
@@ -245,7 +224,7 @@ public class ArchiveService(
         await _tcs.Task;
     }
 
-    public bool FileIsSkipped(string localFilePath)
+    public bool IsTheFileSkipped(string localFilePath)
     {
         if (!_currentArchiveRun.Files.TryGetValue(localFilePath, out var fileMeta)) return false;
         return fileMeta.Status == FileStatus.Skipped;

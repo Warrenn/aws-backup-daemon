@@ -32,32 +32,50 @@ public class CronJobOrchestrationTests
     public async Task ExecutesJob_OnSchedule()
     {
         // Arrange
+        var runTimes = new List<DateTimeOffset>();
+
         var cfgMon = new Mock<IOptionsMonitor<Configuration>>();
-        cfgMon.Setup(m => m.CurrentValue).Returns(new Configuration { CronSchedule = "irrelevant" });
+        cfgMon
+            .Setup(m => m.CurrentValue)
+            .Returns(new Configuration { CronSchedule = "irrelevant" });
+
         var clock = new FakeClock { UtcNow = new DateTimeOffset(2025, 6, 25, 10, 0, 0, TimeSpan.Zero) };
-        var sched = new StubScheduler();
+        var scheduler = new StubScheduler();
+        var resolverMock = new Mock<IContextResolver>();
+        resolverMock
+            .Setup(r => r.ArchiveRunId(It.IsAny<DateTimeOffset>()))
+            .Callback((DateTimeOffset time) =>
+            {
+                runTimes.Add(time);
+                clock.UtcNow = time.AddSeconds(10);
+            })
+            .Returns("resolved-context");
+
+        var mediatorMock = new Mock<IMediator>();
+        mediatorMock
+            .Setup(m => m.ScheduleRunRequest(It.IsAny<RunRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(ValueTask.CompletedTask);
+
         var mockFactory = new Mock<ICronSchedulerFactory>();
         mockFactory
             .Setup(f => f.Create(It.IsAny<string>()))
-            .Returns((string _) => sched);
-        var runTimes = new List<DateTimeOffset>();
+            .Returns((string _) => scheduler);
+
         var now = clock.UtcNow;
         // job just records invocation times
-        Func<CancellationToken, Task> job = ct =>
-        {
-            runTimes.Add(clock.UtcNow);
-            clock.UtcNow = clock.UtcNow.AddSeconds(10);
-            return Task.CompletedTask;
-        };
 
         // next occurrences at +10s, +20s, then stop
-        sched.Enqueue(() => now.AddSeconds(11));
-        sched.Enqueue(() => now.AddSeconds(21));
-        sched.Enqueue(() => null);
+        scheduler.Enqueue(() => now.AddSeconds(11));
+        scheduler.Enqueue(() => now.AddSeconds(21));
+        scheduler.Enqueue(() => null);
 
         var orchestrator = new CronJobOrchestration(
-            cfgMon.Object, job,
-            clock, mockFactory.Object, NullLogger<CronJobOrchestration>.Instance);
+            cfgMon.Object,
+            mediatorMock.Object,
+            resolverMock.Object,
+            clock,
+            mockFactory.Object,
+            NullLogger<CronJobOrchestration>.Instance);
 
         // Act: run in background
         var cts = new CancellationTokenSource();
@@ -72,6 +90,9 @@ public class CronJobOrchestrationTests
         await orchestrator.ExecuteTask;
 
         // Assert
+        mediatorMock.Verify(m => m.ScheduleRunRequest(It.IsAny<RunRequest>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+
         Assert.Equal(2, runTimes.Count);
         Assert.Equal(new DateTimeOffset(2025, 6, 25, 10, 0, 10, TimeSpan.Zero), runTimes[0]);
         Assert.Equal(new DateTimeOffset(2025, 6, 25, 10, 0, 20, TimeSpan.Zero), runTimes[1]);
@@ -81,12 +102,25 @@ public class CronJobOrchestrationTests
     public async Task CancelsPendingDelay_WhenCronScheduleChanges()
     {
         // Arrange
+        var runCount = 0;
+
         var cfgMon = new Mock<IOptionsMonitor<Configuration>>();
         var listeners = new List<Action<Configuration, string>>();
         cfgMon.Setup(m => m.CurrentValue).Returns(new Configuration { CronSchedule = "* * * * *" });
         cfgMon
             .Setup(m => m.OnChange(It.IsAny<Action<Configuration, string>>()))
             .Callback<Action<Configuration, string>>(h => listeners.Add((cfg, h2) => h(cfg, h2)));
+
+        var resolverMock = new Mock<IContextResolver>();
+        resolverMock
+            .Setup(r => r.ArchiveRunId(It.IsAny<DateTimeOffset>()))
+            .Callback((DateTimeOffset time) => runCount++)
+            .Returns("resolved-context");
+
+        var mediatorMock = new Mock<IMediator>();
+        mediatorMock
+            .Setup(m => m.ScheduleRunRequest(It.IsAny<RunRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(ValueTask.CompletedTask);
 
         var now = DateTimeOffset.UtcNow;
         var clock = new FakeClock { UtcNow = now };
@@ -101,7 +135,6 @@ public class CronJobOrchestrationTests
         sched.Enqueue(() => clock.UtcNow.AddSeconds(1));
         sched.Enqueue(() => null);
 
-        var runCount = 0;
         var cts = new CancellationTokenSource();
         Func<CancellationToken, Task> job = ct =>
         {
@@ -110,9 +143,13 @@ public class CronJobOrchestrationTests
         };
 
         var orchestrator = new CronJobOrchestration(
-            cfgMon.Object, job,
-            clock, mockFactory.Object, NullLogger<CronJobOrchestration>.Instance);
-
+            cfgMon.Object,
+            mediatorMock.Object,
+            resolverMock.Object,
+            clock,
+            mockFactory.Object,
+            NullLogger<CronJobOrchestration>.Instance);
+        
         // Act
         var exec = orchestrator.StartAsync(cts.Token);
 
@@ -125,6 +162,9 @@ public class CronJobOrchestrationTests
         await orchestrator.ExecuteTask;
 
         // Assert that job ran exactly once under the new schedule
+        mediatorMock.Verify(m => m.ScheduleRunRequest(It.IsAny<RunRequest>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        
         Assert.Equal(1, runCount);
     }
 
@@ -142,6 +182,16 @@ public class CronJobOrchestrationTests
             .Setup(f => f.Create(It.IsAny<string>()))
             .Returns((string _) => sched);
 
+        var resolverMock = new Mock<IContextResolver>();
+        resolverMock
+            .Setup(r => r.ArchiveRunId(It.IsAny<DateTimeOffset>()))
+            .Returns("resolved-context");
+
+        var mediatorMock = new Mock<IMediator>();
+        mediatorMock
+            .Setup(m => m.ScheduleRunRequest(It.IsAny<RunRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(ValueTask.CompletedTask);
+        
         var jobCalled = false;
         Func<CancellationToken, Task> job = ct =>
         {
@@ -150,9 +200,13 @@ public class CronJobOrchestrationTests
         };
 
         var orchestrator = new CronJobOrchestration(
-            cfgMon.Object, job,
-            clock, mockFactory.Object, NullLogger<CronJobOrchestration>.Instance);
-
+            cfgMon.Object,
+            mediatorMock.Object,
+            resolverMock.Object,
+            clock,
+            mockFactory.Object,
+            NullLogger<CronJobOrchestration>.Instance);
+        
         // Act
         await orchestrator.StartAsync(CancellationToken.None);
         await orchestrator.ExecuteTask;

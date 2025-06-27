@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 namespace aws_backup;
 
 public class RestoreOrchestration(
-    IMediator mediator,
+    IRestoreRequestsMediator mediator,
     IArchiveService archiveService,
     IRestoreService restoreService,
     ILogger<ArchiveFilesOrchestration> logger,
@@ -20,11 +20,12 @@ public class RestoreOrchestration(
             if (string.IsNullOrWhiteSpace(restoreRequest.ArchiveRunId) ||
                 string.IsNullOrWhiteSpace(restoreRequest.RestorePaths))
             {
-                logger.LogWarning("Received invalid restore request with null RunId or RestorePaths");
+                logger.LogWarning("Received invalid restore request with null ArchiveRunId or RestorePaths");
                 continue;
             }
 
-            var restoreId = contextResolver.RestoreId(restoreRequest);
+            var restoreId = contextResolver.RestoreId(restoreRequest.ArchiveRunId, restoreRequest.RestorePaths,
+                restoreRequest.RequestedAt);
             var restoreRun = await restoreService.LookupRestoreRun(restoreId, cancellationToken);
             if (restoreRun != null) continue;
 
@@ -34,7 +35,7 @@ public class RestoreOrchestration(
             var archiveRun = await archiveService.LookupArchiveRun(restoreRequest.ArchiveRunId, cancellationToken);
             if (archiveRun is null)
             {
-                logger.LogWarning("No archive run found for RunId {RunId}", restoreRequest.ArchiveRunId);
+                logger.LogWarning("No archive run found for ArchiveRunId {ArchiveRunId}", restoreRequest.ArchiveRunId);
                 continue;
             }
 

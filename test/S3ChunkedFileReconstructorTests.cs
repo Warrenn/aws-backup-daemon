@@ -25,9 +25,9 @@ public class HotStorageServiceIntegrationTests
             PathsToArchive = "/tmp/foo",
             CronSchedule = "*/5 * * * *",
             Status = ArchiveRunStatus.Processing,
-            CreatedAt = DateTimeOffset.UtcNow
+            CreatedAt = TimeProvider.System.GetUtcNow()
         };
-        _original.CompletedAt = DateTimeOffset.UtcNow.AddMinutes(1);
+        _original.CompletedAt = TimeProvider.System.GetUtcNow().AddMinutes(1);
         _original.OriginalSize = 123_456;
         _original.CompressedSize = 78_901;
         _original.TotalFiles = 2;
@@ -37,8 +37,8 @@ public class HotStorageServiceIntegrationTests
             "/tmp/foo/a.txt",
             1000,
             2000,
-            DateTimeOffset.UtcNow,
-            DateTimeOffset.UtcNow.AddDays(-1),
+            TimeProvider.System.GetUtcNow(),
+            TimeProvider.System.GetUtcNow().AddDays(-1),
             new[] { new AclEntry("alice", "rwx", "Allow") },
             "alice",
             "staff",
@@ -46,15 +46,15 @@ public class HotStorageServiceIntegrationTests
             new byte[] { 1, 2, 3, 4 },
             new[]
             {
-                new DataChunkDetails("a.chunk0", 0, new byte[] { 9, 10, 11 }, 2000)
+                new DataChunkDetails("a.chunk0", 0, 3000,new byte[] { 9, 10, 11 }, 2000)
             }
         );
         _original.Files["/tmp/foo/b.txt"] = new FileMetaData(
             "/tmp/foo/b.txt",
             1500,
             3000,
-            DateTimeOffset.UtcNow,
-            DateTimeOffset.UtcNow.AddDays(-2),
+            TimeProvider.System.GetUtcNow(),
+            TimeProvider.System.GetUtcNow().AddDays(-2),
             new[] { new AclEntry("bob", "rw-", "Allow") },
             "bob",
             "users",
@@ -62,7 +62,7 @@ public class HotStorageServiceIntegrationTests
             new byte[] { 5, 6, 7, 8 },
             new[]
             {
-                new DataChunkDetails("b.chunk0", 0, new byte[] { 8, 9, 10 }, 3000)
+                new DataChunkDetails("b.chunk0", 0, 3000,new byte[] { 8, 9, 10 }, 3000)
             }
         );
 

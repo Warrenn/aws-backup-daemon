@@ -20,7 +20,7 @@ public interface IChunkedEncryptingFileProcessor
 
 public class ChunkedEncryptingFileProcessor(
     IContextResolver contextResolver,
-    IMediator mediator) : IChunkedEncryptingFileProcessor
+    IUploadChunksMediator mediator) : IChunkedEncryptingFileProcessor
 {
     public async Task<FileProcessResult> ProcessFileAsync(string runId, string inputPath,
         CancellationToken cancellationToken = default)
@@ -59,19 +59,28 @@ public class ChunkedEncryptingFileProcessor(
             // feed the full-file hash
             fullHasher.TransformBlock(buffer, 0, read, null, 0);
 
-            // ensure chunk pipeline is ready
-            if (chunkHasher is null)
-                InitializeChunkPipeline();
-            if (chunkHasher is null) continue; // safety check
+            var offset = 0;
+            while (offset < read)
+            {
+                // ensure chunk pipeline is ready
+                if (chunkHasher is null)
+                    InitializeChunkPipeline();
+                if (chunkHasher is null) continue; // safety check
 
-            // feed chunk hash + compression + encryption
-            chunkHasher.TransformBlock(buffer, 0, read, null, 0);
-            await gzipStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                // how many bytes can we write into this chunk before we hit chunkSize?
+                var spaceLeft = chunkSize - bytesInChunk;
+                var toWrite = Math.Min(spaceLeft, read - offset);
 
-            bytesInChunk += read;
+                // feed chunk hash + compression + encryption
+                chunkHasher.TransformBlock(buffer, offset, (int)toWrite, null, 0);
+                await gzipStream.WriteAsync(buffer.AsMemory(offset, (int)toWrite), cancellationToken);
 
-            if (bytesInChunk >= chunkSize)
-                await FinalizeChunkAsync();
+                bytesInChunk += toWrite;
+                offset += (int)toWrite;
+
+                if (bytesInChunk >= chunkSize)
+                    await FinalizeChunkAsync();
+            }
         }
 
         // finish last partial chunk
@@ -137,11 +146,13 @@ public class ChunkedEncryptingFileProcessor(
             var chunkData = new DataChunkDetails(
                 chunkFileFs.Name,
                 chunkIndex,
+                chunkSize,
                 chunkHasher.Hash,
                 bytesInChunk
             );
             chunks.Add(chunkData);
-            await mediator.ProcessChunk((runId, inputPath, chunkData), cancellationToken);
+            var request = new UploadChunkRequest(runId, inputPath, chunkData);
+            await mediator.ProcessChunk(request, cancellationToken);
 
             // prepare for next chunk
             chunkIndex++;

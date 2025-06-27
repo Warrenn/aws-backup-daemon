@@ -1,6 +1,3 @@
-using System.Collections.Concurrent;
-using Amazon.S3;
-using Amazon.S3.Model;
 using aws_backup;
 using Moq;
 
@@ -31,6 +28,7 @@ public class HotStorageServiceManifestTests
             var details = new CloudChunkDetails(
                 $"chunk-{i}.gz",
                 Bucket,
+                3000,
                 hash
             );
             _manifest[baKey] = details;
@@ -71,29 +69,28 @@ public class HotStorageServiceManifestTests
             Assert.True(origDetails.Hash.AsSpan().SequenceEqual(dlDetails.Hash));
         }
     }
-    
+
     [Fact]
     public async Task UploadAndDownload_RestoreManifest_RoundTrips()
     {
         // Arrange
-        var store = new ConcurrentDictionary<string, byte[]>();
         var s3Mock = new S3Mock();
-        
+
         var manifest = new S3RestoreChunkManifest();
         var rnd = new Random();
-        for (int i = 0; i < 3; i++)
+        for (var i = 0; i < 3; i++)
         {
             var keyBytes = new byte[16];
             rnd.NextBytes(keyBytes);
             var bkey = new ByteArrayKey(keyBytes);
-            var status = (i % 2 == 0)
+            var status = i % 2 == 0
                 ? S3RestoreStatus.PendingDeepArchiveRestore
                 : S3RestoreStatus.ReadyToRestore;
             manifest[bkey] = status;
         }
 
         var ctx = new Mock<IContextResolver>();
-        ctx.Setup(c => c.S3BucketId()).Returns("tierpoint-rclone20250616161037532500000002");
+        ctx.Setup(c => c.S3BucketId()).Returns(Bucket);
         ctx.Setup(c => c.S3PartSize()).Returns(5 * 1024 * 1024);
         ctx.Setup(c => c.HotStorage()).Returns("STANDARD");
 
@@ -116,5 +113,4 @@ public class HotStorageServiceManifestTests
             Assert.Equal(kv.Value, ds);
         }
     }
-
 }
