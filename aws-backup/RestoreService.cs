@@ -89,7 +89,6 @@ public record DownloadFileFromS3Request(
     public byte[]? Checksum { get; set; }
 }
 
-[JsonSerializable(typeof(RestoreRequest))]
 public record RestoreRequest(
     string ArchiveRunId,
     string RestorePaths,

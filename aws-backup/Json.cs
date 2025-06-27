@@ -5,6 +5,17 @@ namespace aws_backup;
 
 [JsonSourceGenerationOptions(WriteIndented = true)]
 [JsonSerializable(typeof(RestoreRequest))]
+[JsonSerializable(typeof(ArchiveRun))]
+[JsonSerializable(typeof(FileMetaData))]
+[JsonSerializable(typeof(RunRequest))]
+[JsonSerializable(typeof(DataChunkManifest))]
+[JsonSerializable(typeof(CloudChunkDetails))]
+[JsonSerializable(typeof(DataChunkDetails))]
+[JsonSerializable(typeof(ByteArrayKey))]
+[JsonSerializable(typeof(AclEntry))]
+[JsonSerializable(typeof(S3RestoreChunkManifest))]
+[JsonSerializable(typeof(RestoreFileMetaData))]
+[JsonSerializable(typeof(RestoreRun))]
 internal partial class SourceGenerationContext : JsonSerializerContext
 {
 }

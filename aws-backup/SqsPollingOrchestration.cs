@@ -86,8 +86,6 @@ public class SqsPollingOrchestration(
                             var restoreRequest = rootElement.GetProperty("body")
                                 .Deserialize<RestoreRequest>(
                                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-#pragma warning restore IL3050
-#pragma warning restore IL2026
                             if (restoreRequest is null) continue;
                             
                             await mediator.RestoreBackup(restoreRequest, cancellationToken);
