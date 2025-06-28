@@ -9,7 +9,7 @@ namespace aws_backup;
 public class SqsPollingOrchestration(
     IAwsClientFactory clientFactory,
     ILogger<SqsPollingOrchestration> logger,
-    IMediator mediator,
+    IRestoreRequestsMediator mediator,
     IContextResolver contextResolver
 ) : BackgroundService
 {

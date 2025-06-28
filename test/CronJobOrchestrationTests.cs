@@ -5,11 +5,6 @@ using Moq;
 
 namespace test;
 
-internal class FakeClock : IClock
-{
-    public DateTimeOffset UtcNow { get; set; }
-}
-
 internal class StubScheduler : ICronScheduler
 {
     private readonly Queue<Func<DateTimeOffset?>> _times = new();
@@ -146,7 +141,6 @@ public class CronJobOrchestrationTests
             cfgMon.Object,
             mediatorMock.Object,
             resolverMock.Object,
-            clock,
             mockFactory.Object,
             NullLogger<CronJobOrchestration>.Instance);
         

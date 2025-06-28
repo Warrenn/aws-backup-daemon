@@ -5,7 +5,7 @@ namespace aws_backup;
 
 public interface IArchiveRunMediator
 {
-    IAsyncEnumerable<(ArchiveRun archiveRun, string key)> GetArchiveState(CancellationToken cancellationToken);
+    IAsyncEnumerable<KeyValuePair<string, ArchiveRun>> GetArchiveRuns(CancellationToken cancellationToken);
     ValueTask SaveArchiveRun(ArchiveRun currentArchiveRun, CancellationToken cancellationToken);
 }
 
@@ -100,12 +100,9 @@ public class ArchiveService(
 
     public async Task<ArchiveRun?> LookupArchiveRun(string runId, CancellationToken cancellationToken)
     {
-        //first look it up local cache
         if (await s3Service.RunExists(runId, cancellationToken))
-            return await Task.FromResult<ArchiveRun?>(null);
-
-        //add it to local cache if not complete
-        return await s3Service.GetArchive(runId, cancellationToken);
+            return await s3Service.GetArchive(runId, cancellationToken);
+        return null;
     }
 
     public async Task<ArchiveRun> StartNewArchiveRun(RunRequest request, CancellationToken cancellationToken)
