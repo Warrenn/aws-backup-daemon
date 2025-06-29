@@ -22,7 +22,8 @@ public interface IRetryMediator
 public class RetryOrchestration(
     IRetryMediator mediator,
     IContextResolver contextResolver,
-    ILogger<RetryOrchestration> logger) : BackgroundService
+    ILogger<RetryOrchestration> logger,
+    TimeProvider provider) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
@@ -37,7 +38,7 @@ public class RetryOrchestration(
                 continue;
             }
 
-            if (TimeProvider.System.GetUtcNow() < state.NextAttemptAt)
+            if (provider.GetUtcNow() < state.NextAttemptAt)
             {
                 //some breathing room between reads and retries
                 await Task.Delay(contextResolver.RetryCheckIntervalSeconds(), cancellationToken);

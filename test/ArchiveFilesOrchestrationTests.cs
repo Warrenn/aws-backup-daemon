@@ -8,14 +8,15 @@ namespace test;
 public class ArchiveFilesOrchestrationTests
 {
     private ArchiveFilesOrchestration CreateOrchestrator(
-        IAsyncEnumerable<(string, string)> archiveFiles,
+        IAsyncEnumerable<ArchiveFileRequest> archiveFiles,
         bool requireProcessing,
         bool keepTimeStamps,
         bool keepOwnerGroup,
         bool keepAclEntries,
+        Mock<IRetryMediator> retryMediatorMock,
         Mock<IChunkedEncryptingFileProcessor> processorMock,
         Mock<IArchiveService> archiveServiceMock,
-        Mock<IMediator> mediatorMock,
+        Mock<IArchiveFileMediator> mediatorMock,
         Mock<IContextResolver> ctxMock)
     {
         mediatorMock.Setup(m => m.GetArchiveFiles(It.IsAny<CancellationToken>()))
@@ -34,6 +35,7 @@ public class ArchiveFilesOrchestrationTests
 
         return new ArchiveFilesOrchestration(
             mediatorMock.Object,
+            retryMediatorMock.Object,
             processorMock.Object,
             archiveServiceMock.Object,
             loggerMock.Object,
@@ -44,11 +46,12 @@ public class ArchiveFilesOrchestrationTests
     public async Task SkipsFile_WhenRequireProcessingFalse()
     {
         // Arrange
-        var channel = Channel.CreateUnbounded<(string, string)>();
-        channel.Writer.TryWrite(("run1", "path1"));
+        var channel = Channel.CreateUnbounded<ArchiveFileRequest>();
+        channel.Writer.TryWrite(new ArchiveFileRequest("run1", "path1"));
         channel.Writer.Complete();
 
-        var mediatorMock = new Mock<IMediator>();
+        var mediatorMock = new Mock<IArchiveFileMediator>();
+        var retryMediatorMock = new Mock<IRetryMediator>();
         var processorMock = new Mock<IChunkedEncryptingFileProcessor>();
         var archiveServiceMock = new Mock<IArchiveService>();
         var ctxMock = new Mock<IContextResolver>();
@@ -59,6 +62,7 @@ public class ArchiveFilesOrchestrationTests
             false,
             false,
             false,
+            retryMediatorMock,
             processorMock,
             archiveServiceMock,
             mediatorMock,
@@ -76,8 +80,8 @@ public class ArchiveFilesOrchestrationTests
             a => a.ReportProcessingResult(It.IsAny<string>(), It.IsAny<FileProcessResult>(),
                 It.IsAny<CancellationToken>()), Times.Never);
         // RetryAttempt never called
-        mediatorMock.Verify(
-            m => m.RetryAttempt(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Exception>(),
+        retryMediatorMock.Verify(
+            m => m.RetryAttempt(It.IsAny<RetryState>(),
                 It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -85,12 +89,13 @@ public class ArchiveFilesOrchestrationTests
     public async Task ProcessesFile_WhenRequireProcessingTrue_AndUpdatesAccordingFlags()
     {
         // Arrange channel with one item
-        var channel = Channel.CreateUnbounded<(string, string)>();
+        var channel = Channel.CreateUnbounded<ArchiveFileRequest>();
 
-        var mediatorMock = new Mock<IMediator>();
+        var mediatorMock = new Mock<IArchiveFileMediator>();
         var processorMock = new Mock<IChunkedEncryptingFileProcessor>();
+        var retryMock = new Mock<IRetryMediator>();
         processorMock.Setup(p => p.ProcessFileAsync("run2", "file2", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new FileProcessResult("file2", 0, new byte[] { }, Array.Empty<DataChunkDetails>()));
+            .ReturnsAsync(new FileProcessResult("file2", 0, [], Array.Empty<DataChunkDetails>()));
 
         var archiveServiceMock = new Mock<IArchiveService>();
         archiveServiceMock.Setup(a => a.DoesFileRequireProcessing("run2", "file2", It.IsAny<CancellationToken>()))
@@ -105,6 +110,7 @@ public class ArchiveFilesOrchestrationTests
             true,
             true,
             true,
+            retryMock,
             processorMock,
             archiveServiceMock,
             mediatorMock,
@@ -117,11 +123,11 @@ public class ArchiveFilesOrchestrationTests
 
         // Act
         await orch.StartAsync(CancellationToken.None);
-        channel.Writer.TryWrite(("run2", "file2"));
+        channel.Writer.TryWrite(new ArchiveFileRequest("run2", "file2"));
         channel.Writer.Complete();
 
         await orch.ExecuteTask;
-        
+
         // Assert: processor called once
         processorMock.Verify(p => p.ProcessFileAsync("run2", "file2", It.IsAny<CancellationToken>()), Times.Once);
         archiveServiceMock.Verify(
@@ -146,15 +152,18 @@ public class ArchiveFilesOrchestrationTests
     public async Task RetriesFile_WhenProcessorThrows()
     {
         // Arrange
-        var channel = Channel.CreateUnbounded<(string, string)>();
-        channel.Writer.TryWrite(("run3", "file3"));
-        channel.Writer.Complete();
+        var channel = Channel.CreateUnbounded<ArchiveFileRequest>();
+        var request = new ArchiveFileRequest("run3", "file3");
+        var exception = new InvalidOperationException("fail");
+        channel.Writer.TryWrite(request);
+        channel.Writer.Complete(exception);
 
-        var mediatorMock = new Mock<IMediator>();
+        var mediatorMock = new Mock<IArchiveFileMediator>();
         var processorMock = new Mock<IChunkedEncryptingFileProcessor>();
+        var retryMediatorMock = new Mock<IRetryMediator>();
         processorMock.Setup(p =>
                 p.ProcessFileAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException("fail"));
+            .ThrowsAsync(exception);
 
         var archiveServiceMock = new Mock<IArchiveService>();
         archiveServiceMock.Setup(a => a.DoesFileRequireProcessing("run3", "file3", It.IsAny<CancellationToken>()))
@@ -167,6 +176,7 @@ public class ArchiveFilesOrchestrationTests
             false,
             false,
             false,
+            retryMediatorMock,
             processorMock,
             archiveServiceMock,
             mediatorMock,
@@ -177,8 +187,8 @@ public class ArchiveFilesOrchestrationTests
         await orch.ExecuteTask;
 
         // Assert: RetryAttempt called
-        mediatorMock.Verify(
-            m => m.RetryAttempt("run3", "file3", It.IsAny<InvalidOperationException>(), It.IsAny<CancellationToken>()),
+        retryMediatorMock.Verify(
+            m => m.RetryAttempt(It.Is<RetryState>(s => s == request && s.Exception == exception),  It.IsAny<CancellationToken>()),
             Times.Once);
     }
 }

@@ -29,10 +29,10 @@ public class ChunkedEncryptAndReconstructTests
             .ReturnsAsync(aesKey);
 
         // A no‐op mediator is fine; we’ll upload manually in the test
-        var mediatorMock = new Mock<IMediator>();
+        var mediatorMock = new Mock<IUploadChunksMediator>();
         mediatorMock
-            .Setup(m => m.ProcessChunk(It.IsAny<(string, string, DataChunkDetails)>(), It.IsAny<CancellationToken>()))
-            .Returns(ValueTask.CompletedTask);
+            .Setup(m => m.ProcessChunk(It.IsAny<UploadChunkRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         var processor = new ChunkedEncryptingFileProcessor(ctxProc.Object, mediatorMock.Object);
 
@@ -126,10 +126,10 @@ public class ChunkedEncryptAndReconstructTests
             .ReturnsAsync(aesKey);
 
         // A no‐op mediator is fine; we’ll upload manually in the test
-        var mediatorMock = new Mock<IMediator>();
+        var mediatorMock = new Mock<IUploadChunksMediator>();
         mediatorMock
-            .Setup(m => m.ProcessChunk(It.IsAny<(string, string, DataChunkDetails)>(), It.IsAny<CancellationToken>()))
-            .Returns(ValueTask.CompletedTask);
+            .Setup(m => m.ProcessChunk(It.IsAny<UploadChunkRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         var processor = new ChunkedEncryptingFileProcessor(ctxProc.Object, mediatorMock.Object);
 

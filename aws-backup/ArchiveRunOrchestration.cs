@@ -6,7 +6,7 @@ namespace aws_backup;
 public interface IRunRequestMediator
 {
     IAsyncEnumerable<RunRequest> GetRunRequests(CancellationToken cancellationToken);
-    ValueTask ScheduleRunRequest(RunRequest runRequest, CancellationToken cancellationToken);
+    Task ScheduleRunRequest(RunRequest runRequest, CancellationToken cancellationToken);
 }
 
 public class ArchiveRunOrchestration(

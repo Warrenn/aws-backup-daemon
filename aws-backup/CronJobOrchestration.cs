@@ -41,7 +41,8 @@ public class CronJobOrchestration(
     IRunRequestMediator mediator,
     IContextResolver contextResolver,
     ICronSchedulerFactory cronSchedulerFactory,
-    ILogger<CronJobOrchestration> logger)
+    ILogger<CronJobOrchestration> logger,
+    TimeProvider timeProvider)
     : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
@@ -61,7 +62,7 @@ public class CronJobOrchestration(
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            var now = TimeProvider.System.GetUtcNow();
+            var now = timeProvider.GetUtcNow();
             var next = scheduler.GetNext(now);
             if (next == null) break;
 
@@ -77,13 +78,13 @@ public class CronJobOrchestration(
                 // 2) Wait until it's time (or until shutdown)
                 await Task.Delay(delay, linked.Token);
 
-                var runId = contextResolver.ArchiveRunId(TimeProvider.System.GetUtcNow());
+                var runId = contextResolver.ArchiveRunId(timeProvider.GetUtcNow());
                 var cronSchedule = configurationMonitor.CurrentValue.CronSchedule;
                 var pathsToArchive = configurationMonitor.CurrentValue.PathsToArchive;
                 var runRequest = new RunRequest(runId, pathsToArchive, cronSchedule);
                 
                 logger.LogInformation("Starting backup {runId} for {pathsToArchive} at {Now}", runId, pathsToArchive,
-                    TimeProvider.System.GetUtcNow());
+                    timeProvider.GetUtcNow());
                 await mediator.ScheduleRunRequest(runRequest, cancellationToken);
             }
             catch (OperationCanceledException)

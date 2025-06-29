@@ -1,11 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
-using Amazon;
-using Amazon.S3;
-using Amazon.S3.Transfer;
 using aws_backup;
-using Moq;
 using dotenv.net;
+using Moq;
 
 namespace test;
 
@@ -44,10 +41,10 @@ public class ChunkedEncryptingFileProcessorTests : IDisposable
         ctxMock.Setup(c => c.AesFileEncryptionKey(It.IsAny<CancellationToken>())).ReturnsAsync(aesKey);
 
         // Mock mediator
-        var mediatorMock = new Mock<IMediator>();
+        var mediatorMock = new Mock<IUploadChunksMediator>();
         mediatorMock
-            .Setup(m => m.ProcessChunk(It.IsAny<(string, string, DataChunkDetails)>(), It.IsAny<CancellationToken>()))
-            .Returns(ValueTask.CompletedTask)
+            .Setup(m => m.ProcessChunk(It.IsAny<UploadChunkRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask)
             .Verifiable();
 
         var processor = new ChunkedEncryptingFileProcessor(ctxMock.Object, mediatorMock.Object);
@@ -72,8 +69,8 @@ public class ChunkedEncryptingFileProcessorTests : IDisposable
         // Ensure chunk file exists
         Assert.True(File.Exists(chunk.LocalFilePath));
 
-        var tuple = ("run1", _tempFile, chunk);
-        mediatorMock.Verify(m => m.ProcessChunk(tuple, It.IsAny<CancellationToken>()), Times.Once);
+        var request = new UploadChunkRequest("run1", _tempFile, chunk);
+        mediatorMock.Verify(m => m.ProcessChunk(request, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -92,11 +89,11 @@ public class ChunkedEncryptingFileProcessorTests : IDisposable
         ctxMock.Setup(c => c.AesFileEncryptionKey(It.IsAny<CancellationToken>())).ReturnsAsync(aesKey);
 
         // Mock mediator
-        var mediatorMock = new Mock<IMediator>();
+        var mediatorMock = new Mock<IUploadChunksMediator>();
         mediatorMock
-            .Setup(m => m.ProcessChunk(It.IsAny<(string, string, DataChunkDetails)>(),
+            .Setup(m => m.ProcessChunk(It.IsAny<UploadChunkRequest>(),
                 It.IsAny<CancellationToken>()))
-            .Returns(ValueTask.CompletedTask);
+            .Returns(Task.CompletedTask);
 
         var processor = new ChunkedEncryptingFileProcessor(ctxMock.Object, mediatorMock.Object);
 
@@ -115,7 +112,7 @@ public class ChunkedEncryptingFileProcessorTests : IDisposable
 
         // Verify mediator called 3 times
         mediatorMock.Verify(
-            m => m.ProcessChunk(It.IsAny<(string, string, DataChunkDetails)>(), It.IsAny<CancellationToken>()),
+            m => m.ProcessChunk(It.IsAny<UploadChunkRequest>(), It.IsAny<CancellationToken>()),
             Times.Exactly(3));
     }
 }

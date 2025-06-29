@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Amazon.S3;
 using aws_backup;
 using Moq;
@@ -33,38 +32,32 @@ public class HotStorageServiceIntegrationTests
         _original.TotalFiles = 2;
         _original.TotalSkippedFiles = 1;
         // two file entries
-        _original.Files["/tmp/foo/a.txt"] = new FileMetaData(
-            "/tmp/foo/a.txt",
-            1000,
-            2000,
-            TimeProvider.System.GetUtcNow(),
-            TimeProvider.System.GetUtcNow().AddDays(-1),
-            new[] { new AclEntry("alice", "rwx", "Allow") },
-            "alice",
-            "staff",
-            FileStatus.Added,
-            new byte[] { 1, 2, 3, 4 },
-            new[]
-            {
-                new DataChunkDetails("a.chunk0", 0, 3000,new byte[] { 9, 10, 11 }, 2000)
-            }
-        );
-        _original.Files["/tmp/foo/b.txt"] = new FileMetaData(
-            "/tmp/foo/b.txt",
-            1500,
-            3000,
-            TimeProvider.System.GetUtcNow(),
-            TimeProvider.System.GetUtcNow().AddDays(-2),
-            new[] { new AclEntry("bob", "rw-", "Allow") },
-            "bob",
-            "users",
-            FileStatus.Processed,
-            new byte[] { 5, 6, 7, 8 },
-            new[]
-            {
-                new DataChunkDetails("b.chunk0", 0, 3000,new byte[] { 8, 9, 10 }, 3000)
-            }
-        );
+        _original.Files["/tmp/foo/a.txt"] = new FileMetaData("/tmp/foo/a.txt")
+        {
+            Status = FileStatus.Added,
+            Chunks = [new DataChunkDetails("a.chunk0", 0, 3000, [9, 10, 11], 2000)],
+            LastModified = TimeProvider.System.GetUtcNow(),
+            Created = TimeProvider.System.GetUtcNow().AddDays(-1),
+            CompressedSize = 1000,
+            OriginalSize = 1000,
+            AclEntries = [new AclEntry("alice", "rwx", "Allow")],
+            Owner = "alice",
+            Group = "staff",
+            HashKey = [1, 2, 3, 4]
+        };
+        _original.Files["/tmp/foo/b.txt"] = new FileMetaData("/tmp/foo/b.txt")
+        {
+            CompressedSize = 1500,
+            OriginalSize = 3000,
+            LastModified = TimeProvider.System.GetUtcNow(),
+            Created = TimeProvider.System.GetUtcNow().AddDays(-2),
+            AclEntries = [new AclEntry("bob", "rw-", "Allow")],
+            Owner = "bob",
+            Group = "users",
+            Status = FileStatus.Processed,
+            HashKey = [5, 6, 7, 8],
+            Chunks = [new DataChunkDetails("b.chunk0", 0, 3000, [8, 9, 10], 3000)]
+        };
 
         // Mock IContextResolver
         var ctx = new Mock<IContextResolver>();
@@ -77,7 +70,6 @@ public class HotStorageServiceIntegrationTests
         var factory = new Mock<IAwsClientFactory>();
         factory.Setup(f => f.CreateS3Client(It.IsAny<CancellationToken>()))
             .ReturnsAsync(s3Mock.GetObject());
-
         _service = new HotStorageService(factory.Object, ctx.Object);
     }
 

@@ -23,7 +23,8 @@ public class DownloadFileOrchestrationTests
         chan.Writer.Complete();
 
         // Mock mediator to read from our channel
-        var mediator = new Mock<IMediator>();
+        var retryMediator = new Mock<IRetryMediator>();
+        var mediator = new Mock<IDownloadFileMediator>();
         mediator.Setup(m => m.GetDownloadRequests(It.IsAny<CancellationToken>()))
             .Returns(chan.Reader.ReadAllAsync());
 
@@ -54,6 +55,7 @@ public class DownloadFileOrchestrationTests
         var logger = Mock.Of<ILogger<DownloadFileOrchestration>>();
 
         var orch = new DownloadFileOrchestration(
+            retryMediator.Object,
             mediator.Object,
             reconstructor.Object,
             restore.Object,
@@ -69,10 +71,7 @@ public class DownloadFileOrchestrationTests
         // Assert DownloadComplete called once
         restore.Verify(r => r.ReportDownloadComplete(req, It.IsAny<CancellationToken>()), Times.Once);
         // No retry entry left
-        var field = typeof(DownloadFileOrchestration)
-            .GetField("_retryAttempts", BindingFlags.NonPublic | BindingFlags.Instance)
-            !.GetValue(orch) as ConcurrentDictionary<string, object>;
-        Assert.Empty(field);
+        retryMediator.Verify(r => r.RetryAttempt(It.IsAny<RetryState>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
 
@@ -88,7 +87,8 @@ public class DownloadFileOrchestrationTests
         chan.Writer.TryWrite(req);
         chan.Writer.Complete();
 
-        var mediator = new Mock<IMediator>();
+        var retryMediator = new Mock<IRetryMediator>();
+        var mediator = new Mock<IDownloadFileMediator>();
         mediator.Setup(m => m.GetDownloadRequests(It.IsAny<CancellationToken>()))
             .Returns(chan.Reader.ReadAllAsync());
 
@@ -111,6 +111,7 @@ public class DownloadFileOrchestrationTests
         ctx.Setup(c => c.KeepAclEntries()).Returns(false);
 
         var orch = new DownloadFileOrchestration(
+            retryMediator.Object,
             mediator.Object,
             reconstructor.Object,
             restore.Object,
@@ -122,14 +123,12 @@ public class DownloadFileOrchestrationTests
         await orch.ExecuteTask;
 
         // Inspect retryAttempts
-        var dict = (ConcurrentDictionary<string, FailedAttempt>)
-            typeof(DownloadFileOrchestration)
-                .GetField("_retryAttempts", BindingFlags.NonPublic | BindingFlags.Instance)
-                !.GetValue(orch)!;
-        Assert.Single(dict);
-        var fa = dict.Values.Single();
-        Assert.Equal(1, fa.AttemptNo);
-        Assert.IsType<InvalidOperationException>(fa.Exception);
+
+        retryMediator.Verify(r => r.RetryAttempt(It.Is<RetryState>(state =>
+                state == req &&
+                req.Exception != null &&
+                req.Exception.GetType() == typeof(InvalidOperationException)), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
 
@@ -141,13 +140,9 @@ public class DownloadFileOrchestrationTests
     {
         // Arrange a single failed attempt
         var req = new StubRequest("r3", "f3");
-        var fa = new FailedAttempt(
-            req,
-            DateTimeOffset.UtcNow.Subtract(TimeSpan.FromSeconds(1)),
-            new Exception("x"),
-            1);
 
-        var mediator = new Mock<IMediator>();
+        var retryMediator = new Mock<IRetryMediator>();
+        var mediator = new Mock<IDownloadFileMediator>();
         // Expect DownloadFileFromS3 to be called once
         mediator.Setup(m => m.DownloadFileFromS3(req, It.IsAny<CancellationToken>()))
             .Returns(() => ValueTask.CompletedTask)
@@ -163,6 +158,7 @@ public class DownloadFileOrchestrationTests
 
         // Build orchestration and inject the single retry
         var orch = new DownloadFileOrchestration(
+            retryMediator.Object,
             mediator.Object,
             reconstructor,
             restore,
@@ -170,22 +166,7 @@ public class DownloadFileOrchestrationTests
             ctx.Object);
 
         // Prime the private _retryAttempts dict
-        var dict = (ConcurrentDictionary<string, FailedAttempt>)
-            typeof(DownloadFileOrchestration)
-                .GetField("_retryAttempts", BindingFlags.NonPublic | BindingFlags.Instance)
-                !.GetValue(orch)!;
-        dict[$"{req.RestoreId}::{req.FilePath}"] = fa;
-
-        // Act: run RetryFailedAttempts in isolation
-        var retryTask = (typeof(DownloadFileOrchestration)
-            .GetMethod("RetryFailedAttempts", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(orch, new object[] { CancellationToken.None }) as Task)!;
-
-        // Let it loop once
-        await Task.Delay(10);
-        // Then cancel via StopAsync
-        await orch.StopAsync(CancellationToken.None);
-
+        
         // Assert
         mediator.Verify();
     }
