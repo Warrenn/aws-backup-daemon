@@ -16,7 +16,7 @@ public abstract record RetryState
 public interface IRetryMediator
 {
     IAsyncEnumerable<RetryState> GetRetries(CancellationToken cancellationToken);
-    ValueTask RetryAttempt(RetryState attempt, CancellationToken cancellationToken);
+    Task RetryAttempt(RetryState attempt, CancellationToken cancellationToken);
 }
 
 public class RetryOrchestration(
@@ -40,8 +40,9 @@ public class RetryOrchestration(
 
             if (provider.GetUtcNow() < state.NextAttemptAt)
             {
+                var interval = contextResolver.RetryCheckIntervalMs();
                 //some breathing room between reads and retries
-                await Task.Delay(contextResolver.RetryCheckIntervalSeconds(), cancellationToken);
+                await Task.Delay(interval, cancellationToken);
                 await mediator.RetryAttempt(state, cancellationToken);
                 continue;
             }

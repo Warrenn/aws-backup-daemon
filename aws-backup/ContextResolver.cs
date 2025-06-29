@@ -44,7 +44,7 @@ public interface IContextResolver
     int DownloadRetryDelaySeconds();
     int UploadRetryDelaySeconds();
     int ShutdownTimeoutSeconds();
-    int RetryCheckIntervalSeconds();
+    int RetryCheckIntervalMs();
     int StorageCheckDelaySeconds();
     int DelayBetweenUploadsSeconds();
     int DownloadAttemptLimit();
@@ -165,7 +165,7 @@ public class ContextResolver : IContextResolver
         throw new NotImplementedException();
     }
 
-    public int RetryCheckIntervalSeconds()
+    public int RetryCheckIntervalMs()
     {
         throw new NotImplementedException();
     }

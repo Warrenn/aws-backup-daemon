@@ -53,7 +53,7 @@ public class FileLister : IFileLister
                 if (!matcher.Match(rel).HasMatches)
                     continue;
 
-                yield return file;
+                yield return file.ToUnixRooted();
             }
 
             // try to get subdirectories

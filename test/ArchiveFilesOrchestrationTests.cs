@@ -70,6 +70,7 @@ public class ArchiveFilesOrchestrationTests
 
         // Act
         await orch.StartAsync(CancellationToken.None);
+        await orch.ExecuteTask;
 
         // Assert: processor never called
         processorMock.Verify(
@@ -155,12 +156,18 @@ public class ArchiveFilesOrchestrationTests
         var channel = Channel.CreateUnbounded<ArchiveFileRequest>();
         var request = new ArchiveFileRequest("run3", "file3");
         var exception = new InvalidOperationException("fail");
-        channel.Writer.TryWrite(request);
-        channel.Writer.Complete(exception);
 
         var mediatorMock = new Mock<IArchiveFileMediator>();
         var processorMock = new Mock<IChunkedEncryptingFileProcessor>();
         var retryMediatorMock = new Mock<IRetryMediator>();
+        retryMediatorMock
+            .Setup(m => m.RetryAttempt(It.IsAny<RetryState>(), It.IsAny<CancellationToken>()))
+            .Callback((RetryState state, CancellationToken token) =>
+            {
+                state.LimitExceeded(state, token).GetAwaiter().GetResult();
+                state.Retry(state, token).GetAwaiter().GetResult();
+            });
+
         processorMock.Setup(p =>
                 p.ProcessFileAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(exception);
@@ -184,11 +191,24 @@ public class ArchiveFilesOrchestrationTests
 
         // Act
         await orch.StartAsync(CancellationToken.None);
+        channel.Writer.TryWrite(request);
+        channel.Writer.Complete();
         await orch.ExecuteTask;
 
         // Assert: RetryAttempt called
         retryMediatorMock.Verify(
-            m => m.RetryAttempt(It.Is<RetryState>(s => s == request && s.Exception == exception),  It.IsAny<CancellationToken>()),
+            m => m.RetryAttempt(It.Is<RetryState>(s =>
+                    s == request &&
+                    s.Exception == exception),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        mediatorMock.Verify(
+            m => m.ProcessFile(It.Is<ArchiveFileRequest>(r =>
+                    r.RunId == "run3" &&
+                    r.FilePath == "file3"),
+                It.IsAny<CancellationToken>()), Times.Once);
+        archiveServiceMock.Verify(
+            a => a.RecordFailedFile("run3", "file3", exception, It.IsAny<CancellationToken>()),
             Times.Once);
     }
 }

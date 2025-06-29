@@ -1,17 +1,38 @@
 using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
+using System.Text.RegularExpressions;
 
 namespace aws_backup;
 
+public partial class RegexHelper
+{
+    [GeneratedRegex(@"^[A-Za-z]:(?:\\|/)")]
+    public static partial Regex DriveRootRegex();
+}
+
 public static class FileHelper
 {
+    public static string ToUnixRooted(this string windowsPath)
+    {
+        if (string.IsNullOrWhiteSpace(windowsPath)) return "";
+        var returnValue = windowsPath.Trim();
+        var m = RegexHelper.DriveRootRegex().Match(windowsPath);
+        if (m.Success) returnValue = returnValue[2..];
+
+        // Normalize all backslashes to forward slashes
+        return returnValue.Replace('\\', '/');
+    }
+
     /// <summary>
     ///     Runs the OS command to get "owner:group" for the given file.
     /// </summary>
     public static async Task<(string Owner, string Group)> GetOwnerGroupAsync(string path,
         CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            return ("", "");
+
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             // PowerShell one-liner: "(Get-Acl file).Owner"
@@ -47,6 +68,7 @@ public static class FileHelper
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(owner)) return;
+        if (!File.Exists(path)) return;
         if (string.IsNullOrWhiteSpace(group)) group = owner;
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -72,6 +94,8 @@ public static class FileHelper
 
     public static AclEntry[] GetFileAcl(string path)
     {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            return [];
         return RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? GetWindowsAcl(path) : GetUnixAcl(path);
     }
 
@@ -118,16 +142,19 @@ public static class FileHelper
                $"{((mode & exec) > 0 ? "x" : "-")}";
     }
 
-    public static void ApplyAcl(AclEntry[]? acls, string targetPath)
+    public static void ApplyAcl(AclEntry[]? acls, string fileName)
     {
+        if (string.IsNullOrWhiteSpace(fileName)) return;
+        if (!File.Exists(fileName)) return;
+
         if (acls is null || acls.Length == 0) return;
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            ApplyWindowsAcl(acls, targetPath);
+            ApplyWindowsAcl(acls, fileName);
         else
-            ApplyUnixAcl(acls, targetPath);
+            ApplyUnixAcl(acls, fileName);
     }
 
-    private static void ApplyWindowsAcl(AclEntry[] aclEntries, string path)
+    private static void ApplyWindowsAcl(AclEntry[] aclEntries, string fileName)
     {
         // Create a fresh ACL object
         var sec = new FileSecurity();
@@ -156,7 +183,7 @@ public static class FileHelper
             sec.AddAccessRule(rule);
         }
 
-        var fileInfo = new FileInfo(path);
+        var fileInfo = new FileInfo(fileName);
         fileInfo.SetAccessControl(sec);
     }
 
@@ -188,6 +215,13 @@ public static class FileHelper
 
     public static void GetTimestamps(string path, out DateTimeOffset created, out DateTimeOffset modified)
     {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            created = TimeProvider.System.GetUtcNow();
+            modified = created;
+            return;
+        }
+
         // Get creation time (Local)
         // Optionally get UTC instead:
         created = File.GetCreationTimeUtc(path);
@@ -199,6 +233,8 @@ public static class FileHelper
 
     public static void SetTimestamps(string path, DateTimeOffset created, DateTimeOffset modified)
     {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
+
         // Set creation time (Local)
         // Optionally set UTC instead:
         File.SetCreationTimeUtc(path, created.DateTime);

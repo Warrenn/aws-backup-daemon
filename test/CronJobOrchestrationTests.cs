@@ -12,8 +12,7 @@ internal class StubScheduler : ICronScheduler
 
     public DateTimeOffset? GetNext(DateTimeOffset afterUtc)
     {
-        if (_times.Count == 0) return null;
-        return _times.Dequeue()();
+        return _times.Count == 0 ? null : _times.Dequeue()();
     }
 
     public void Enqueue(Func<DateTimeOffset?> next)
