@@ -6,43 +6,11 @@ using Moq;
 
 namespace test;
 
-internal class LoggerClass : ILogger<ArchiveFilesOrchestration>, IDisposable
-{
-    public List<LogRecord> LogRecords { get; } = [];
-
-    public void Dispose()
-    {
-    }
-
-    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
-        Func<TState, Exception?, string> formatter)
-    {
-        var message = formatter(state, exception);
-        LogRecords.Add(new LogRecord(logLevel, eventId, exception, message));
-    }
-
-    public bool IsEnabled(LogLevel logLevel)
-    {
-        return true;
-    }
-
-    public IDisposable? BeginScope<TState>(TState state) where TState : notnull
-    {
-        return this;
-    }
-
-    public record LogRecord(
-        LogLevel LogLevel,
-        EventId EventId,
-        Exception? Exception,
-        string Message);
-}
-
 public class RestoreOrchestrationTests
 {
     private readonly Mock<IArchiveService> _archiveService = new();
     private readonly Mock<IContextResolver> _ctx = new();
-    private readonly LoggerClass _logger = new();
+    private readonly TestLoggerClass<ArchiveFilesOrchestration> _logger = new();
     private readonly Mock<IRestoreRequestsMediator> _mediator = new();
     private readonly Mock<IRestoreService> _restoreService = new();
 

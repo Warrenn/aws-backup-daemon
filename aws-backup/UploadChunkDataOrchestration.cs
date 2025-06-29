@@ -47,6 +47,8 @@ public class UploadChunkDataOrchestration(
         {
             var (_, parentFile, chunk) = request;
             request.RetryLimit = contextResolver.UploadAttemptLimit();
+            request.Retry ??= (state, token) =>
+                mediator.ProcessChunk((UploadChunkRequest)state, token);
             request.LimitExceeded ??= (state, token) =>
                 archiveService.RecordFailedFile(
                     ((UploadChunkRequest)state).ArchiveRunId,
@@ -106,7 +108,6 @@ public class UploadChunkDataOrchestration(
 
                     request.Exception = new InvalidOperationException(
                         $"Checksum mismatch for chunk {chunk.ChunkIndex} for file {chunk.LocalFilePath}.S3: {s3CheckSum}, Local: {localCheckSum}");
-                    request.Retry ??= (r, ct) => mediator.ProcessChunk((UploadChunkRequest)r, ct);
                     await retryMediator.RetryAttempt(request, cancellationToken);
                 }
 
@@ -120,7 +121,6 @@ public class UploadChunkDataOrchestration(
             catch (Exception ex)
             {
                 request.Exception = ex;
-                request.Retry ??= (r, ct) => mediator.ProcessChunk((UploadChunkRequest)r, ct);
                 await retryMediator.RetryAttempt(request, cancellationToken);
             }
         }

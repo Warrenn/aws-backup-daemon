@@ -19,6 +19,10 @@ public class S3Mock
         SetupMock();
         return _s3Mock.Object;
     }
+    public Mock<IAmazonS3> GetMock()
+    {
+        return _s3Mock;
+    }
 
     private void SetupMock()
     {

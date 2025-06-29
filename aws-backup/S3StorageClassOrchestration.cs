@@ -10,15 +10,13 @@ public class S3StorageClassOrchestration(
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        var storageCheckDelay = resolver.StorageCheckDelaySeconds();
-
         while (!cancellationToken.IsCancellationRequested)
         {
             var storageClasses = await s3Service.GetStorageClasses(cancellationToken);
             foreach (var s3StorageInfo in storageClasses)
                 await restoreService.ReportS3Storage(s3StorageInfo.BucketName, s3StorageInfo.Key,
                     s3StorageInfo.StorageClass, cancellationToken);
-
+            var storageCheckDelay = resolver.StorageCheckDelaySeconds();
             await Task.Delay(storageCheckDelay, cancellationToken);
         }
     }
