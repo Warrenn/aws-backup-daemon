@@ -8,10 +8,7 @@ public record FileProcessResult(
     string LocalFilePath,
     long OriginalSize, // Size before compression
     byte[] FullFileHash, // SHA-256 hash of the full file
-    DataChunkDetails[] Chunks)
-{
-    public ByteArrayKey Key { get; init; } = new(FullFileHash);
-}
+    DataChunkDetails[] Chunks);
 
 public interface IChunkedEncryptingFileProcessor
 {
