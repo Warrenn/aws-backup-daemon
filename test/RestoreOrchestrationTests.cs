@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Reflection;
 using System.Threading.Channels;
 using aws_backup;
@@ -92,7 +93,7 @@ public class RestoreOrchestrationTests
                 RestorePaths = req.RestorePaths,
                 RequestedAt = req.RequestedAt,
                 Status = RestoreRunStatus.Processing,
-                RequestedFiles = new Dictionary<string, RestoreFileMetaData>()
+                RequestedFiles = new ConcurrentDictionary<string, RestoreFileMetaData>()
             });
 
         var orch = CreateOrch(chan);

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.FileSystemGlobbing;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -59,24 +60,25 @@ public class RestoreOrchestration(
                         metadata
                     }).ToArray();
 
-                var requestedFiles = requestedFilesArray.ToDictionary(
-                    i => i.path,
-                    i => new RestoreFileMetaData(
-                        i.chunkIds,
-                        i.path,
-                        i.OriginalSize ?? 0
+                var requestedFiles = new ConcurrentDictionary<string, RestoreFileMetaData>();
+                foreach (var file in requestedFilesArray)
+                {
+                    requestedFiles[file.path] = new RestoreFileMetaData(
+                        file.chunkIds,
+                        file.path,
+                        file.OriginalSize ?? 0
                     )
                     {
                         Status = FileRestoreStatus.PendingDeepArchiveRestore,
-                        LastModified = i.metadata.LastModified,
-                        Created = i.metadata.Created,
-                        Owner = i.metadata.Owner,
-                        Group = i.metadata.Group,
-                        AclEntries = i.metadata.AclEntries,
-                        Checksum = i.metadata.HashKey
-                    }
-                );
-
+                        LastModified = file.metadata.LastModified,
+                        Created = file.metadata.Created,
+                        Owner = file.metadata.Owner,
+                        Group = file.metadata.Group,
+                        AclEntries = file.metadata.AclEntries,
+                        Checksum = file.metadata.HashKey
+                    };
+                }
+                
                 restoreRun = new RestoreRun
                 {
                     RestoreId = restoreId,

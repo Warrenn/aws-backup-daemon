@@ -57,7 +57,7 @@ public class UploadChunkDataOrchestration(
                     token);
 
             if (!dataChunkService.ChunkRequiresUpload(chunk) &&
-                !archiveService.IsTheFileSkipped(parentFile))
+                !archiveService.IsTheFileSkipped(request.ArchiveRunId, parentFile))
             {
                 logger.LogInformation("Skipping chunk {ChunkIndex} for file {LocalFilePath} - already uploaded",
                     chunk.ChunkIndex, chunk.LocalFilePath);

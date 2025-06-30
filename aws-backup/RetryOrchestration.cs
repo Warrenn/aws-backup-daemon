@@ -5,7 +5,7 @@ namespace aws_backup;
 
 public abstract record RetryState
 {
-    public Exception? Exception { get; set; } = null;
+    public Exception? Exception { get; set; }
     public DateTimeOffset? NextAttemptAt { get; set; }
     public int AttemptCount { get; set; }
     public int RetryLimit { get; set; }
@@ -28,29 +28,38 @@ public class RetryOrchestration(
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         await foreach (var state in mediator.GetRetries(cancellationToken))
-        {
-            state.NextAttemptAt ??= contextResolver.NextRetryTime(state.AttemptCount);
-            var limit = state.RetryLimit <= 0 ? contextResolver.GeneralRetryLimit() : state.RetryLimit;
-            
-            if (state.AttemptCount > limit)
+            try
             {
-                await (state.LimitExceeded?.Invoke(state, cancellationToken) ?? Task.CompletedTask);
-                continue;
-            }
+                state.NextAttemptAt ??= contextResolver.NextRetryTime(state.AttemptCount);
+                var limit = state.RetryLimit <= 0 ? contextResolver.GeneralRetryLimit() : state.RetryLimit;
 
-            if (provider.GetUtcNow() < state.NextAttemptAt)
+                if (state.AttemptCount > limit)
+                {
+                    await (state.LimitExceeded?.Invoke(state, cancellationToken) ?? Task.CompletedTask);
+                    continue;
+                }
+
+                if (provider.GetUtcNow() < state.NextAttemptAt)
+                {
+                    var interval = contextResolver.RetryCheckIntervalMs();
+                    //some breathing room between reads and retries
+                    await Task.Delay(interval, cancellationToken);
+                    await mediator.RetryAttempt(state, cancellationToken);
+                    continue;
+                }
+
+                state.AttemptCount += 1;
+                state.NextAttemptAt = contextResolver.NextRetryTime(state.AttemptCount);
+
+                if (state.Retry is not null) await state.Retry(state, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                var interval = contextResolver.RetryCheckIntervalMs();
-                //some breathing room between reads and retries
-                await Task.Delay(interval, cancellationToken);
-                await mediator.RetryAttempt(state, cancellationToken);
-                continue;
+                break;
             }
-
-            state.AttemptCount += 1;
-            state.NextAttemptAt = contextResolver.NextRetryTime(state.AttemptCount);
-
-            if (state.Retry is not null) await state.Retry(state, cancellationToken);
-        }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error retrying request: {Message}", ex.Message);
+            }
     }
 }

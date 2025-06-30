@@ -1,4 +1,8 @@
+using Amazon;
+using Amazon.Runtime;
 using Amazon.S3;
+using Amazon.SimpleSystemsManagement;
+using Microsoft.Extensions.Options;
 
 namespace aws_backup;
 
@@ -41,8 +45,6 @@ public interface IContextResolver
     int NoOfConcurrentDownloadsPerFile();
     int NoOfS3FilesToDownloadConcurrently();
     int NoOfS3FilesToUploadConcurrently();
-    int DownloadRetryDelaySeconds();
-    int UploadRetryDelaySeconds();
     int ShutdownTimeoutSeconds();
     int RetryCheckIntervalMs();
     int StorageCheckDelaySeconds();
@@ -56,10 +58,33 @@ public interface IContextResolver
     long SqsRetryDelaySeconds();
     bool EncryptSqs();
     int GeneralRetryLimit();
+    bool UseS3Accelerate();
+    RegionEndpoint GetAwsRegion();
+    RequestRetryMode GetAwsRetryMode();
+    string RolesAnyWhereProfileArn();
+    string RolesAnyWhereRoleArn();
+    string RolesAnyWhereTrustAnchorArn();
+    string RolesAnyWhereCertificateFileName();
+    string RolesAnyWherePrivateKeyFileName();
+    public void SetSsmClientFactory(Func<CancellationToken, Task<IAmazonSimpleSystemsManagement?>> ssmFactory);
 }
 
 public class ContextResolver : IContextResolver
 {
+    private readonly IOptionsMonitor<Configuration> _configOptions;
+
+    private Func<CancellationToken, Task<IAmazonSimpleSystemsManagement?>>
+        _ssmClientFactory = _ => Task.FromResult<IAmazonSimpleSystemsManagement?>(null);
+
+    public ContextResolver(IOptionsMonitor<Configuration> configOptions)
+    {
+        _configOptions = configOptions;
+        _configOptions.OnChange((config, name) =>
+        {
+            // Handle configuration changes if needed
+        });
+    }
+
     public string S3BucketId()
     {
         throw new NotImplementedException(nameof(S3BucketId));
@@ -155,11 +180,6 @@ public class ContextResolver : IContextResolver
         throw new NotImplementedException();
     }
 
-    public int DownloadRetryDelaySeconds()
-    {
-        throw new NotImplementedException();
-    }
-
     public int DownloadAttemptLimit()
     {
         throw new NotImplementedException();
@@ -176,11 +196,6 @@ public class ContextResolver : IContextResolver
     }
 
     public int UploadAttemptLimit()
-    {
-        throw new NotImplementedException();
-    }
-
-    public int UploadRetryDelaySeconds()
     {
         throw new NotImplementedException();
     }
@@ -235,6 +250,59 @@ public class ContextResolver : IContextResolver
         throw new NotImplementedException();
     }
 
+    public bool UseS3Accelerate()
+    {
+        throw new NotImplementedException();
+    }
+
+    public RegionEndpoint GetAwsRegion()
+    {
+        var configRegion = _configOptions.CurrentValue.AWSRegion;
+        var region = string.IsNullOrWhiteSpace(configRegion)
+            ? string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AWS_DEFAULT_REGION"))
+                ? string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AWS_REGION"))
+                    ? RegionEndpoint.USEast1
+                    : RegionEndpoint.GetBySystemName(Environment.GetEnvironmentVariable("AWS_REGION"))
+                : RegionEndpoint.GetBySystemName(Environment.GetEnvironmentVariable("AWS_DEFAULT_REGION"))
+            : RegionEndpoint.GetBySystemName(configRegion);
+        return region;
+    }
+
+    public RequestRetryMode GetAwsRetryMode()
+    {
+        throw new NotImplementedException();
+    }
+
+    public string RolesAnyWhereProfileArn()
+    {
+        throw new NotImplementedException();
+    }
+
+    public string RolesAnyWhereRoleArn()
+    {
+        throw new NotImplementedException();
+    }
+
+    public string RolesAnyWhereTrustAnchorArn()
+    {
+        throw new NotImplementedException();
+    }
+
+    public string RolesAnyWhereCertificateFileName()
+    {
+        throw new NotImplementedException();
+    }
+
+    public string RolesAnyWherePrivateKeyFileName()
+    {
+        throw new NotImplementedException();
+    }
+
+    public void SetSsmClientFactory(Func<CancellationToken, Task<IAmazonSimpleSystemsManagement?>> ssmFactory)
+    {
+        _ssmClientFactory = ssmFactory;
+    }
+
     public string ArchiveRunId(DateTimeOffset utcNow)
     {
         throw new NotImplementedException();
@@ -249,5 +317,4 @@ public class ContextResolver : IContextResolver
     {
         throw new NotImplementedException();
     }
-
 }

@@ -19,8 +19,11 @@
 
     <ItemGroup>
       <PackageReference Include="awssdk.s3" Version="4.0.2" />
+      <PackageReference Include="AWSSDK.SecurityToken" Version="4.0.1.2" />
       <PackageReference Include="AWSSDK.SimpleSystemsManagement" Version="4.0.1.10" />
       <PackageReference Include="AWSSDK.SQS" Version="4.0.0.11" />
+      <PackageReference Include="AWSSDK.SSO" Version="4.0.0.11" />
+      <PackageReference Include="AWSSDK.SSOOIDC" Version="4.0.0.11" />
       <PackageReference Include="Cronos" Version="0.11.0" />
       <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.6" />
       <PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="9.0.6" />

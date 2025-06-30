@@ -19,7 +19,8 @@ public interface ITemporaryCredentialsServer
         string certificateFileName,
         string privateKeyFileName,
         string region,
-        int sessionDuration = 43200); // default 12 hours
+        int sessionDuration = 43200, // default 12 hours
+        CancellationToken cancellation = default);
 }
 
 public class RolesAnywhere : ITemporaryCredentialsServer
@@ -31,21 +32,22 @@ public class RolesAnywhere : ITemporaryCredentialsServer
         string certificateFileName,
         string privateKeyFileName,
         string region,
-        int sessionDuration = 43200) // default 12 hours
+        int sessionDuration = 43200, // default 12 hours
+        CancellationToken cancellation = default)
     {
         var endpoint = new Uri($"https://rolesanywhere.{region}.amazonaws.com");
         var url = new Uri(endpoint, "/sessions");
 
         // 1) Load CA cert and key
-        var certPem = await File.ReadAllTextAsync(certificateFileName);
+        var certPem = await File.ReadAllTextAsync(certificateFileName, cancellation);
         var cert = X509Certificate2.CreateFromPem(certPem);
-        cert = cert.CopyWithPrivateKey(null); // ensure public-only
+        cert = cert.CopyWithPrivateKey(null!); // ensure public-only
         var serial = cert.SerialNumber; // hex string
         var derPub = cert.Export(X509ContentType.Cert);
         var x509Header = Convert.ToBase64String(derPub);
 
         // 2) Load private key
-        var keyPem = await File.ReadAllTextAsync(privateKeyFileName);
+        var keyPem = await File.ReadAllTextAsync(privateKeyFileName, cancellation);
         using var rsa = RSA.Create();
         rsa.ImportFromPem(keyPem.ToCharArray());
 
@@ -55,14 +57,14 @@ public class RolesAnywhere : ITemporaryCredentialsServer
         var dateStamp = now.ToString("yyyyMMdd");
 
         // 5) Payload
-        var payloadObj = new Dictionary<string, object>
-        {
-            ["durationSeconds"] = sessionDuration,
-            ["profileArn"] = profileArn,
-            ["roleArn"] = roleArn,
-            ["trustAnchorArn"] = trustAnchorArn
-        };
-        var payload = JsonSerializer.Serialize(payloadObj, Json.Options);
+        var payload = $$"""
+                        {
+                            ""durationSeconds"": {{sessionDuration}},
+                            ""profileArn"" : ""{{profileArn}}"",
+                            ""roleArn"" : ""{{roleArn}}"",
+                            ""trustAnchorArn"" : ""{{trustAnchorArn}}""
+                        }
+                        """;
         var payloadHash = ToHex(HashSha256(Encoding.UTF8.GetBytes(payload)));
 
         // 6) Headers
@@ -118,8 +120,8 @@ public class RolesAnywhere : ITemporaryCredentialsServer
         foreach (var kv in headers)
             req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
 
-        var resp = await client.SendAsync(req);
-        var json = await resp.Content.ReadAsStringAsync();
+        var resp = await client.SendAsync(req, cancellation);
+        var json = await resp.Content.ReadAsStringAsync(cancellation);
         return Parse(json);
     }
 

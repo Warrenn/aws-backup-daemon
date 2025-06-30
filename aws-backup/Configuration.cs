@@ -49,4 +49,5 @@ public class Configuration
     public int StorageClassCheckDelay { get; set; }
     public int MaxDownloadConcurrency { get; set; }
     public int DownloadRetryLimit { get; set; }
+    public string? AWSRegion { get; set; }
 }

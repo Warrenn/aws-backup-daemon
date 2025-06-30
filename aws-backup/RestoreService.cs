@@ -113,9 +113,9 @@ public class RestoreRun
     public required RestoreRunStatus Status { get; set; } = RestoreRunStatus.Processing;
     public required DateTimeOffset RequestedAt { get; init; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? CompletedAt { get; set; }
-    public Dictionary<string, RestoreFileMetaData> RequestedFiles { get; init; } = new();
+    public ConcurrentDictionary<string, RestoreFileMetaData> RequestedFiles { get; init; } = new();
 
-    [JsonInclude] public Dictionary<string, string> FailedFiles { get; init; } = new();
+    [JsonInclude] public ConcurrentDictionary<string, string> FailedFiles { get; init; } = new();
 }
 
 public class RestoreService(
@@ -128,7 +128,7 @@ public class RestoreService(
 ) : IRestoreService
 {
     //List of RestoreRun objects
-    private readonly Dictionary<string, RestoreRun> _restoreRuns = [];
+    private readonly ConcurrentDictionary<string, RestoreRun> _restoreRuns = [];
 
     public Task<RestoreRun?> LookupRestoreRun(string restoreId, CancellationToken cancellationToken)
     {
@@ -282,7 +282,7 @@ public class RestoreService(
         restoreRun.Status = RestoreRunStatus.Completed;
         restoreRun.CompletedAt = DateTimeOffset.UtcNow;
         await restoreRunMediator.SaveRestoreRun(restoreRun, cancellationToken);
-        _restoreRuns.Remove(restoreRun.RestoreId);
+        _restoreRuns.TryRemove(restoreRun.RestoreId, out _);
     }
 
     public async Task ReportDownloadFailed(DownloadFileFromS3Request request, Exception reason,
@@ -299,7 +299,7 @@ public class RestoreService(
         restoreRun.Status = RestoreRunStatus.Completed;
         restoreRun.CompletedAt = DateTimeOffset.UtcNow;
         await restoreRunMediator.SaveRestoreRun(restoreRun, cancellationToken);
-        _restoreRuns.Remove(restoreRun.RestoreId);
+        _restoreRuns.TryRemove(restoreRun.RestoreId, out _);
     }
 }
 

@@ -62,7 +62,7 @@ public class UploadChunkDataOrchestrationTests
 
         // chunkRequiresUpload = false, IsTheFileSkipped = false => skip branch
         _chunkSvc.Setup(s => s.ChunkRequiresUpload(chunk)).Returns(false);
-        _archiveSvc.Setup(a => a.IsTheFileSkipped("file1")).Returns(false);
+        _archiveSvc.Setup(a => a.IsTheFileSkipped("run1", "file1")).Returns(false);
 
         var orch = CreateOrch(chan);
         var worker = GetWorker();
@@ -84,21 +84,21 @@ public class UploadChunkDataOrchestrationTests
         // arrange file
         var temp = Path.GetTempFileName();
         File.WriteAllText(temp, "data");
-        var chunk = new DataChunkDetails(temp, 0, 10, [], Size: 4);
+        var chunk = new DataChunkDetails(temp, 0, 10, [], 4);
         var req = new UploadChunkRequest("run2", "file2", chunk);
         var chan = Channel.CreateUnbounded<UploadChunkRequest>();
         await chan.Writer.WriteAsync(req);
         chan.Writer.Complete();
 
         _chunkSvc.Setup(s => s.ChunkRequiresUpload(chunk)).Returns(true);
-        _archiveSvc.Setup(a => a.IsTheFileSkipped("file2")).Returns(false);
+        _archiveSvc.Setup(a => a.IsTheFileSkipped("run2", "file2")).Returns(false);
 
         // fake S3 client
         var s3 = new S3Mock();
-        
+
         // let TransferUtility.UploadAsync succeed by mocking PutObjectAsync
         var correctHash = ComputeLocalBase64(temp);
-        
+
         s3.GetMock().Setup(s => s.GetObjectMetadataAsync("bucket", It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new GetObjectMetadataResponse { ChecksumSHA256 = correctHash });
 
@@ -134,14 +134,14 @@ public class UploadChunkDataOrchestrationTests
         // arrange file
         var temp = Path.GetTempFileName();
         File.WriteAllText(temp, "abc");
-        var chunk = new DataChunkDetails(temp, 1, 10, [], Size: 3);
+        var chunk = new DataChunkDetails(temp, 1, 10, [], 3);
         var req = new UploadChunkRequest("run3", "file3", chunk);
         var chan = Channel.CreateUnbounded<UploadChunkRequest>();
         await chan.Writer.WriteAsync(req);
         chan.Writer.Complete();
 
         _chunkSvc.Setup(s => s.ChunkRequiresUpload(chunk)).Returns(true);
-        _archiveSvc.Setup(a => a.IsTheFileSkipped("file3")).Returns(false);
+        _archiveSvc.Setup(a => a.IsTheFileSkipped("run3", "file3")).Returns(false);
 
         // S3 client returns wrong checksum
         var s3 = new Mock<IAmazonS3>();
@@ -197,14 +197,14 @@ public class UploadChunkDataOrchestrationTests
         // arrange file
         var temp = Path.GetTempFileName();
         File.WriteAllText(temp, "xyz");
-        var chunk = new DataChunkDetails(temp, 2, 10, [], Size: 3);
+        var chunk = new DataChunkDetails(temp, 2, 10, [], 3);
         var req = new UploadChunkRequest("run4", "file4", chunk);
         var chan = Channel.CreateUnbounded<UploadChunkRequest>();
         await chan.Writer.WriteAsync(req);
         chan.Writer.Complete();
 
         _chunkSvc.Setup(s => s.ChunkRequiresUpload(chunk)).Returns(true);
-        _archiveSvc.Setup(a => a.IsTheFileSkipped("file4")).Returns(false);
+        _archiveSvc.Setup(a => a.IsTheFileSkipped("run4", "file4")).Returns(false);
 
         // s3Client.Create throws
         var s3 = new Mock<IAmazonS3>();
