@@ -37,10 +37,7 @@ public class CronJobOrchestrationTests
             .Returns(new Configuration(
                 PathsToArchive: "",
                 ClientId: "test-client",
-                CronSchedule: "* * * * *",
-                ChunkSizeBytes: 0,
-                KmsBasePath: "",
-                BucketId: "test-bucket"));
+                CronSchedule: "* * * * *"));
 
         var scheduler = new StubScheduler();
         var resolverMock = new Mock<IContextResolver>();
@@ -160,10 +157,7 @@ public class CronJobOrchestrationTests
         listeners[0].Invoke(new Configuration(
             PathsToArchive: "",
             ClientId: "test-client",
-            CronSchedule: "*/1 * * * *",
-            ChunkSizeBytes: 0,
-            KmsBasePath: "",
-            BucketId: "test-bucket"), "");
+            CronSchedule: "*/1 * * * *"), "");
 
         // Stop
         await exec;
@@ -184,10 +178,7 @@ public class CronJobOrchestrationTests
         cfgMon.Setup(m => m.CurrentValue).Returns(new Configuration(
             PathsToArchive: "",
             ClientId: "test-client",
-            CronSchedule: "irrelevant",
-            ChunkSizeBytes: 0,
-            KmsBasePath: "",
-            BucketId: "test-bucket"));
+            CronSchedule: "irrelevant"));
         var clock = new FakeTimeProvider();
         var sched = new StubScheduler();
         sched.Enqueue(() => null); // will never occur
