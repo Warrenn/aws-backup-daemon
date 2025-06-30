@@ -34,7 +34,13 @@ public class CronJobOrchestrationTests
         var cfgMon = new Mock<IOptionsMonitor<Configuration>>();
         cfgMon
             .Setup(m => m.CurrentValue)
-            .Returns(new Configuration { CronSchedule = "* * * * *" });
+            .Returns(new Configuration(
+                PathsToArchive: "",
+                ClientId: "test-client",
+                CronSchedule: "* * * * *",
+                ChunkSizeBytes: 0,
+                KmsBasePath: "",
+                BucketId: "test-bucket"));
 
         var scheduler = new StubScheduler();
         var resolverMock = new Mock<IContextResolver>();
@@ -101,7 +107,10 @@ public class CronJobOrchestrationTests
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var cfgMon = new Mock<IOptionsMonitor<Configuration>>();
         var listeners = new List<Action<Configuration, string>>();
-        cfgMon.Setup(m => m.CurrentValue).Returns(new Configuration { CronSchedule = "* * * * *" });
+        cfgMon.Setup(m => m.CurrentValue).Returns(new Configuration(
+            PathsToArchive: "",
+            ClientId: "test-client",
+            CronSchedule: "* * * * *"));
         cfgMon
             .Setup(m => m.OnChange(It.IsAny<Action<Configuration, string>>()!))
             .Callback<Action<Configuration, string>>(h => listeners.Add(h));
@@ -148,7 +157,13 @@ public class CronJobOrchestrationTests
 
         // Immediately "change" the config
         await Task.Delay(100);
-        listeners[0].Invoke(new Configuration { CronSchedule = "*/1 * * * *" }, "");
+        listeners[0].Invoke(new Configuration(
+            PathsToArchive: "",
+            ClientId: "test-client",
+            CronSchedule: "*/1 * * * *",
+            ChunkSizeBytes: 0,
+            KmsBasePath: "",
+            BucketId: "test-bucket"), "");
 
         // Stop
         await exec;
@@ -166,7 +181,13 @@ public class CronJobOrchestrationTests
     {
         // Arrange
         var cfgMon = new Mock<IOptionsMonitor<Configuration>>();
-        cfgMon.Setup(m => m.CurrentValue).Returns(new Configuration { CronSchedule = "irrelevant" });
+        cfgMon.Setup(m => m.CurrentValue).Returns(new Configuration(
+            PathsToArchive: "",
+            ClientId: "test-client",
+            CronSchedule: "irrelevant",
+            ChunkSizeBytes: 0,
+            KmsBasePath: "",
+            BucketId: "test-bucket"));
         var clock = new FakeTimeProvider();
         var sched = new StubScheduler();
         sched.Enqueue(() => null); // will never occur

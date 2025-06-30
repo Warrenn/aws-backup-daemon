@@ -25,6 +25,6 @@ public static class Json
     public static readonly JsonSerializerOptions Options = new()
     {
         PropertyNameCaseInsensitive = true,
-        WriteIndented = false
+        WriteIndented = true
     };
 }

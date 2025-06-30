@@ -6,7 +6,7 @@ namespace aws_backup;
 public interface IArchiveRunMediator
 {
     IAsyncEnumerable<KeyValuePair<string, ArchiveRun>> GetArchiveRuns(CancellationToken cancellationToken);
-    ValueTask SaveArchiveRun(ArchiveRun currentArchiveRun, CancellationToken cancellationToken);
+    Task SaveArchiveRun(ArchiveRun currentArchiveRun, CancellationToken cancellationToken);
 }
 
 public enum ArchiveRunStatus

@@ -16,13 +16,6 @@ public static class Base64Url
             .Replace('/', '_'); // 63rd char of encoding
     }
     
-    /// <summary>
-    /// Convenience overload for encoding a UTF8 string.
-    /// </summary>
-    public static string EncodeUtf8(string text)
-    {
-        return Encode(Encoding.UTF8.GetBytes(text));
-    }
 
     /// <summary>
     /// Decode a URL-safe Base64 string back into the original bytes.
@@ -46,14 +39,5 @@ public static class Base64Url
 
         // 3) Standard Base64 decode
         return Convert.FromBase64String(b64);
-    }
-    
-    /// <summary>
-    /// Convenience overload for decoding a URL-safe Base64 string to a UTF8 string.
-    /// </summary>
-    public static string DecodeUrl64ToUtf8(string urlSafe)
-    {
-        var bytes = Decode(urlSafe);
-        return Encoding.UTF8.GetString(bytes);
     }
 }

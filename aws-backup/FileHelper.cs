@@ -9,6 +9,9 @@ public partial class RegexHelper
 {
     [GeneratedRegex(@"^[A-Za-z]:(?:\\|/)")]
     public static partial Regex DriveRootRegex();
+    
+    [GeneratedRegex( @"[^\w\d]")]
+    public static partial Regex NonAlphanumericRegex();
 }
 
 public static class FileHelper

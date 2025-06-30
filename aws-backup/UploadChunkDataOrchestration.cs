@@ -70,7 +70,7 @@ public class UploadChunkDataOrchestration(
                 var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
                 var bucketName = contextResolver.S3BucketId();
                 var storageClass = contextResolver.ColdStorage();
-                var serverSideEncryptionMethod = contextResolver.ServerSideEncryptionMethod();
+                var serverSideEncryptionMethod = contextResolver.ServerSideEncryption();
                 var s3PartSize = contextResolver.S3PartSize();
                 var key = contextResolver.ChunkS3Key(
                     chunk.LocalFilePath,
