@@ -19,6 +19,9 @@ public class FileLister : IFileLister
     /// </summary>
     public IEnumerable<string> GetAllFiles(string colonDelimitedRoots, IEnumerable<string> ignorePatterns)
     {
+        if (string.IsNullOrWhiteSpace(colonDelimitedRoots))
+            yield break;
+
         var matcher = new Matcher();
         matcher.AddInclude("**/*");
         foreach (var pat in ignorePatterns)
@@ -30,6 +33,9 @@ public class FileLister : IFileLister
         while (pending.Count > 0)
         {
             var dir = pending.Pop();
+            if (!Directory.Exists(dir))
+                continue;
+
             string[] subDirs;
             string[] files;
 

@@ -16,6 +16,7 @@ namespace aws_backup;
 [JsonSerializable(typeof(S3RestoreChunkManifest))]
 [JsonSerializable(typeof(RestoreFileMetaData))]
 [JsonSerializable(typeof(RestoreRun))]
+[JsonSerializable(typeof(GlobalConfiguration))]
 internal partial class SourceGenerationContext : JsonSerializerContext
 {
 }

@@ -1,8 +1,9 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace aws_backup;
 
 //settings for everyone
 public record GlobalConfiguration(
-    string AwsRegion,
     long ChunkSizeBytes,
     string KmsBasePath,
     string BucketId,
@@ -10,9 +11,9 @@ public record GlobalConfiguration(
 
 //settings that can change
 public record Configuration(
-    string CronSchedule,
-    string PathsToArchive,
-    string ClientId,
+    [property: Required] string ClientId,
+    [property: Required] string CronSchedule,
+    [property: Required] string PathsToArchive,
     string? ColdStorage = null,
     string? HotStorage = null,
     string? AwsRegion = null,

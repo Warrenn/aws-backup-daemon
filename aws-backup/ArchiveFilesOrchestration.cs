@@ -14,7 +14,7 @@ public record ArchiveFileRequest(
     string FilePath
 ) : RetryState;
 
-public class ArchiveFilesOrchestration(
+public partial class ArchiveFilesOrchestration(
     IArchiveFileMediator mediator,
     IRetryMediator retryMediator,
     IChunkedEncryptingFileProcessor processor,

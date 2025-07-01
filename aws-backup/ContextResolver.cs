@@ -116,7 +116,7 @@ public class ContextResolver : IContextResolver
     {
         _configOptions = configOptions;
         _globalConfigOptions = globalConfigOptions;
-        _configOptions.OnChange((config, name) =>
+        _configOptions.OnChange((_, _) =>
         {
             // Clear cached values on configuration change
             ClearCache();
@@ -160,9 +160,7 @@ public class ContextResolver : IContextResolver
         _awsRegion = string.IsNullOrWhiteSpace(configRegion)
             ? string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AWS_DEFAULT_REGION"))
                 ? string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AWS_REGION"))
-                    ? string.IsNullOrWhiteSpace(_globalConfigOptions.AwsRegion)
-                        ? RegionEndpoint.USEast1
-                        : RegionEndpoint.GetBySystemName(_globalConfigOptions.AwsRegion)
+                    ? RegionEndpoint.USEast1
                     : RegionEndpoint.GetBySystemName(Environment.GetEnvironmentVariable("AWS_REGION")!)
                 : RegionEndpoint.GetBySystemName(Environment.GetEnvironmentVariable("AWS_DEFAULT_REGION")!)
             : RegionEndpoint.GetBySystemName(configRegion);
@@ -321,8 +319,8 @@ public class ContextResolver : IContextResolver
     // Long configuration methods with defaults
     public long ChunkSizeBytes()
     {
-        return _globalConfigOptions.ChunkSizeBytes;
-        // 1MB default
+        return _globalConfigOptions.ChunkSizeBytes <= 0 ? 524288000L : _globalConfigOptions.ChunkSizeBytes;
+        // 500MB default
     }
 
     public long S3PartSize()
@@ -420,14 +418,14 @@ public class ContextResolver : IContextResolver
     public string RestoreId(string archiveRunId, string restorePaths, DateTimeOffset requestedAt)
     {
         var pathsHash = ComputeSimpleHash(restorePaths);
-        var timestamp = requestedAt.ToString("yyyyMMddHHmmss");
-        return $"{_clientId}_restore_{archiveRunId}_{pathsHash}_{timestamp}";
+        var timestamp = requestedAt.ToString("yyyy-MM-dd-HH-mm-ss");
+        return $"restore_{archiveRunId}_{pathsHash}_{timestamp}";
     }
 
     public string ArchiveRunId(DateTimeOffset utcNow)
     {
-        var timestamp = utcNow.ToString("yyyyMMddHHmmss");
-        return $"{_clientId}_archive_{timestamp}";
+        var timestamp = utcNow.ToString("yyyy-MM-dd-HH-mm-ss");
+        return $"{timestamp}";
     }
 
     public DateTimeOffset NextRetryTime(int attemptCount)
