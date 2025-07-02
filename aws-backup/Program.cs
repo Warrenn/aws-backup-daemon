@@ -56,11 +56,6 @@ if (!File.Exists(appSettingsPath))
     return -1;
 }
 
-//CurrentArchiveRuns
-//DataChunkManifest
-//CurrentRestoreRequests
-//S3RestoreChunkManifest
-//Configuration
 var builder = Host.CreateDefaultBuilder(args)
     .UseWindowsService() // ← this enables service integration
     .UseSystemd() // ← this enables systemd integration
@@ -82,10 +77,40 @@ var builder = Host.CreateDefaultBuilder(args)
         logging.AddDebug(); // Add debug logging
         // Optionally add other loggers like File, Azure, etc.
     })
-    .ConfigureServices((hosting, services) =>
+    .ConfigureServices(services =>
+    {
+        // Register the global configuration
+        services
+            .AddLogging()
+            .AddSingleton<IContextResolver, ContextResolver>()
+            .AddSingleton<ITemporaryCredentialsServer, RolesAnywhere>()
+            .AddSingleton<IHotStorageService, HotStorageService>()
+            .AddSingleton(globalConfig)
+            .AddOptions<Configuration>()
+            .ValidateOnStart();
+    });
+
+var provider = builder.Build().Services;
+
+var archiveRuns = await GetS3File<CurrentArchiveRuns>(provider, ctx => ctx.CurrentArchiveRunsBucketKey()) ??
+                  new CurrentArchiveRuns();
+var dataChunkManifest = await GetS3File<DataChunkManifest>(provider, ctx => ctx.ChunkManifestBucketKey()) ??
+                        new DataChunkManifest();
+var currentRestoreRequests =
+    await GetS3File<CurrentRestoreRequests>(provider, ctx => ctx.CurrentRestoreBucketKey()) ??
+    new CurrentRestoreRequests();
+var chunkManifest = await GetS3File<S3RestoreChunkManifest>(provider, ctx => ctx.RestoreManifestBucketKey()) ??
+                    new S3RestoreChunkManifest();
+
+builder
+    .ConfigureServices(services =>
     {
         services
             .AddSingleton<Mediator>()
+            .AddSingleton(archiveRuns)
+            .AddSingleton(dataChunkManifest)
+            .AddSingleton(currentRestoreRequests)
+            .AddSingleton(chunkManifest)
             .AddSingleton<IArchiveFileMediator>(sp => sp.GetRequiredService<Mediator>())
             .AddSingleton<IRunRequestMediator>(sp => sp.GetRequiredService<Mediator>())
             .AddSingleton<IArchiveRunMediator>(sp => sp.GetRequiredService<Mediator>())
@@ -104,11 +129,9 @@ var builder = Host.CreateDefaultBuilder(args)
             .AddSingleton<ICronSchedulerFactory, CronSchedulerFactory>()
             .AddSingleton<IDataChunkService, DataChunkService>()
             .AddSingleton<IFileLister, FileLister>()
-            .AddSingleton<IHotStorageService, HotStorageService>()
             .AddSingleton<IRestoreService, RestoreService>()
             .AddSingleton<IS3ChunkedFileReconstructor, S3ChunkedFileReconstructor>()
             .AddSingleton<IS3Service, S3Service>()
-            .AddSingleton<ITemporaryCredentialsServer, RolesAnywhere>()
             .AddSingleton<TimeProvider>(_ => TimeProvider.System)
             .AddHostedService<CronJobOrchestration>()
             .AddHostedService<ArchiveFilesOrchestration>()
@@ -119,12 +142,20 @@ var builder = Host.CreateDefaultBuilder(args)
             .AddHostedService<S3StorageClassOrchestration>()
             .AddHostedService<SqsPollingOrchestration>()
             .AddHostedService<UploadChunkDataOrchestration>()
-            .AddHostedService<UploadOrchestration>()
-            .AddSingleton(globalConfig)
-            .AddOptions<Configuration>()
-            .ValidateOnStart();
+            .AddHostedService<UploadOrchestration>();
     });
 
 var host = builder.Build();
 await host.RunAsync();
 return 0;
+
+async Task<T?> GetS3File<T>(IServiceProvider sp, Func<IContextResolver, string> getKey)
+    where T : notnull
+{
+    var resolver = sp.GetService<IContextResolver>();
+    var service = sp.GetService<IHotStorageService>();
+    var key = getKey(resolver!);
+
+    var data = await service!.DownloadAsync<T>(key, CancellationToken.None);
+    return data;
+}

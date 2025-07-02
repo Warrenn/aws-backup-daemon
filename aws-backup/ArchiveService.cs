@@ -97,10 +97,7 @@ public interface IArchiveService
 }
 
 [JsonConverter(typeof(JsonDictionaryConverter<ArchiveRun>))]
-public class CurrentArchiveRuns : ConcurrentDictionary<string, ArchiveRun>
-{
-    public static CurrentArchiveRuns Current { get; } = new();
-}
+public class CurrentArchiveRuns : ConcurrentDictionary<string, ArchiveRun>;
 
 public class ArchiveService(
     IS3Service s3Service,

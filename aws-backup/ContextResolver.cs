@@ -70,6 +70,8 @@ public interface IContextResolver
     public void SetSsmClientFactory(Func<CancellationToken, Task<IAmazonSimpleSystemsManagement>> ssmFactory);
     string CurrentRestoreBucketKey();
     string CurrentArchiveRunsBucketKey();
+    string ChunkManifestBucketKey();
+    string RestoreManifestBucketKey();
 }
 
 public class ContextResolver : IContextResolver
@@ -111,7 +113,7 @@ public class ContextResolver : IContextResolver
     private int? _storageCheckDelaySeconds;
     private int? _uploadAttemptLimit;
     private bool? _useS3Accelerate;
-
+    
     public ContextResolver(
         IOptionsMonitor<Configuration> configOptions,
         GlobalConfiguration globalConfigOptions)
@@ -444,12 +446,22 @@ public class ContextResolver : IContextResolver
 
     public string CurrentRestoreBucketKey()
     {
-        return $"{_clientId}/restores.json";
+        return $"{_clientId}/restores.json.gz";
     }
 
     public string CurrentArchiveRunsBucketKey()
     {
-        return $"{_clientId}/archive-runs.json";    
+        return $"{_clientId}/archive-runs.json.gz";
+    }
+
+    public string ChunkManifestBucketKey()
+    {
+        return $"{_clientId}/chunk-manifest.json.gz";
+    }
+
+    public string RestoreManifestBucketKey()
+    {
+        return $"{_clientId}/restore-manifest.json.gz";
     }
 
     private void ClearCache()

@@ -19,10 +19,7 @@ public record CloudChunkDetails(
     byte[] Hash);
 
 [JsonConverter(typeof(DataChunkManifestConverter))]
-public class DataChunkManifest : ConcurrentDictionary<ByteArrayKey, CloudChunkDetails>
-{
-    public static DataChunkManifest Current { get; } = new();
-}
+public class DataChunkManifest : ConcurrentDictionary<ByteArrayKey, CloudChunkDetails>;
 
 public record DataChunkDetails(
     string LocalFilePath,
@@ -41,12 +38,12 @@ public interface IDataChunkService
 }
 
 public class DataChunkService(
-    IChunkManifestMediator mediator
+    IChunkManifestMediator mediator,
+    DataChunkManifest dataChunkManifest
 ) : IDataChunkService
 {
     public bool ChunkRequiresUpload(DataChunkDetails chunk)
     {
-        var dataChunkManifest = DataChunkManifest.Current;
         var key = new ByteArrayKey(chunk.HashKey);
         return dataChunkManifest.ContainsKey(key);
     }
@@ -54,7 +51,6 @@ public class DataChunkService(
     public async Task MarkChunkAsUploaded(DataChunkDetails chunk, string s3Key, string bucketName,
         CancellationToken cancellationToken)
     {
-        var dataChunkManifest = DataChunkManifest.Current;
         var hashKey = new ByteArrayKey(chunk.HashKey);
         if (dataChunkManifest.ContainsKey(hashKey))
             // If the chunk is already in the manifest, we don't need to re-add it

@@ -1,6 +1,8 @@
 using System.IO.Compression;
 using System.IO.Pipelines;
+using System.Net;
 using System.Text.Json;
+using Amazon.S3;
 using Amazon.S3.Model;
 using Amazon.S3.Transfer;
 
@@ -10,7 +12,7 @@ public interface IHotStorageService
 {
     Task UploadAsync<T>(string key, T obj, CancellationToken cancellationToken);
 
-    Task<T> DownloadAsync<T>(string key, CancellationToken cancellationToken);
+    Task<T?> DownloadAsync<T>(string key, CancellationToken cancellationToken);
 }
 
 public class HotStorageService(
@@ -37,7 +39,7 @@ public class HotStorageService(
                 Key = key,
                 InputStream = readerStream,
                 PartSize = partSizeBytes,
-                ContentType     = "application/json",
+                ContentType = "application/json",
                 StorageClass = storageClass,
                 AutoCloseStream = true
             };
@@ -56,15 +58,39 @@ public class HotStorageService(
         await uploadTask;
     }
 
-    public async Task<T> DownloadAsync<T>(string key, CancellationToken cancellationToken)
+    public async Task<T?> DownloadAsync<T>(string key, CancellationToken cancellationToken)
     {
         var s3 = await awsClientFactory.CreateS3Client(cancellationToken);
         var bucketName = contextResolver.S3BucketId();
+
+        if (!await S3ObjectExistsAsync(s3, bucketName, key, cancellationToken)) return default;
+
         using var resp = await s3.GetObjectAsync(
             new GetObjectRequest { BucketName = bucketName, Key = key },
             cancellationToken);
 
         await using var gzip = new GZipStream(resp.ResponseStream, CompressionMode.Decompress, false);
         return await JsonSerializer.DeserializeAsync<T>(gzip, Json.Options, cancellationToken);
+    }
+
+    private static async Task<bool> S3ObjectExistsAsync(
+        IAmazonS3 s3,
+        string bucket,
+        string key,
+        CancellationToken ct)
+    {
+        try
+        {
+            await s3.GetObjectMetadataAsync(new GetObjectMetadataRequest
+            {
+                BucketName = bucket,
+                Key = key
+            }, ct);
+            return true;
+        }
+        catch (AmazonS3Exception e) when (e.StatusCode == HttpStatusCode.NotFound)
+        {
+            return false;
+        }
     }
 }

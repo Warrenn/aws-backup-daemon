@@ -20,7 +20,4 @@ public interface IRestoreRequestsMediator
 }
 
 [JsonConverter(typeof(JsonDictionaryConverter<RestoreRequest>))]
-public class CurrentRestoreRequests : ConcurrentDictionary<string, RestoreRequest>
-{
-    public static CurrentRestoreRequests Current { get; } = new();
-}
+public class CurrentRestoreRequests : ConcurrentDictionary<string, RestoreRequest>;

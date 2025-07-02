@@ -52,10 +52,7 @@ public enum S3RestoreStatus
 }
 
 [JsonConverter(typeof(S3RestoreChunkManifestConverter))]
-public class S3RestoreChunkManifest : ConcurrentDictionary<ByteArrayKey, S3RestoreStatus>
-{
-    public static S3RestoreChunkManifest Current { get; } = new();
-}
+public class S3RestoreChunkManifest : ConcurrentDictionary<ByteArrayKey, S3RestoreStatus>;
 
 public enum FileRestoreStatus
 {
