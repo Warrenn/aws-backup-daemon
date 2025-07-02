@@ -13,7 +13,8 @@ public class UploadOrchestrationTests
     private readonly Mock<IContextResolver> _contextResolver;
     private readonly Mock<IHotStorageService> _hotStorageService;
     private readonly Mock<IRestoreManifestMediator> _restoreManifestMediator;
-    private readonly Mock<IRestoreRunMediator> _restoreRequestsMediator;
+    private readonly Mock<IRestoreRequestsMediator> _restoreRequestsMediator;
+    private readonly Mock<IRestoreRunMediator> _restoreRunMediator;
     private readonly Mock<IArchiveRunMediator> _runMediator;
     private TestLoggerClass<UploadOrchestration> _logger;
     private UploadOrchestration _orchestration;
@@ -24,8 +25,9 @@ public class UploadOrchestrationTests
         _runMediator = new Mock<IArchiveRunMediator>();
         _chunkManifestMediator = new Mock<IChunkManifestMediator>();
         _restoreManifestMediator = new Mock<IRestoreManifestMediator>();
-        _restoreRequestsMediator = new Mock<IRestoreRunMediator>();
+        _restoreRunMediator = new Mock<IRestoreRunMediator>();
         _contextResolver = new Mock<IContextResolver>();
+        _restoreRequestsMediator = new Mock<IRestoreRequestsMediator>();
         _logger = new TestLoggerClass<UploadOrchestration>();
 
         _orchestration = new UploadOrchestration(
@@ -33,6 +35,7 @@ public class UploadOrchestrationTests
             _runMediator.Object,
             _chunkManifestMediator.Object,
             _restoreManifestMediator.Object,
+            _restoreRunMediator.Object,
             _restoreRequestsMediator.Object,
             _contextResolver.Object,
             _logger);
@@ -89,13 +92,25 @@ public class UploadOrchestrationTests
             })
         ]);
 
+        var restoreRequestData = CreateAsyncEnumerable([
+            new KeyValuePair<string, CurrentRestoreRequests>("current1", new CurrentRestoreRequests())
+        ]);
+
+        var currentArchiveRunsData = CreateAsyncEnumerable([
+            new KeyValuePair<string, CurrentArchiveRuns>("currentarchive1", new CurrentArchiveRuns())
+        ]);
+
         _runMediator.Setup(x => x.GetArchiveRuns(It.IsAny<CancellationToken>())).Returns(() => archiveData);
+        _runMediator.Setup(x => x.GetCurrentArchiveRuns(It.IsAny<CancellationToken>()))
+            .Returns(() => currentArchiveRunsData);
         _chunkManifestMediator.Setup(x => x.GetDataChunksManifest(It.IsAny<CancellationToken>()))
             .Returns(() => chunkData);
         _restoreManifestMediator.Setup(x => x.GetRestoreManifest(It.IsAny<CancellationToken>()))
             .Returns(() => restoreManifestData);
-        _restoreRequestsMediator.Setup(x => x.GetRestoreRuns(It.IsAny<CancellationToken>()))
+        _restoreRunMediator.Setup(x => x.GetRestoreRuns(It.IsAny<CancellationToken>()))
             .Returns(() => restoreRunData);
+        _restoreRequestsMediator.Setup(x => x.GetRunningRequests(It.IsAny<CancellationToken>()))
+            .Returns(() => restoreRequestData);
 
         // Act
         await _orchestration.StartAsync(cancellationToken);
@@ -113,6 +128,10 @@ public class UploadOrchestrationTests
         _hotStorageService.Verify(x => x.UploadAsync("restore1", It.IsAny<object>(), It.IsAny<CancellationToken>()),
             Times.Once);
         _hotStorageService.Verify(x => x.UploadAsync("run1", It.IsAny<object>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        _hotStorageService.Verify(x => x.UploadAsync("current1", It.IsAny<object>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        _hotStorageService.Verify(x => x.UploadAsync("currentarchive1", It.IsAny<object>(), It.IsAny<CancellationToken>()),
             Times.Once);
 
         Assert.Empty(_logger.LogRecords.Where(x => x.LogLevel == LogLevel.Error));
@@ -151,12 +170,16 @@ public class UploadOrchestrationTests
         ]);
 
         _runMediator.Setup(x => x.GetArchiveRuns(It.IsAny<CancellationToken>())).Returns(() => archiveData);
+        _runMediator.Setup(x => x.GetCurrentArchiveRuns(It.IsAny<CancellationToken>()))
+            .Returns(() => CreateAsyncEnumerable<CurrentArchiveRuns>([]));
         _chunkManifestMediator.Setup(x => x.GetDataChunksManifest(It.IsAny<CancellationToken>()))
             .Returns(() => CreateAsyncEnumerable<DataChunkManifest>([]));
         _restoreManifestMediator.Setup(x => x.GetRestoreManifest(It.IsAny<CancellationToken>()))
             .Returns(() => CreateAsyncEnumerable<S3RestoreChunkManifest>([]));
-        _restoreRequestsMediator.Setup(x => x.GetRestoreRuns(It.IsAny<CancellationToken>()))
+        _restoreRunMediator.Setup(x => x.GetRestoreRuns(It.IsAny<CancellationToken>()))
             .Returns(() => CreateAsyncEnumerable<RestoreRun>([]));
+        _restoreRequestsMediator.Setup(x => x.GetRunningRequests(It.IsAny<CancellationToken>()))
+            .Returns(() => CreateAsyncEnumerable<CurrentRestoreRequests>([]));
 
         _hotStorageService.Setup(x => x.UploadAsync("failing-key", It.IsAny<object>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(testException);
@@ -171,6 +194,7 @@ public class UploadOrchestrationTests
             _runMediator.Object,
             _chunkManifestMediator.Object,
             _restoreManifestMediator.Object,
+            _restoreRunMediator.Object,
             _restoreRequestsMediator.Object,
             _contextResolver.Object,
             _logger);
@@ -231,13 +255,16 @@ public class UploadOrchestrationTests
         ]);
 
         _runMediator.Setup(x => x.GetArchiveRuns(It.IsAny<CancellationToken>())).Returns(() => longRunningData);
+        _runMediator.Setup(x => x.GetCurrentArchiveRuns(It.IsAny<CancellationToken>()))
+            .Returns(() => CreateAsyncEnumerable<CurrentArchiveRuns>([]));
         _chunkManifestMediator.Setup(x => x.GetDataChunksManifest(It.IsAny<CancellationToken>()))
             .Returns(() => CreateAsyncEnumerable<DataChunkManifest>([]));
         _restoreManifestMediator.Setup(x => x.GetRestoreManifest(It.IsAny<CancellationToken>()))
             .Returns(() => CreateAsyncEnumerable<S3RestoreChunkManifest>([]));
-        _restoreRequestsMediator.Setup(x => x.GetRestoreRuns(It.IsAny<CancellationToken>()))
+        _restoreRunMediator.Setup(x => x.GetRestoreRuns(It.IsAny<CancellationToken>()))
             .Returns(() => CreateAsyncEnumerable<RestoreRun>([]));
-
+        _restoreRequestsMediator.Setup(x => x.GetRunningRequests(It.IsAny<CancellationToken>()))
+            .Returns(() => CreateAsyncEnumerable<CurrentRestoreRequests>([]));
         _hotStorageService.Setup(x =>
                 x.UploadAsync(It.IsAny<string>(), It.IsAny<object>(), It.IsAny<CancellationToken>()))
             .Returns(async () => { await Task.Delay(100, cts.Token); });
@@ -259,15 +286,19 @@ public class UploadOrchestrationTests
     public async Task ExecuteAsync_WithEmptyData_CompletesSuccessfully()
     {
         // Arrange
-        var cancellationToken = new CancellationToken();
+        var cancellationToken = CancellationToken.None;
 
         _runMediator.Setup(x => x.GetArchiveRuns(It.IsAny<CancellationToken>()))
             .Returns(() => CreateAsyncEnumerable<ArchiveRun>([]));
+        _runMediator.Setup(x => x.GetCurrentArchiveRuns(It.IsAny<CancellationToken>()))
+            .Returns(() => CreateAsyncEnumerable<CurrentArchiveRuns>([]));
         _chunkManifestMediator.Setup(x => x.GetDataChunksManifest(It.IsAny<CancellationToken>()))
             .Returns(() => CreateAsyncEnumerable<DataChunkManifest>([]));
         _restoreManifestMediator.Setup(x => x.GetRestoreManifest(It.IsAny<CancellationToken>()))
             .Returns(() => CreateAsyncEnumerable<S3RestoreChunkManifest>([]));
-        _restoreRequestsMediator.Setup(x => x.GetRestoreRuns(It.IsAny<CancellationToken>()))
+        _restoreRequestsMediator.Setup(x => x.GetRunningRequests(It.IsAny<CancellationToken>()))
+            .Returns(() => CreateAsyncEnumerable<CurrentRestoreRequests>([]));
+        _restoreRunMediator.Setup(x => x.GetRestoreRuns(It.IsAny<CancellationToken>()))
             .Returns(() => CreateAsyncEnumerable<RestoreRun>([]));
 
         // Act
@@ -287,7 +318,7 @@ public class UploadOrchestrationTests
     public async Task ExecuteAsync_WithDelayConfiguration_RespectsDelay()
     {
         // Arrange
-        var cancellationToken = new CancellationToken();
+        var cancellationToken = CancellationToken.None;
         var stopwatch = Stopwatch.StartNew();
 
         _contextResolver.Setup(x => x.DelayBetweenUploadsSeconds()).Returns(1);
@@ -317,12 +348,16 @@ public class UploadOrchestrationTests
 
         _runMediator.Setup(x => x.GetArchiveRuns(It.IsAny<CancellationToken>()))
             .Returns(() => { return archiveData; });
+        _runMediator.Setup(x => x.GetCurrentArchiveRuns(It.IsAny<CancellationToken>()))
+            .Returns(() => CreateAsyncEnumerable<CurrentArchiveRuns>([]));
         _chunkManifestMediator.Setup(x => x.GetDataChunksManifest(It.IsAny<CancellationToken>()))
             .Returns(() => CreateAsyncEnumerable<DataChunkManifest>([]));
         _restoreManifestMediator.Setup(x => x.GetRestoreManifest(It.IsAny<CancellationToken>()))
             .Returns(() => CreateAsyncEnumerable<S3RestoreChunkManifest>([]));
-        _restoreRequestsMediator.Setup(x => x.GetRestoreRuns(It.IsAny<CancellationToken>()))
+        _restoreRunMediator.Setup(x => x.GetRestoreRuns(It.IsAny<CancellationToken>()))
             .Returns(() => CreateAsyncEnumerable<RestoreRun>([]));
+        _restoreRequestsMediator.Setup(x => x.GetRunningRequests(It.IsAny<CancellationToken>()))
+            .Returns(() => CreateAsyncEnumerable<CurrentRestoreRequests>([]));
 
         // Act
         await _orchestration.StartAsync(cancellationToken);
@@ -369,12 +404,16 @@ public class UploadOrchestrationTests
         ]);
 
         _runMediator.Setup(x => x.GetArchiveRuns(It.IsAny<CancellationToken>())).Returns(() => archiveData);
+        _runMediator.Setup(x => x.GetCurrentArchiveRuns(It.IsAny<CancellationToken>()))
+            .Returns(() => CreateAsyncEnumerable<CurrentArchiveRuns>([]));
         _chunkManifestMediator.Setup(x => x.GetDataChunksManifest(It.IsAny<CancellationToken>()))
             .Returns(() => chunkData);
         _restoreManifestMediator.Setup(x => x.GetRestoreManifest(It.IsAny<CancellationToken>()))
             .Returns(() => CreateAsyncEnumerable<S3RestoreChunkManifest>([]));
-        _restoreRequestsMediator.Setup(x => x.GetRestoreRuns(It.IsAny<CancellationToken>()))
+        _restoreRunMediator.Setup(x => x.GetRestoreRuns(It.IsAny<CancellationToken>()))
             .Returns(() => CreateAsyncEnumerable<RestoreRun>([]));
+        _restoreRequestsMediator.Setup(x => x.GetRunningRequests(It.IsAny<CancellationToken>()))
+            .Returns(() => CreateAsyncEnumerable<CurrentRestoreRequests>([]));
 
         _hotStorageService.Setup(x =>
                 x.UploadAsync("archive-key", It.IsAny<ArchiveRun>(), It.IsAny<CancellationToken>()))

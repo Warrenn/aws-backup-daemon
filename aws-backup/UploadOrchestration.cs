@@ -8,7 +8,8 @@ public class UploadOrchestration(
     IArchiveRunMediator runMediator,
     IChunkManifestMediator chunkManifestMediator,
     IRestoreManifestMediator restoreManifestMediator,
-    IRestoreRunMediator restoreRequestsMediator,
+    IRestoreRunMediator restoreRunMediator,
+    IRestoreRequestsMediator restoreRequestsMediator,
     IContextResolver contextResolver,
     ILogger<UploadOrchestration> logger) : BackgroundService
 {
@@ -19,9 +20,11 @@ public class UploadOrchestration(
             RunUploadAsync(runMediator.GetArchiveRuns, cancellationToken),
             RunUploadAsync(chunkManifestMediator.GetDataChunksManifest, cancellationToken),
             RunUploadAsync(restoreManifestMediator.GetRestoreManifest, cancellationToken),
-            RunUploadAsync(restoreRequestsMediator.GetRestoreRuns, cancellationToken)
+            RunUploadAsync(restoreRunMediator.GetRestoreRuns, cancellationToken),
+            RunUploadAsync(runMediator.GetCurrentArchiveRuns, cancellationToken),
+            RunUploadAsync(restoreRequestsMediator.GetRunningRequests, cancellationToken)
         };
-
+        //GetCurrentArchiveRuns
         await Task.WhenAll(workers);
     }
 

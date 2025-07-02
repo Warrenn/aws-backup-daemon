@@ -62,7 +62,6 @@ public class RestoreOrchestration(
 
                 var requestedFiles = new ConcurrentDictionary<string, RestoreFileMetaData>();
                 foreach (var file in requestedFilesArray)
-                {
                     requestedFiles[file.path] = new RestoreFileMetaData(
                         file.chunkIds,
                         file.path,
@@ -77,8 +76,7 @@ public class RestoreOrchestration(
                         AclEntries = file.metadata.AclEntries,
                         Checksum = file.metadata.HashKey
                     };
-                }
-                
+
                 restoreRun = new RestoreRun
                 {
                     RestoreId = restoreId,
@@ -89,7 +87,7 @@ public class RestoreOrchestration(
                     RequestedFiles = requestedFiles
                 };
 
-                await restoreService.InitiateRestoreRun(restoreRun, cancellationToken);
+                await restoreService.InitiateRestoreRun(restoreRequest, restoreRun, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

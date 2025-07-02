@@ -15,12 +15,12 @@ public class RestoreOrchestrationTests
     private readonly Mock<IRestoreRequestsMediator> _mediator = new();
     private readonly Mock<IRestoreService> _restoreService = new();
 
-    private RestoreOrchestration CreateOrch(Channel<RestoreRequest> chan)
+    private RestoreOrchestration CreateOrchestration(Channel<RestoreRequest> chan)
     {
         _mediator.Setup(m => m.GetRestoreRequests(It.IsAny<CancellationToken>()))
             .Returns(chan.Reader.ReadAllAsync());
         _ctx.Setup(c => c.RestoreId(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTimeOffset>()))
-            .Returns((string runId, string paths, DateTimeOffset dt) => $"rid-{runId}-{paths}");
+            .Returns((string runId, string paths, DateTimeOffset _) => $"rid-{runId}-{paths}");
         return new RestoreOrchestration(
             _mediator.Object,
             _archiveService.Object,
@@ -45,13 +45,15 @@ public class RestoreOrchestrationTests
             TimeProvider.System.GetUtcNow()));
         chan.Writer.Complete();
 
-        var orch = CreateOrch(chan);
+        var orch = CreateOrchestration(chan);
         var exec = GetExecute();
 
         await (Task)exec.Invoke(orch, new object[] { CancellationToken.None });
 
         _archiveService.Verify(a => a.LookupArchiveRun(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-        _restoreService.Verify(r => r.InitiateRestoreRun(It.IsAny<RestoreRun>(), It.IsAny<CancellationToken>()),
+        _restoreService.Verify(
+            r => r.InitiateRestoreRun(It.IsAny<RestoreRequest>(), It.IsAny<RestoreRun>(),
+                It.IsAny<CancellationToken>()),
             Times.Never);
         var logMatches = _logger.LogRecords
             .Where(l => l.LogLevel == LogLevel.Warning && l.Message.Contains("Received invalid restore request"));
@@ -96,7 +98,7 @@ public class RestoreOrchestrationTests
                 RequestedFiles = new ConcurrentDictionary<string, RestoreFileMetaData>()
             });
 
-        var orch = CreateOrch(chan);
+        var orch = CreateOrchestration(chan);
         var exec = GetExecute();
 
         // Act
@@ -114,7 +116,8 @@ public class RestoreOrchestrationTests
 
         // 3) And we never initiated a new restore
         _restoreService.Verify(r =>
-            r.InitiateRestoreRun(It.IsAny<RestoreRun>(), It.IsAny<CancellationToken>()), Times.Never);
+            r.InitiateRestoreRun(It.IsAny<RestoreRequest>(), It.IsAny<RestoreRun>(),
+                It.IsAny<CancellationToken>()), Times.Never);
     }
 
 
@@ -134,14 +137,16 @@ public class RestoreOrchestrationTests
         _archiveService.Setup(a => a.LookupArchiveRun(req.ArchiveRunId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((ArchiveRun)null);
 
-        var orch = CreateOrch(chan);
+        var orch = CreateOrchestration(chan);
         var exec = GetExecute();
         await (Task)exec.Invoke(orch, new object[] { CancellationToken.None });
 
         var loggerMatches = _logger.LogRecords
             .Where(l => l.LogLevel == LogLevel.Warning && l.Message.Contains("No archive run found"));
         Assert.Single(loggerMatches);
-        _restoreService.Verify(r => r.InitiateRestoreRun(It.IsAny<RestoreRun>(), It.IsAny<CancellationToken>()),
+        _restoreService.Verify(
+            r => r.InitiateRestoreRun(It.IsAny<RestoreRequest>(), It.IsAny<RestoreRun>(),
+                It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -214,11 +219,14 @@ public class RestoreOrchestrationTests
 
         RestoreRun captured = null!;
         _restoreService
-            .Setup(r => r.InitiateRestoreRun(It.IsAny<RestoreRun>(), It.IsAny<CancellationToken>()))
-            .Callback<RestoreRun, CancellationToken>((rr, ct) => captured = rr)
+            .Setup(r => r.InitiateRestoreRun(
+                It.IsAny<RestoreRequest>(),
+                It.IsAny<RestoreRun>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<RestoreRequest, RestoreRun, CancellationToken>((_, rr, _) => captured = rr)
             .Returns(Task.CompletedTask);
 
-        var orch = CreateOrch(chan);
+        var orch = CreateOrchestration(chan);
         var exec = GetExecute();
         await (Task)exec.Invoke(orch, new object[] { CancellationToken.None });
 
@@ -258,7 +266,7 @@ public class RestoreOrchestrationTests
 
         _restoreService.Setup(r => r.LookupRestoreRun(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("boom"));
-        var orch = CreateOrch(chan);
+        var orch = CreateOrchestration(chan);
         var exec = GetExecute();
         await (Task)exec.Invoke(orch, new object[] { CancellationToken.None });
 

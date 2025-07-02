@@ -8,7 +8,7 @@ namespace aws_backup;
 public interface IRestoreService
 {
     Task<RestoreRun?> LookupRestoreRun(string restoreId, CancellationToken cancellationToken);
-    Task InitiateRestoreRun(RestoreRun restoreRun, CancellationToken cancellationToken);
+    Task InitiateRestoreRun(RestoreRequest request, RestoreRun restoreRun, CancellationToken cancellationToken);
 
     Task ReportS3Storage(string bucketId, string s3Key, S3StorageClass storageClass,
         CancellationToken cancellationToken);
@@ -23,12 +23,6 @@ public interface IRestoreManifestMediator
 
     IAsyncEnumerable<KeyValuePair<string, S3RestoreChunkManifest>> GetRestoreManifest(
         CancellationToken cancellationToken);
-}
-
-public interface IRestoreRequestsMediator
-{
-    Task RestoreBackup(RestoreRequest restoreRequest, CancellationToken cancellationToken);
-    IAsyncEnumerable<RestoreRequest> GetRestoreRequests(CancellationToken cancellationToken);
 }
 
 public interface IRestoreRunMediator
@@ -100,11 +94,6 @@ public record DownloadFileFromS3Request(
     public byte[]? Checksum { get; init; }
 }
 
-public record RestoreRequest(
-    string ArchiveRunId,
-    string RestorePaths,
-    DateTimeOffset RequestedAt);
-
 public class RestoreRun
 {
     public required string RestoreId { get; init; }
@@ -122,8 +111,10 @@ public class RestoreService(
     IDownloadFileMediator mediator,
     IRestoreRunMediator restoreRunMediator,
     IRestoreManifestMediator restoreManifestMediator,
+    IRestoreRequestsMediator restoreRequestsMediator,
     IS3Service s3Service,
     S3RestoreChunkManifest restoreManifest,
+    CurrentRestoreRequests currentRestoreRequests,
     DataChunkManifest dataChunkManifest
 ) : IRestoreService
 {
@@ -133,53 +124,6 @@ public class RestoreService(
     public Task<RestoreRun?> LookupRestoreRun(string restoreId, CancellationToken cancellationToken)
     {
         return Task.FromResult(_restoreRuns.GetValueOrDefault(restoreId));
-    }
-
-    public async Task InitiateRestoreRun(RestoreRun restoreRun, CancellationToken cancellationToken)
-    {
-        if (!_restoreRuns.TryAdd(restoreRun.RestoreId, restoreRun)) return;
-
-        foreach (var metaData in restoreRun.RequestedFiles.Values)
-        {
-            foreach (var key in metaData.Chunks)
-            {
-                if (restoreManifest.TryGetValue(key, out var status)) continue;
-
-                var chunkDetails = dataChunkManifest[key];
-                await s3Service.ScheduleDeepArchiveRecovery(chunkDetails, cancellationToken);
-
-                status = S3RestoreStatus.PendingDeepArchiveRestore;
-                restoreManifest[key] = status;
-            }
-
-            var readyToRestore =
-                metaData.Chunks.All(c => restoreManifest[c] is S3RestoreStatus.ReadyToRestore);
-            if (readyToRestore) continue;
-
-            var cloudChunkDetails = metaData.Chunks
-                .Select(c => dataChunkManifest[c])
-                .ToArray();
-
-            await mediator.DownloadFileFromS3(new DownloadFileFromS3Request(
-                restoreRun.RestoreId,
-                metaData.FilePath,
-                cloudChunkDetails,
-                metaData.Size
-            )
-            {
-                LastModified = metaData.LastModified,
-                Created = metaData.Created,
-                AclEntries = metaData.AclEntries,
-                Owner = metaData.Owner,
-                Group = metaData.Group,
-                Checksum = metaData.Checksum
-            }, cancellationToken);
-
-            metaData.Status = FileRestoreStatus.PendingS3Download;
-        }
-
-        await restoreManifestMediator.SaveRestoreManifest(restoreManifest, cancellationToken);
-        await restoreRunMediator.SaveRestoreRun(restoreRun, cancellationToken);
     }
 
     public async Task ReportS3Storage(string bucketId, string s3Key, S3StorageClass storageClass,
@@ -283,6 +227,8 @@ public class RestoreService(
         restoreRun.CompletedAt = DateTimeOffset.UtcNow;
         await restoreRunMediator.SaveRestoreRun(restoreRun, cancellationToken);
         _restoreRuns.TryRemove(restoreRun.RestoreId, out _);
+        currentRestoreRequests.TryRemove(restoreRun.RestoreId, out _);
+        await restoreRequestsMediator.SaveRunningRequest(currentRestoreRequests, cancellationToken);
     }
 
     public async Task ReportDownloadFailed(DownloadFileFromS3Request request, Exception reason,
@@ -300,6 +246,58 @@ public class RestoreService(
         restoreRun.CompletedAt = DateTimeOffset.UtcNow;
         await restoreRunMediator.SaveRestoreRun(restoreRun, cancellationToken);
         _restoreRuns.TryRemove(restoreRun.RestoreId, out _);
+        currentRestoreRequests.TryRemove(restoreRun.RestoreId, out _);
+        await restoreRequestsMediator.SaveRunningRequest(currentRestoreRequests, cancellationToken);
+    }
+
+    public async Task InitiateRestoreRun(RestoreRequest request, RestoreRun restoreRun, CancellationToken cancellationToken)
+    {
+        currentRestoreRequests.TryAdd(restoreRun.RestoreId, request);
+        await restoreRequestsMediator.SaveRunningRequest(currentRestoreRequests, cancellationToken);
+        
+        if (!_restoreRuns.TryAdd(restoreRun.RestoreId, restoreRun)) return;
+
+        foreach (var metaData in restoreRun.RequestedFiles.Values)
+        {
+            foreach (var key in metaData.Chunks)
+            {
+                if (restoreManifest.TryGetValue(key, out var status)) continue;
+
+                var chunkDetails = dataChunkManifest[key];
+                await s3Service.ScheduleDeepArchiveRecovery(chunkDetails, cancellationToken);
+
+                status = S3RestoreStatus.PendingDeepArchiveRestore;
+                restoreManifest[key] = status;
+            }
+
+            var readyToRestore =
+                metaData.Chunks.All(c => restoreManifest[c] is S3RestoreStatus.ReadyToRestore);
+            if (readyToRestore) continue;
+
+            var cloudChunkDetails = metaData.Chunks
+                .Select(c => dataChunkManifest[c])
+                .ToArray();
+
+            await mediator.DownloadFileFromS3(new DownloadFileFromS3Request(
+                restoreRun.RestoreId,
+                metaData.FilePath,
+                cloudChunkDetails,
+                metaData.Size
+            )
+            {
+                LastModified = metaData.LastModified,
+                Created = metaData.Created,
+                AclEntries = metaData.AclEntries,
+                Owner = metaData.Owner,
+                Group = metaData.Group,
+                Checksum = metaData.Checksum
+            }, cancellationToken);
+
+            metaData.Status = FileRestoreStatus.PendingS3Download;
+        }
+
+        await restoreManifestMediator.SaveRestoreManifest(restoreManifest, cancellationToken);
+        await restoreRunMediator.SaveRestoreRun(restoreRun, cancellationToken);
     }
 }
 

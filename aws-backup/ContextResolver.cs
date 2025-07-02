@@ -68,6 +68,7 @@ public interface IContextResolver
     string RolesAnyWhereCertificateFileName();
     string RolesAnyWherePrivateKeyFileName();
     public void SetSsmClientFactory(Func<CancellationToken, Task<IAmazonSimpleSystemsManagement>> ssmFactory);
+    string CurrentRestoreBucketKey();
 }
 
 public class ContextResolver : IContextResolver
@@ -438,6 +439,11 @@ public class ContextResolver : IContextResolver
     public void SetSsmClientFactory(Func<CancellationToken, Task<IAmazonSimpleSystemsManagement>> ssmFactory)
     {
         _ssmClientFactory = ssmFactory;
+    }
+
+    public string CurrentRestoreBucketKey()
+    {
+        return $"{_clientId}/restores.json";
     }
 
     private void ClearCache()
