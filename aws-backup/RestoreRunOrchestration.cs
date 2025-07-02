@@ -5,11 +5,11 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
-public class RestoreOrchestration(
+public class RestoreRunOrchestration(
     IRestoreRequestsMediator mediator,
     IArchiveService archiveService,
     IRestoreService restoreService,
-    ILogger<ArchiveFilesOrchestration> logger,
+    ILogger<RestoreRunOrchestration> logger,
     IContextResolver contextResolver
 ) : BackgroundService
 {

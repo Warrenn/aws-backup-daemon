@@ -7,21 +7,21 @@ using Moq;
 
 namespace test;
 
-public class RestoreOrchestrationTests
+public class RestoreRunOrchestrationTests
 {
     private readonly Mock<IArchiveService> _archiveService = new();
     private readonly Mock<IContextResolver> _ctx = new();
-    private readonly TestLoggerClass<ArchiveFilesOrchestration> _logger = new();
+    private readonly TestLoggerClass<RestoreRunOrchestration> _logger = new();
     private readonly Mock<IRestoreRequestsMediator> _mediator = new();
     private readonly Mock<IRestoreService> _restoreService = new();
 
-    private RestoreOrchestration CreateOrchestration(Channel<RestoreRequest> chan)
+    private RestoreRunOrchestration CreateOrchestration(Channel<RestoreRequest> chan)
     {
         _mediator.Setup(m => m.GetRestoreRequests(It.IsAny<CancellationToken>()))
             .Returns(chan.Reader.ReadAllAsync());
         _ctx.Setup(c => c.RestoreId(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTimeOffset>()))
             .Returns((string runId, string paths, DateTimeOffset _) => $"rid-{runId}-{paths}");
-        return new RestoreOrchestration(
+        return new RestoreRunOrchestration(
             _mediator.Object,
             _archiveService.Object,
             _restoreService.Object,
@@ -31,7 +31,7 @@ public class RestoreOrchestrationTests
 
     private MethodInfo GetExecute()
     {
-        return typeof(RestoreOrchestration)
+        return typeof(RestoreRunOrchestration)
             .GetMethod("ExecuteAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
     }
 

@@ -69,6 +69,7 @@ public interface IContextResolver
     string RolesAnyWherePrivateKeyFileName();
     public void SetSsmClientFactory(Func<CancellationToken, Task<IAmazonSimpleSystemsManagement>> ssmFactory);
     string CurrentRestoreBucketKey();
+    string CurrentArchiveRunsBucketKey();
 }
 
 public class ContextResolver : IContextResolver
@@ -444,6 +445,11 @@ public class ContextResolver : IContextResolver
     public string CurrentRestoreBucketKey()
     {
         return $"{_clientId}/restores.json";
+    }
+
+    public string CurrentArchiveRunsBucketKey()
+    {
+        return $"{_clientId}/archive-runs.json";    
     }
 
     private void ClearCache()

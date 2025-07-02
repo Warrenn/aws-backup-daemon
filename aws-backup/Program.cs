@@ -4,7 +4,9 @@ using System.CommandLine;
 using System.Text.Json;
 using aws_backup;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 // Required options (non-nullable fields)
 var clientIdOpt = new Option<string>("--client-id", "-i")
@@ -54,7 +56,12 @@ if (!File.Exists(appSettingsPath))
     return -1;
 }
 
-var host = Host.CreateDefaultBuilder(args)
+//CurrentArchiveRuns
+//DataChunkManifest
+//CurrentRestoreRequests
+//S3RestoreChunkManifest
+//Configuration
+var builder = Host.CreateDefaultBuilder(args)
     .UseWindowsService() // ← this enables service integration
     .UseSystemd() // ← this enables systemd integration
     .ConfigureAppConfiguration(config =>
@@ -68,11 +75,56 @@ var host = Host.CreateDefaultBuilder(args)
                 { "--client-id", "ClientId" } // Map command line option to configuration key
             });
     })
-    .ConfigureServices(services =>
+    .ConfigureLogging(logging =>
     {
-        // ... your AddHostedService<...>() etc.
+        logging.ClearProviders(); // Clear default providers
+        logging.AddConsole(); // Add console logging
+        logging.AddDebug(); // Add debug logging
+        // Optionally add other loggers like File, Azure, etc.
     })
-    .Build();
+    .ConfigureServices((hosting, services) =>
+    {
+        services
+            .AddSingleton<Mediator>()
+            .AddSingleton<IArchiveFileMediator>(sp => sp.GetRequiredService<Mediator>())
+            .AddSingleton<IRunRequestMediator>(sp => sp.GetRequiredService<Mediator>())
+            .AddSingleton<IArchiveRunMediator>(sp => sp.GetRequiredService<Mediator>())
+            .AddSingleton<IChunkManifestMediator>(sp => sp.GetRequiredService<Mediator>())
+            .AddSingleton<IDownloadFileMediator>(sp => sp.GetRequiredService<Mediator>())
+            .AddSingleton<IRetryMediator>(sp => sp.GetRequiredService<Mediator>())
+            .AddSingleton<IRestoreRequestsMediator>(sp => sp.GetRequiredService<Mediator>())
+            .AddSingleton<IRestoreManifestMediator>(sp => sp.GetRequiredService<Mediator>())
+            .AddSingleton<IRestoreRunMediator>(sp => sp.GetRequiredService<Mediator>())
+            .AddSingleton<IUploadChunksMediator>(sp => sp.GetRequiredService<Mediator>())
+            .AddSingleton<IAwsClientFactory, AwsClientFactory>()
+            .AddSingleton<IArchiveService, ArchiveService>()
+            .AddSingleton<IChunkedEncryptingFileProcessor, ChunkedEncryptingFileProcessor>()
+            .AddSingleton<IContextResolver, ContextResolver>()
+            .AddSingleton<ICronScheduler, CronScheduler>()
+            .AddSingleton<ICronSchedulerFactory, CronSchedulerFactory>()
+            .AddSingleton<IDataChunkService, DataChunkService>()
+            .AddSingleton<IFileLister, FileLister>()
+            .AddSingleton<IHotStorageService, HotStorageService>()
+            .AddSingleton<IRestoreService, RestoreService>()
+            .AddSingleton<IS3ChunkedFileReconstructor, S3ChunkedFileReconstructor>()
+            .AddSingleton<IS3Service, S3Service>()
+            .AddSingleton<ITemporaryCredentialsServer, RolesAnywhere>()
+            .AddSingleton<TimeProvider>(_ => TimeProvider.System)
+            .AddHostedService<CronJobOrchestration>()
+            .AddHostedService<ArchiveFilesOrchestration>()
+            .AddHostedService<ArchiveRunOrchestration>()
+            .AddHostedService<DownloadFileOrchestration>()
+            .AddHostedService<RestoreRunOrchestration>()
+            .AddHostedService<RetryOrchestration>()
+            .AddHostedService<S3StorageClassOrchestration>()
+            .AddHostedService<SqsPollingOrchestration>()
+            .AddHostedService<UploadChunkDataOrchestration>()
+            .AddHostedService<UploadOrchestration>()
+            .AddSingleton(globalConfig)
+            .AddOptions<Configuration>()
+            .ValidateOnStart();
+    });
 
+var host = builder.Build();
 await host.RunAsync();
 return 0;
