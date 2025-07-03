@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
-public class UploadOrchestration(
+public sealed class UploadOrchestration(
     IHotStorageService hotStorageService,
     IArchiveRunMediator runMediator,
     IChunkManifestMediator chunkManifestMediator,

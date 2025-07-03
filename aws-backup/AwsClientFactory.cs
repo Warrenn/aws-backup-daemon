@@ -19,7 +19,7 @@ public interface IAwsClientFactory : IDisposable
     Task<IAmazonSimpleNotificationService> CreateSnsClient(CancellationToken cancellationToken);
 }
 
-public class AwsClientFactory : IAwsClientFactory
+public sealed class AwsClientFactory : IAwsClientFactory
 {
     private readonly ConcurrentDictionary<Type, object> _clientCache = new();
     private readonly ILogger<AwsClientFactory> _logger;

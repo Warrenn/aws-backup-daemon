@@ -13,9 +13,15 @@ public interface IHotStorageService
     Task UploadAsync<T>(string key, T obj, CancellationToken cancellationToken);
 
     Task<T?> DownloadAsync<T>(string key, CancellationToken cancellationToken);
+
+    Task<bool> S3ObjectExistsAsync(
+        IAmazonS3 s3,
+        string bucket,
+        string key,
+        CancellationToken ct);
 }
 
-public class HotStorageService(
+public sealed class HotStorageService(
     IAwsClientFactory awsClientFactory,
     IContextResolver contextResolver) : IHotStorageService
 {
@@ -73,7 +79,7 @@ public class HotStorageService(
         return await JsonSerializer.DeserializeAsync<T>(gzip, Json.Options, cancellationToken);
     }
 
-    private static async Task<bool> S3ObjectExistsAsync(
+    public async Task<bool> S3ObjectExistsAsync(
         IAmazonS3 s3,
         string bucket,
         string key,

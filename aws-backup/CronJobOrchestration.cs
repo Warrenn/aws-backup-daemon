@@ -36,7 +36,7 @@ public class CronScheduler(string cron) : ICronScheduler
     }
 }
 
-public class CronJobOrchestration(
+public sealed class CronJobOrchestration(
     IOptionsMonitor<Configuration> configurationMonitor,
     IRunRequestMediator mediator,
     IContextResolver contextResolver,

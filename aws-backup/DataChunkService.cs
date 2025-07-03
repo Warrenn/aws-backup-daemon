@@ -12,16 +12,16 @@ public interface IChunkManifestMediator
     ValueTask SaveChunkManifest(DataChunkManifest manifest, CancellationToken cancellationToken);
 }
 
-public record CloudChunkDetails(
+public sealed record CloudChunkDetails(
     string S3Key, // S3 key for the chunk
     string BucketName, // S3 bucket name
     long ChunkSize,
     byte[] Hash);
 
 [JsonConverter(typeof(DataChunkManifestConverter))]
-public class DataChunkManifest : ConcurrentDictionary<ByteArrayKey, CloudChunkDetails>;
+public sealed class DataChunkManifest : ConcurrentDictionary<ByteArrayKey, CloudChunkDetails>;
 
-public record DataChunkDetails(
+public sealed record DataChunkDetails(
     string LocalFilePath,
     int ChunkIndex,
     long ChunkSize,
@@ -37,7 +37,7 @@ public interface IDataChunkService
         CancellationToken cancellationToken);
 }
 
-public class DataChunkService(
+public sealed class DataChunkService(
     IChunkManifestMediator mediator,
     DataChunkManifest dataChunkManifest
 ) : IDataChunkService
@@ -66,7 +66,7 @@ public class DataChunkService(
     }
 }
 
-public class DataChunkManifestConverter : JsonConverter<DataChunkManifest>
+public sealed class DataChunkManifestConverter : JsonConverter<DataChunkManifest>
 {
     public override DataChunkManifest Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {

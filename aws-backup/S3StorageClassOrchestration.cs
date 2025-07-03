@@ -2,7 +2,7 @@ using Microsoft.Extensions.Hosting;
 
 namespace aws_backup;
 
-public class S3StorageClassOrchestration(
+public sealed class S3StorageClassOrchestration(
     IS3Service s3Service,
     IRestoreService restoreService,
     IContextResolver resolver
@@ -12,8 +12,7 @@ public class S3StorageClassOrchestration(
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            var storageClasses = await s3Service.GetStorageClasses(cancellationToken);
-            foreach (var s3StorageInfo in storageClasses)
+            await foreach (var s3StorageInfo in s3Service.GetStorageClasses(cancellationToken))
                 await restoreService.ReportS3Storage(s3StorageInfo.BucketName, s3StorageInfo.Key,
                     s3StorageInfo.StorageClass, cancellationToken);
             var storageCheckDelay = resolver.StorageCheckDelaySeconds();

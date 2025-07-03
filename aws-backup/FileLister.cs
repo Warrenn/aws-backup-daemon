@@ -11,7 +11,7 @@ public interface IFileLister
     IEnumerable<string> GetAllFiles(string colonDelimitedRoots, IEnumerable<string> ignorePatterns);
 }
 
-public class FileLister : IFileLister
+public sealed class FileLister : IFileLister
 {
     /// <summary>
     ///     Given a colon-delimited list of root directories, recurses each and

@@ -14,7 +14,7 @@ public interface IS3ChunkedFileReconstructor
         CancellationToken cancellationToken);
 }
 
-public class S3ChunkedFileReconstructor(
+public sealed class S3ChunkedFileReconstructor(
     IContextResolver contextResolver,
     IAwsClientFactory awsClientFactory
 ) : IS3ChunkedFileReconstructor

@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 
 namespace aws_backup;
 
-public partial class RegexHelper
+public sealed partial class RegexHelper
 {
     [GeneratedRegex(@"^[A-Za-z]:(?:\\|/)")]
     public static partial Regex DriveRootRegex();

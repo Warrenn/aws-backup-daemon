@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
-public class RestoreRunOrchestration(
+public sealed class RestoreRunOrchestration(
     IRestoreRequestsMediator mediator,
     IArchiveService archiveService,
     IRestoreService restoreService,

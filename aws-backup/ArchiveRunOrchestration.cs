@@ -9,7 +9,7 @@ public interface IRunRequestMediator
     Task ScheduleRunRequest(RunRequest runRequest, CancellationToken cancellationToken);
 }
 
-public class ArchiveRunOrchestration(
+public sealed class ArchiveRunOrchestration(
     IRunRequestMediator mediator,
     IArchiveFileMediator archiveFileMediator,
     IArchiveService archiveService,

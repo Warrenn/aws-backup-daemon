@@ -5,7 +5,7 @@ using System.Text.Json;
 
 namespace aws_backup;
 
-public record AwsTemporaryCredentials(
+public sealed record AwsTemporaryCredentials(
     string? AccessKeyId,
     string? SecretAccessKey,
     string? SessionToken);
@@ -23,7 +23,7 @@ public interface ITemporaryCredentialsServer
         CancellationToken cancellation = default);
 }
 
-public class RolesAnywhere : ITemporaryCredentialsServer
+public sealed class RolesAnywhere : ITemporaryCredentialsServer
 {
     public async Task<AwsTemporaryCredentials> GetCredentials(
         string profileArn,

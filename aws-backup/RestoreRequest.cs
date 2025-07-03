@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace aws_backup;
 
-public record RestoreRequest(
+public sealed record RestoreRequest(
     string ArchiveRunId,
     string RestorePaths,
     DateTimeOffset RequestedAt);
@@ -20,4 +20,4 @@ public interface IRestoreRequestsMediator
 }
 
 [JsonConverter(typeof(JsonDictionaryConverter<RestoreRequest>))]
-public class CurrentRestoreRequests : ConcurrentDictionary<string, RestoreRequest>;
+public sealed class CurrentRestoreRequests : ConcurrentDictionary<string, RestoreRequest>;

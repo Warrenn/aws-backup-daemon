@@ -4,7 +4,7 @@ using System.Text;
 
 namespace aws_backup;
 
-public record FileProcessResult(
+public sealed record FileProcessResult(
     string LocalFilePath,
     long OriginalSize, // Size before compression
     byte[] FullFileHash, // SHA-256 hash of the full file
@@ -15,7 +15,7 @@ public interface IChunkedEncryptingFileProcessor
     Task<FileProcessResult> ProcessFileAsync(string runId, string inputPath, CancellationToken cancellationToken);
 }
 
-public class ChunkedEncryptingFileProcessor(
+public sealed class ChunkedEncryptingFileProcessor(
     IContextResolver contextResolver,
     IUploadChunksMediator mediator) : IChunkedEncryptingFileProcessor
 {

@@ -1,6 +1,6 @@
 namespace aws_backup;
 
-public class Mediator(
+public sealed class Mediator(
     IContextResolver resolver) :
     IArchiveFileMediator,
     IRunRequestMediator,

@@ -27,12 +27,12 @@ public enum FileStatus
     Skipped
 }
 
-public record AclEntry(
+public sealed record AclEntry(
     string Identity,
     string Permissions,
     string Type);
 
-public record FileMetaData(
+public sealed record FileMetaData(
     string LocalFilePath
 )
 {
@@ -48,12 +48,12 @@ public record FileMetaData(
     public DataChunkDetails[] Chunks { get; set; } = [];
 }
 
-public record RunRequest(
+public sealed record RunRequest(
     string RunId,
     string PathsToArchive,
     string CronSchedule);
 
-public class ArchiveRun
+public sealed class ArchiveRun
 {
     public required string PathsToArchive { get; init; }
     public required string RunId { get; init; }
@@ -97,9 +97,9 @@ public interface IArchiveService
 }
 
 [JsonConverter(typeof(JsonDictionaryConverter<ArchiveRun>))]
-public class CurrentArchiveRuns : ConcurrentDictionary<string, ArchiveRun>;
+public sealed class CurrentArchiveRuns : ConcurrentDictionary<string, ArchiveRun>;
 
-public class ArchiveService(
+public sealed class ArchiveService(
     IS3Service s3Service,
     IArchiveRunMediator mediator,
     ISnsOrchestrationMediator snsOrchestrationMediator,

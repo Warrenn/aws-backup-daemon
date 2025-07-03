@@ -9,12 +9,12 @@ public interface IArchiveFileMediator
     Task ProcessFile(ArchiveFileRequest request, CancellationToken cancellationToken);
 }
 
-public record ArchiveFileRequest(
+public sealed record ArchiveFileRequest(
     string RunId,
     string FilePath
 ) : RetryState;
 
-public partial class ArchiveFilesOrchestration(
+public sealed class ArchiveFilesOrchestration(
     IArchiveFileMediator mediator,
     IRetryMediator retryMediator,
     IChunkedEncryptingFileProcessor processor,

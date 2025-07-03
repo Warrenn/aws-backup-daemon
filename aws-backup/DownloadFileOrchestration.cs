@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
-public class DownloadFileOrchestration(
+public sealed class DownloadFileOrchestration(
     IRetryMediator retryMediator,
     IDownloadFileMediator mediator,
     IS3ChunkedFileReconstructor reconstructor,

@@ -16,35 +16,35 @@ public record SnsMessage(
     string Subject,
     string Message);
 
-public record ArchiveCompleteMessage(
+public sealed record ArchiveCompleteMessage(
     string RunId,
     string Subject,
     string Message,
     ArchiveRun ArchiveRun) : SnsMessage(Subject, Message);
 
-public record ArchiveCompleteErrorMessage(
+public sealed record ArchiveCompleteErrorMessage(
     string RunId,
     string Subject,
     string Message,
     ArchiveRun ArchiveRun) : SnsMessage(Subject, Message);
 
-public record RestoreCompleteMessage(
+public sealed record RestoreCompleteMessage(
     string RestoreId,
     string Subject,
     string Message,
     RestoreRun RestoreRun) : SnsMessage(Subject, Message);
 
-public record RestoreCompleteErrorMessage(
+public sealed record RestoreCompleteErrorMessage(
     string RestoreId,
     string Subject,
     string Message,
     RestoreRun RestoreRun) : SnsMessage(Subject, Message);
 
-public record ExceptionMessage(
+public sealed record ExceptionMessage(
     string Subject,
     string Message) : SnsMessage(Subject, Message);
 
-public class SnsOrchestration(
+public sealed class SnsOrchestration(
     ISnsOrchestrationMediator snsOrchestrationMediator,
     ILogger<SnsOrchestration> logger,
     IContextResolver contextResolver,

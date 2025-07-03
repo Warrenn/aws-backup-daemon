@@ -52,7 +52,7 @@ public enum S3RestoreStatus
 }
 
 [JsonConverter(typeof(S3RestoreChunkManifestConverter))]
-public class S3RestoreChunkManifest : ConcurrentDictionary<ByteArrayKey, S3RestoreStatus>;
+public sealed class S3RestoreChunkManifest : ConcurrentDictionary<ByteArrayKey, S3RestoreStatus>;
 
 public enum FileRestoreStatus
 {
@@ -62,7 +62,7 @@ public enum FileRestoreStatus
     Failed
 }
 
-public record RestoreFileMetaData(
+public sealed record RestoreFileMetaData(
     ByteArrayKey[] Chunks,
     string FilePath,
     long Size
@@ -77,7 +77,7 @@ public record RestoreFileMetaData(
     public FileRestoreStatus Status { get; set; } = FileRestoreStatus.PendingDeepArchiveRestore;
 }
 
-public record DownloadFileFromS3Request(
+public sealed record DownloadFileFromS3Request(
     string RestoreId,
     string FilePath,
     CloudChunkDetails[] CloudChunkDetails,
@@ -91,7 +91,7 @@ public record DownloadFileFromS3Request(
     public byte[]? Checksum { get; init; }
 }
 
-public class RestoreRun
+public sealed class RestoreRun
 {
     public required string RestoreId { get; init; }
     public required string RestorePaths { get; init; }
@@ -99,12 +99,11 @@ public class RestoreRun
     public required RestoreRunStatus Status { get; set; } = RestoreRunStatus.Processing;
     public required DateTimeOffset RequestedAt { get; init; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? CompletedAt { get; set; }
-    public ConcurrentDictionary<string, RestoreFileMetaData> RequestedFiles { get; init; } = new();
-
+    [JsonInclude] public ConcurrentDictionary<string, RestoreFileMetaData> RequestedFiles { get; init; } = new();
     [JsonInclude] public ConcurrentDictionary<string, string> FailedFiles { get; init; } = new();
 }
 
-public class RestoreService(
+public sealed class RestoreService(
     IDownloadFileMediator mediator,
     IRestoreRunMediator restoreRunMediator,
     IRestoreManifestMediator restoreManifestMediator,
@@ -119,9 +118,11 @@ public class RestoreService(
     //List of RestoreRun objects
     private readonly ConcurrentDictionary<string, RestoreRun> _restoreRuns = [];
 
-    public Task<RestoreRun?> LookupRestoreRun(string restoreId, CancellationToken cancellationToken)
+    public async Task<RestoreRun?> LookupRestoreRun(string restoreId, CancellationToken cancellationToken)
     {
-        return Task.FromResult(_restoreRuns.GetValueOrDefault(restoreId));
+        if (_restoreRuns.TryGetValue(restoreId, out var restoreRun)) return restoreRun;
+        if (!await s3Service.RestoreExists(restoreId, cancellationToken)) return null;
+        return await s3Service.GetRestoreRun(restoreId, cancellationToken);
     }
 
     public async Task ReportS3Storage(string bucketId, string s3Key, S3StorageClass storageClass,
@@ -332,7 +333,7 @@ public class RestoreService(
     }
 }
 
-public class S3RestoreChunkManifestConverter
+public sealed class S3RestoreChunkManifestConverter
     : JsonConverter<S3RestoreChunkManifest>
 {
     public override S3RestoreChunkManifest Read(

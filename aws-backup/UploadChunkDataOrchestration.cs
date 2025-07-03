@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
-public record UploadChunkRequest(
+public sealed record UploadChunkRequest(
     string ArchiveRunId,
     string ParentFile,
     DataChunkDetails DataChunkDetails) : RetryState;
@@ -17,7 +17,7 @@ public interface IUploadChunksMediator
     Task ProcessChunk(UploadChunkRequest request, CancellationToken cancellationToken);
 }
 
-public class UploadChunkDataOrchestration(
+public sealed class UploadChunkDataOrchestration(
     IUploadChunksMediator mediator,
     ILogger<UploadChunkDataOrchestration> logger,
     IAwsClientFactory awsClientFactory,

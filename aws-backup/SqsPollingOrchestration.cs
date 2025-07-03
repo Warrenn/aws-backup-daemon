@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
-public class SqsPollingOrchestration(
+public sealed class SqsPollingOrchestration(
     IAwsClientFactory clientFactory,
     ILogger<SqsPollingOrchestration> logger,
     IRestoreRequestsMediator mediator,

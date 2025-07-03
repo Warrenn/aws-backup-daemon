@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace aws_backup;
 
 //settings for everyone
-public record GlobalConfiguration(
+public sealed record GlobalConfiguration(
     long ChunkSizeBytes,
     string KmsBasePath,
     string BucketId,
@@ -11,7 +11,7 @@ public record GlobalConfiguration(
     string SnsBaseArn);
 
 //settings that can change
-public record Configuration(
+public sealed record Configuration(
     [property: Required] string ClientId,
     [property: Required] string CronSchedule,
     [property: Required] string PathsToArchive,
@@ -55,5 +55,6 @@ public record Configuration(
     bool? NotifyOnArchiveCompleteErrors = null,
     bool? NotifyOnRestoreComplete = null,
     bool? NotifyOnRestoreCompleteErrors = null,
-    bool? NotifyOnException = null
+    bool? NotifyOnException = null,
+    int? DaysToKeepRestoredCopy = null
 );

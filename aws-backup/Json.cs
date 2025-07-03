@@ -33,7 +33,7 @@ public static class Json
     };
 }
 
-public class JsonDictionaryConverter<T> : JsonConverter<ConcurrentDictionary<string, T>>
+public sealed class JsonDictionaryConverter<T> : JsonConverter<ConcurrentDictionary<string, T>>
 {
     public override ConcurrentDictionary<string, T> Read(ref Utf8JsonReader reader, Type typeToConvert,
         JsonSerializerOptions options)

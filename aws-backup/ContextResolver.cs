@@ -82,9 +82,13 @@ public interface IContextResolver
     string ArchiveCompleteErrorSnsArn();
     string RestoreCompleteErrorSnsArn();
     string ExceptionSnsArn();
+    string RunIdBucketKey(string runId);
+    string RestoreIdBucketKey(string restoreId);
+    int DaysToKeepRestoredCopy();
+    string S3DataPrefix();
 }
 
-public class ContextResolver : IContextResolver
+public sealed class ContextResolver : IContextResolver
 {
     private readonly string _clientId;
     private readonly IOptionsMonitor<Configuration> _configOptions;
@@ -426,7 +430,8 @@ public class ContextResolver : IContextResolver
     public string ChunkS3Key(string localFilePath, int chunkIndex, long chunkSize, byte[] hashKey, long size)
     {
         var hash = Base64Url.Encode(hashKey); // Use first 8 chars of hash
-        return $"{_clientId}/data/{hash}";
+        var prefix = S3DataPrefix();
+        return $"{prefix}/{hash}";
     }
 
     public string RestoreId(string archiveRunId, string restorePaths, DateTimeOffset requestedAt)
@@ -522,6 +527,26 @@ public class ContextResolver : IContextResolver
     public string ExceptionSnsArn()
     {
         return $"{_globalConfigOptions.SnsBaseArn}{_clientId}-exception";
+    }
+
+    public string RunIdBucketKey(string runId)
+    {
+        return $"{_clientId}/archive-runs/{runId}.json.gz";
+    }
+
+    public string RestoreIdBucketKey(string restoreId)
+    {
+        return $"{_clientId}/restore-runs/{restoreId}.json.gz";
+    }
+
+    public int DaysToKeepRestoredCopy()
+    {
+        return _configOptions.CurrentValue.DaysToKeepRestoredCopy ?? 7;
+    }
+
+    public string S3DataPrefix()
+    {
+        return $"{_clientId}/data";
     }
 
     private void ClearCache()

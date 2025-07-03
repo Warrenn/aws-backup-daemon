@@ -19,7 +19,7 @@ public interface IRetryMediator
     Task RetryAttempt(RetryState attempt, CancellationToken cancellationToken);
 }
 
-public class RetryOrchestration(
+public sealed class RetryOrchestration(
     IRetryMediator mediator,
     IContextResolver contextResolver,
     ILogger<RetryOrchestration> logger,
