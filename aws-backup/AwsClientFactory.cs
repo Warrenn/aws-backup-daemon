@@ -4,23 +4,26 @@ using Amazon.Runtime.CredentialManagement;
 using Amazon.S3;
 using Amazon.SecurityToken;
 using Amazon.SecurityToken.Model;
+using Amazon.SimpleNotificationService;
 using Amazon.SimpleSystemsManagement;
 using Amazon.SQS;
 using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
-public interface IAwsClientFactory
+public interface IAwsClientFactory : IDisposable
 {
     Task<IAmazonS3> CreateS3Client(CancellationToken cancellationToken);
     Task<IAmazonSimpleSystemsManagement> CreateSsmClient(CancellationToken cancellationToken);
     Task<IAmazonSQS> CreateSqsClient(CancellationToken cancellationToken);
+    Task<IAmazonSimpleNotificationService> CreateSnsClient(CancellationToken cancellationToken);
 }
 
-public class AwsClientFactory : IAwsClientFactory, IDisposable
+public class AwsClientFactory : IAwsClientFactory
 {
     private readonly ConcurrentDictionary<Type, object> _clientCache = new();
     private readonly ILogger<AwsClientFactory> _logger;
+    private readonly ISnsOrchestrationMediator _orchestrationMediator;
     private readonly IContextResolver _resolver;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private readonly ITemporaryCredentialsServer _temporaryCredentialsServer;
@@ -29,12 +32,14 @@ public class AwsClientFactory : IAwsClientFactory, IDisposable
     public AwsClientFactory(
         IContextResolver resolver,
         ILogger<AwsClientFactory> logger,
-        ITemporaryCredentialsServer temporaryCredentialsServer)
+        ITemporaryCredentialsServer temporaryCredentialsServer,
+        ISnsOrchestrationMediator orchestrationMediator)
     {
         _resolver = resolver;
         resolver.SetSsmClientFactory(CreateSsmClient);
         _logger = logger;
         _temporaryCredentialsServer = temporaryCredentialsServer;
+        _orchestrationMediator = orchestrationMediator;
     }
 
     public async Task<IAmazonS3> CreateS3Client(CancellationToken cancellationToken)
@@ -73,6 +78,19 @@ public class AwsClientFactory : IAwsClientFactory, IDisposable
             return credentials != null
                 ? new AmazonSQSClient(credentials, config)
                 : new AmazonSQSClient(config);
+        }, cancellationToken);
+    }
+
+    public async Task<IAmazonSimpleNotificationService> CreateSnsClient(CancellationToken cancellationToken)
+    {
+        return await GetOrCreateClient<IAmazonSimpleNotificationService>(async () =>
+        {
+            var config = CreateSnsConfig();
+            var credentials = await GetCredentialsAsync(cancellationToken);
+
+            return credentials != null
+                ? new AmazonSimpleNotificationServiceClient(credentials, config)
+                : new AmazonSimpleNotificationServiceClient(config);
         }, cancellationToken);
     }
 
@@ -130,6 +148,9 @@ public class AwsClientFactory : IAwsClientFactory, IDisposable
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to validate AWS credentials");
+            await _orchestrationMediator.PublishMessage(
+                new SnsMessage("Failed to validate AWS credentials", ex.ToString()),
+                cancellationToken);
             return false;
         }
     }
@@ -166,6 +187,9 @@ public class AwsClientFactory : IAwsClientFactory, IDisposable
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to resolve AWS credentials using {CredentialSource}", name);
+                await _orchestrationMediator.PublishMessage(
+                    new SnsMessage($"Failed to resolve AWS credentials using {name}", ex.ToString()),
+                    cancellationToken);
             }
 
         _logger.LogWarning("No valid AWS credentials found, falling back to default credential chain");
@@ -308,6 +332,18 @@ public class AwsClientFactory : IAwsClientFactory, IDisposable
     private AmazonSQSConfig CreateSqsConfig()
     {
         var config = new AmazonSQSConfig
+        {
+            MaxErrorRetry = _resolver.GeneralRetryLimit(),
+            RetryMode = _resolver.GetAwsRetryMode(),
+            Timeout = TimeSpan.FromSeconds(_resolver.ShutdownTimeoutSeconds()),
+            RegionEndpoint = _resolver.GetAwsRegion()
+        };
+        return config;
+    }
+
+    private AmazonSimpleNotificationServiceConfig CreateSnsConfig()
+    {
+        var config = new AmazonSimpleNotificationServiceConfig
         {
             MaxErrorRetry = _resolver.GeneralRetryLimit(),
             RetryMode = _resolver.GetAwsRetryMode(),

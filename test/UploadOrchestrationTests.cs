@@ -37,6 +37,7 @@ public class UploadOrchestrationTests
             _restoreManifestMediator.Object,
             _restoreRunMediator.Object,
             _restoreRequestsMediator.Object,
+            Mock.Of<ISnsOrchestrationMediator>(),
             _contextResolver.Object,
             _logger);
     }
@@ -131,7 +132,8 @@ public class UploadOrchestrationTests
             Times.Once);
         _hotStorageService.Verify(x => x.UploadAsync("current1", It.IsAny<object>(), It.IsAny<CancellationToken>()),
             Times.Once);
-        _hotStorageService.Verify(x => x.UploadAsync("currentarchive1", It.IsAny<object>(), It.IsAny<CancellationToken>()),
+        _hotStorageService.Verify(
+            x => x.UploadAsync("currentarchive1", It.IsAny<object>(), It.IsAny<CancellationToken>()),
             Times.Once);
 
         Assert.Empty(_logger.LogRecords.Where(x => x.LogLevel == LogLevel.Error));
@@ -196,6 +198,7 @@ public class UploadOrchestrationTests
             _restoreManifestMediator.Object,
             _restoreRunMediator.Object,
             _restoreRequestsMediator.Object,
+            Mock.Of<ISnsOrchestrationMediator>(),
             _contextResolver.Object,
             _logger);
 

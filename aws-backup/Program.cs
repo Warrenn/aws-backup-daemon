@@ -111,6 +111,7 @@ builder
             .AddSingleton(dataChunkManifest)
             .AddSingleton(currentRestoreRequests)
             .AddSingleton(chunkManifest)
+            .AddSingleton<ISnsOrchestrationMediator>(sp => sp.GetRequiredService<Mediator>())
             .AddSingleton<IArchiveFileMediator>(sp => sp.GetRequiredService<Mediator>())
             .AddSingleton<IRunRequestMediator>(sp => sp.GetRequiredService<Mediator>())
             .AddSingleton<IArchiveRunMediator>(sp => sp.GetRequiredService<Mediator>())
@@ -142,7 +143,8 @@ builder
             .AddHostedService<S3StorageClassOrchestration>()
             .AddHostedService<SqsPollingOrchestration>()
             .AddHostedService<UploadChunkDataOrchestration>()
-            .AddHostedService<UploadOrchestration>();
+            .AddHostedService<UploadOrchestration>()
+            .AddHostedService<SnsOrchestration>();
     });
 
 var host = builder.Build();

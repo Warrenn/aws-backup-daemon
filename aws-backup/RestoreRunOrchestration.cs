@@ -10,7 +10,8 @@ public class RestoreRunOrchestration(
     IArchiveService archiveService,
     IRestoreService restoreService,
     ILogger<RestoreRunOrchestration> logger,
-    IContextResolver contextResolver
+    IContextResolver contextResolver,
+    ISnsOrchestrationMediator snsOrchestrationMediator
 ) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
@@ -95,6 +96,9 @@ public class RestoreRunOrchestration(
             }
             catch (Exception ex)
             {
+                await snsOrchestrationMediator.PublishMessage(new ExceptionMessage(
+                    $"Error processing restore request: {ex.Message}",
+                    ex.ToString()), cancellationToken);
                 logger.LogError(ex, "Error processing restore request: {Message}", ex.Message);
             }
     }

@@ -18,8 +18,9 @@
     </ItemGroup>
 
     <ItemGroup>
-      <PackageReference Include="awssdk.s3" Version="4.0.2" />
+      <PackageReference Include="AWSSDK.S3" Version="4.0.4" />
       <PackageReference Include="AWSSDK.SecurityToken" Version="4.0.1.2" />
+      <PackageReference Include="AWSSDK.SimpleNotificationService" Version="4.0.0.12" />
       <PackageReference Include="AWSSDK.SimpleSystemsManagement" Version="4.0.1.10" />
       <PackageReference Include="AWSSDK.SQS" Version="4.0.0.11" />
       <PackageReference Include="AWSSDK.SSO" Version="4.0.0.11" />

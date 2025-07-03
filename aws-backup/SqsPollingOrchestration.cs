@@ -10,7 +10,8 @@ public class SqsPollingOrchestration(
     IAwsClientFactory clientFactory,
     ILogger<SqsPollingOrchestration> logger,
     IRestoreRequestsMediator mediator,
-    IContextResolver contextResolver
+    IContextResolver contextResolver,
+    ISnsOrchestrationMediator snsOrchestrationMediator
 ) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
@@ -60,7 +61,8 @@ public class SqsPollingOrchestration(
                     logger.LogInformation("Received message {Id}", msg.MessageId);
                     var messageString = msg.Body;
                     if (string.IsNullOrWhiteSpace(messageString)) continue;
-                    if (contextResolver.EncryptSqs()) messageString = AesHelper.DecryptString(msg.Body, sqsDecryptionKey);
+                    if (contextResolver.EncryptSqs())
+                        messageString = AesHelper.DecryptString(msg.Body, sqsDecryptionKey);
 
                     var utf8 = Encoding.UTF8.GetBytes(messageString);
                     var reader = new Utf8JsonReader(utf8, true, default);
@@ -87,7 +89,7 @@ public class SqsPollingOrchestration(
                                 .Deserialize<RestoreRequest>(
                                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                             if (restoreRequest is null) continue;
-                            
+
                             await mediator.RestoreBackup(restoreRequest, cancellationToken);
                             break;
                         default:
@@ -106,6 +108,9 @@ public class SqsPollingOrchestration(
                 }
                 catch (Exception ex)
                 {
+                    await snsOrchestrationMediator.PublishMessage(new SnsMessage(
+                        $"Failed to process SQS message {msg.MessageId}, it will become visible again",
+                        ex.ToString()), cancellationToken);
                     logger.LogError(ex, "Failed to process message {Id}, it will become visible again", msg.MessageId);
                 }
         }

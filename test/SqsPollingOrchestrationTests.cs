@@ -37,7 +37,8 @@ public class SqsPollingOrchestrationTests
             _factory.Object,
             _logger,
             _mediator.Object,
-            _ctx.Object
+            _ctx.Object,
+            Mock.Of<ISnsOrchestrationMediator>()
         );
     }
 

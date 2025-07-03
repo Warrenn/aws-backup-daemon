@@ -1,18 +1,8 @@
 using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
-using System.Text.RegularExpressions;
 
 namespace aws_backup;
-
-public partial class RegexHelper
-{
-    [GeneratedRegex(@"^[A-Za-z]:(?:\\|/)")]
-    public static partial Regex DriveRootRegex();
-    
-    [GeneratedRegex( @"[^\w\d]")]
-    public static partial Regex NonAlphanumericRegex();
-}
 
 public static class FileHelper
 {

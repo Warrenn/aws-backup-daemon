@@ -10,6 +10,7 @@ public class UploadOrchestration(
     IRestoreManifestMediator restoreManifestMediator,
     IRestoreRunMediator restoreRunMediator,
     IRestoreRequestsMediator restoreRequestsMediator,
+    ISnsOrchestrationMediator snsOrchestrationMediator,
     IContextResolver contextResolver,
     ILogger<UploadOrchestration> logger) : BackgroundService
 {
@@ -47,6 +48,8 @@ public class UploadOrchestration(
                 }
                 catch (Exception ex)
                 {
+                    await snsOrchestrationMediator.PublishMessage(
+                        new ExceptionMessage($"Error processing upload {bucketKey}", ex.ToString()), cancellationToken);
                     logger.LogError(ex, "Error processing upload {BucketKey}", bucketKey);
                     // Optionally, you can rethrow or handle the exception as needed
                 }

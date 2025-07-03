@@ -7,7 +7,8 @@ public record GlobalConfiguration(
     long ChunkSizeBytes,
     string KmsBasePath,
     string BucketId,
-    string SqsQueueBaseName);
+    string SqsQueueBaseName,
+    string SnsBaseArn);
 
 //settings that can change
 public record Configuration(
@@ -49,5 +50,10 @@ public record Configuration(
     bool? CheckDownloadHash = null,
     bool? EncryptSqs = null,
     bool? UseS3Accelerate = null,
-    bool? EncryptFiles = null
+    bool? EncryptFiles = null,
+    bool? NotifyOnArchiveComplete = null,
+    bool? NotifyOnArchiveCompleteErrors = null,
+    bool? NotifyOnRestoreComplete = null,
+    bool? NotifyOnRestoreCompleteErrors = null,
+    bool? NotifyOnException = null
 );

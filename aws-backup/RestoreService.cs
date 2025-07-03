@@ -109,6 +109,7 @@ public class RestoreService(
     IRestoreRunMediator restoreRunMediator,
     IRestoreManifestMediator restoreManifestMediator,
     IRestoreRequestsMediator restoreRequestsMediator,
+    ISnsOrchestrationMediator snsOrchestrationMediator,
     IS3Service s3Service,
     S3RestoreChunkManifest restoreManifest,
     CurrentRestoreRequests currentRestoreRequests,
@@ -222,6 +223,24 @@ public class RestoreService(
         if (!runComplete) return;
         restoreRun.Status = RestoreRunStatus.Completed;
         restoreRun.CompletedAt = DateTimeOffset.UtcNow;
+
+        if (restoreRun.RequestedFiles.Values.Any(f => f.Status is FileRestoreStatus.Failed))
+            await snsOrchestrationMediator.PublishMessage(
+                new RestoreCompleteErrorMessage(
+                    restoreRun.RestoreId,
+                    $"Restore run {restoreRun.RestoreId} completed with errors",
+                    "Some files failed to restore",
+                    restoreRun
+                ), cancellationToken);
+        else
+            await snsOrchestrationMediator.PublishMessage(
+                new RestoreCompleteMessage(
+                    restoreRun.RestoreId,
+                    $"Restore run {restoreRun.RestoreId} completed",
+                    "All files restored successfully",
+                    restoreRun
+                ), cancellationToken);
+
         await restoreRunMediator.SaveRestoreRun(restoreRun, cancellationToken);
         _restoreRuns.TryRemove(restoreRun.RestoreId, out _);
         currentRestoreRequests.TryRemove(restoreRun.RestoreId, out _);
@@ -238,20 +257,35 @@ public class RestoreService(
         await restoreRunMediator.SaveRestoreRun(restoreRun, cancellationToken);
         var runComplete = restoreRun.RequestedFiles.Values.All(f =>
             f.Status is FileRestoreStatus.Completed or FileRestoreStatus.Failed);
+
+        await snsOrchestrationMediator.PublishMessage(
+            new SnsMessage($"S3 download request failed {request}", reason.ToString()),
+            cancellationToken);
+
         if (!runComplete) return;
         restoreRun.Status = RestoreRunStatus.Completed;
         restoreRun.CompletedAt = DateTimeOffset.UtcNow;
         await restoreRunMediator.SaveRestoreRun(restoreRun, cancellationToken);
+
+        await snsOrchestrationMediator.PublishMessage(
+            new RestoreCompleteErrorMessage(
+                restoreRun.RestoreId,
+                $"Restore run {restoreRun.RestoreId} completed with errors",
+                "Some files failed to restore",
+                restoreRun
+            ), cancellationToken);
+
         _restoreRuns.TryRemove(restoreRun.RestoreId, out _);
         currentRestoreRequests.TryRemove(restoreRun.RestoreId, out _);
         await restoreRequestsMediator.SaveRunningRequest(currentRestoreRequests, cancellationToken);
     }
 
-    public async Task InitiateRestoreRun(RestoreRequest request, RestoreRun restoreRun, CancellationToken cancellationToken)
+    public async Task InitiateRestoreRun(RestoreRequest request, RestoreRun restoreRun,
+        CancellationToken cancellationToken)
     {
         currentRestoreRequests.TryAdd(restoreRun.RestoreId, request);
         await restoreRequestsMediator.SaveRunningRequest(currentRestoreRequests, cancellationToken);
-        
+
         if (!_restoreRuns.TryAdd(restoreRun.RestoreId, restoreRun)) return;
 
         foreach (var metaData in restoreRun.RequestedFiles.Values)

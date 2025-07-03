@@ -11,7 +11,8 @@ public class Mediator(
     IRestoreRequestsMediator,
     IRestoreManifestMediator,
     IRestoreRunMediator,
-    IUploadChunksMediator
+    IUploadChunksMediator,
+    ISnsOrchestrationMediator
 
 {
     // IArchiveFileMediator
@@ -131,6 +132,16 @@ public class Mediator(
     }
 
     public async Task ProcessChunk(UploadChunkRequest request, CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    public IAsyncEnumerable<SnsMessage> GetMessages(CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    public async Task PublishMessage(SnsMessage message, CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }

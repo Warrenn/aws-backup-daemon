@@ -102,6 +102,7 @@ public class CurrentArchiveRuns : ConcurrentDictionary<string, ArchiveRun>;
 public class ArchiveService(
     IS3Service s3Service,
     IArchiveRunMediator mediator,
+    ISnsOrchestrationMediator snsOrchestrationMediator,
     CurrentArchiveRuns currentArchiveRuns
 ) : IArchiveService
 {
@@ -238,6 +239,11 @@ public class ArchiveService(
         archiveRun.Files[localFilePath] = fileMeta;
 
         archiveRun.SkipReason[localFilePath] = exception.Message;
+
+        await snsOrchestrationMediator.PublishMessage(new ExceptionMessage(
+            $"File Skipped: {localFilePath} in run {archiveRunId}",
+            $"File {localFilePath} was skipped due to: {exception.Message}"), cancellationToken);
+
         await CheckIfRunComplete(archiveRun, cancellationToken);
     }
 
@@ -295,6 +301,19 @@ public class ArchiveService(
 
             if (currentArchiveRuns.TryRemove(archiveRun.RunId, out _))
                 await mediator.SaveCurrentArchiveRuns(currentArchiveRuns, cancellationToken);
+
+            if (archiveRun.Files.Values.Any(f => f.Status is FileStatus.Skipped))
+                await snsOrchestrationMediator.PublishMessage(new ArchiveCompleteErrorMessage(
+                    archiveRun.RunId,
+                    $"Archive run {archiveRun.RunId} completed with errors",
+                    "Some files were skipped during the archive run.",
+                    archiveRun), cancellationToken);
+            else
+                await snsOrchestrationMediator.PublishMessage(new ArchiveCompleteMessage(
+                    archiveRun.RunId,
+                    $"Archive run {archiveRun.RunId} completed",
+                    "The archive run has completed successfully.",
+                    archiveRun), cancellationToken);
 
             tc.TrySetResult();
         }

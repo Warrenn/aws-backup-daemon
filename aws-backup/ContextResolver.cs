@@ -72,6 +72,16 @@ public interface IContextResolver
     string CurrentArchiveRunsBucketKey();
     string ChunkManifestBucketKey();
     string RestoreManifestBucketKey();
+    bool NotifyOnArchiveComplete();
+    bool NotifyOnArchiveCompleteErrors();
+    bool NotifyOnRestoreComplete();
+    bool NotifyOnRestoreCompleteErrors();
+    bool NotifyOnException();
+    string ArchiveCompleteSnsArn();
+    string RestoreCompleteSnsArn();
+    string ArchiveCompleteErrorSnsArn();
+    string RestoreCompleteErrorSnsArn();
+    string ExceptionSnsArn();
 }
 
 public class ContextResolver : IContextResolver
@@ -113,7 +123,7 @@ public class ContextResolver : IContextResolver
     private int? _storageCheckDelaySeconds;
     private int? _uploadAttemptLimit;
     private bool? _useS3Accelerate;
-    
+
     public ContextResolver(
         IOptionsMonitor<Configuration> configOptions,
         GlobalConfiguration globalConfigOptions)
@@ -380,7 +390,7 @@ public class ContextResolver : IContextResolver
 
         // Implementation would retrieve or generate encryption key
         // This could involve calling SSM Parameter Store or generating a key
-        var ssmClient = await _ssmClientFactory(cancellationToken);
+        using var ssmClient = await _ssmClientFactory(cancellationToken);
         // Retrieve from SSM Parameter Store
         // Implementation depends on your key management strategy
         // Example:
@@ -400,7 +410,7 @@ public class ContextResolver : IContextResolver
         if (EncryptSqs() && _sqsEncryptionKey is not null && _sqsEncryptionKey.Length > 0)
             return _sqsEncryptionKey;
 
-        var ssmClient = await _ssmClientFactory(cancellationToken);
+        using var ssmClient = await _ssmClientFactory(cancellationToken);
         var response = await ssmClient.GetParameterAsync(new GetParameterRequest
         {
             Name = $"{_globalConfigOptions.KmsBasePath}{_clientId}/aes-sqs-encryption-key",
@@ -464,6 +474,56 @@ public class ContextResolver : IContextResolver
         return $"{_clientId}/restore-manifest.json.gz";
     }
 
+    public bool NotifyOnArchiveComplete()
+    {
+        return _configOptions.CurrentValue.NotifyOnArchiveComplete ?? false;
+    }
+
+    public bool NotifyOnArchiveCompleteErrors()
+    {
+        return _configOptions.CurrentValue.NotifyOnArchiveCompleteErrors ?? false;
+    }
+
+    public bool NotifyOnRestoreComplete()
+    {
+        return _configOptions.CurrentValue.NotifyOnRestoreComplete ?? false;
+    }
+
+    public bool NotifyOnRestoreCompleteErrors()
+    {
+        return _configOptions.CurrentValue.NotifyOnRestoreCompleteErrors ?? false;
+    }
+
+    public bool NotifyOnException()
+    {
+        return _configOptions.CurrentValue.NotifyOnException ?? false;
+    }
+
+    public string ArchiveCompleteSnsArn()
+    {
+        return $"{_globalConfigOptions.SnsBaseArn}{_clientId}-archive-complete";
+    }
+
+    public string RestoreCompleteSnsArn()
+    {
+        return $"{_globalConfigOptions.SnsBaseArn}{_clientId}-restore-complete";
+    }
+
+    public string ArchiveCompleteErrorSnsArn()
+    {
+        return $"{_globalConfigOptions.SnsBaseArn}{_clientId}-archive-complete-errors";
+    }
+
+    public string RestoreCompleteErrorSnsArn()
+    {
+        return $"{_globalConfigOptions.SnsBaseArn}{_clientId}-restore-complete-errors";
+    }
+
+    public string ExceptionSnsArn()
+    {
+        return $"{_globalConfigOptions.SnsBaseArn}{_clientId}-exception";
+    }
+
     private void ClearCache()
     {
         _awsRegion = null;
@@ -509,7 +569,7 @@ public class ContextResolver : IContextResolver
     {
         return RegexHelper
             .NonAlphanumericRegex()
-            .Replace(clientId, "_")
+            .Replace(clientId, "")
             .ToLowerInvariant();
     }
 

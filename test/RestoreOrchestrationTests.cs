@@ -26,7 +26,8 @@ public class RestoreRunOrchestrationTests
             _archiveService.Object,
             _restoreService.Object,
             _logger,
-            _ctx.Object);
+            _ctx.Object,
+            Mock.Of<ISnsOrchestrationMediator>());
     }
 
     private MethodInfo GetExecute()

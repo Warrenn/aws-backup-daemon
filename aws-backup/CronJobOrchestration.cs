@@ -42,7 +42,8 @@ public class CronJobOrchestration(
     IContextResolver contextResolver,
     ICronSchedulerFactory cronSchedulerFactory,
     ILogger<CronJobOrchestration> logger,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    ISnsOrchestrationMediator snsOrchestrationMediator)
     : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
@@ -82,7 +83,7 @@ public class CronJobOrchestration(
                 var cronSchedule = configurationMonitor.CurrentValue.CronSchedule;
                 var pathsToArchive = configurationMonitor.CurrentValue.PathsToArchive;
                 var runRequest = new RunRequest(runId, pathsToArchive, cronSchedule);
-                
+
                 logger.LogInformation("Starting backup {runId} for {pathsToArchive} at {Now}", runId, pathsToArchive,
                     timeProvider.GetUtcNow());
                 await mediator.ScheduleRunRequest(runRequest, cancellationToken);
@@ -90,11 +91,16 @@ public class CronJobOrchestration(
             catch (OperationCanceledException)
             {
                 if (cancellationToken.IsCancellationRequested) break;
-                continue;
             }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
-                logger.LogError(ex, "Error running cron job");
+                await snsOrchestrationMediator.PublishMessage(
+                    new SnsMessage($"Error running cron job {configurationMonitor.CurrentValue.CronSchedule}",
+                        ex.ToString()),
+                    cancellationToken);
+
+                logger.LogError(ex, "Error running cron job {schedule}",
+                    configurationMonitor.CurrentValue.CronSchedule);
             }
 
 
