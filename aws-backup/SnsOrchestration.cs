@@ -130,11 +130,6 @@ public class SnsOrchestration(
                 """;
     }
 
-    private static string GetRestoreCompleteErrorMessage(SnsMessage message)
-    {
-        return "";
-    }
-
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         var sns = await clientFactory.CreateSnsClient(cancellationToken);
