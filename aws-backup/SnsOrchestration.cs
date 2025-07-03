@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 using Amazon.SimpleNotificationService.Model;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -49,18 +50,90 @@ public class SnsOrchestration(
     IContextResolver contextResolver,
     IAwsClientFactory clientFactory) : BackgroundService
 {
-    private readonly ConcurrentDictionary<Type, (bool notify, string arn)> _messageTypeToSnsArn = new()
+    private readonly ConcurrentDictionary<Type, (bool notify, string arn, Func<SnsMessage, string> getMessage)>
+        _messageTypeToSnsArn = new()
+        {
+            [typeof(ArchiveCompleteMessage)] =
+                (contextResolver.NotifyOnArchiveComplete(), contextResolver.ArchiveCompleteSnsArn(),
+                    m => GetArchiveCompleteMessage(m, am => ((ArchiveCompleteMessage)am).ArchiveRun)),
+            [typeof(ArchiveCompleteErrorMessage)] = (contextResolver.NotifyOnArchiveCompleteErrors(),
+                contextResolver.ArchiveCompleteErrorSnsArn(),
+                m => GetArchiveCompleteMessage(m, am => ((ArchiveCompleteErrorMessage)am).ArchiveRun)),
+            [typeof(RestoreCompleteMessage)] =
+                (contextResolver.NotifyOnRestoreComplete(), contextResolver.RestoreCompleteSnsArn(),
+                    m => GetRestoreCompleteMessage(m, rm => ((RestoreCompleteMessage)rm).RestoreRun)),
+            [typeof(RestoreCompleteErrorMessage)] = (contextResolver.NotifyOnRestoreCompleteErrors(),
+                contextResolver.RestoreCompleteErrorSnsArn(), m => GetRestoreCompleteMessage(m,
+                    rm => ((RestoreCompleteErrorMessage)rm).RestoreRun)),
+            [typeof(ExceptionMessage)] = (contextResolver.NotifyOnException(), contextResolver.ExceptionSnsArn(),
+                GetExceptionMessage)
+        };
+
+    private static string GetExceptionMessage(SnsMessage message)
     {
-        [typeof(ArchiveCompleteMessage)] =
-            (contextResolver.NotifyOnArchiveComplete(), contextResolver.ArchiveCompleteSnsArn()),
-        [typeof(ArchiveCompleteErrorMessage)] = (contextResolver.NotifyOnArchiveCompleteErrors(),
-            contextResolver.ArchiveCompleteErrorSnsArn()),
-        [typeof(RestoreCompleteMessage)] =
-            (contextResolver.NotifyOnRestoreComplete(), contextResolver.RestoreCompleteSnsArn()),
-        [typeof(RestoreCompleteErrorMessage)] = (contextResolver.NotifyOnRestoreCompleteErrors(),
-            contextResolver.RestoreCompleteErrorSnsArn()),
-        [typeof(ExceptionMessage)] = (contextResolver.NotifyOnException(), contextResolver.ExceptionSnsArn())
-    };
+        var exceptionMessage = message as ExceptionMessage;
+        return $"Exception: {exceptionMessage?.Message}";
+    }
+
+    private static string GetArchiveCompleteMessage(SnsMessage message, Func<SnsMessage, ArchiveRun> getRun)
+    {
+        var builder = new StringBuilder();
+        var archiveRun = getRun(message);
+
+        foreach (var (filePath, metaData) in archiveRun.Files)
+        {
+            builder.Append(
+                $"File: {filePath} Status: {metaData.Status} Size: {metaData.OriginalSize} LastModified: {metaData.LastModified} ");
+            if (archiveRun.SkipReason.TryGetValue(filePath, out var value))
+                builder.Append($"Skip Reason: {value} ");
+            builder.AppendLine();
+        }
+
+        return $"""
+                {message.Message}
+                RunId: {archiveRun.RunId}
+                CronSchedule: {archiveRun.CronSchedule}
+                StartTime: {archiveRun.CreatedAt}
+                EndTime: {archiveRun.CompletedAt}
+                Original Size: {archiveRun.OriginalSize}
+                Compressed Size: {archiveRun.CompressedSize}
+
+                Archived Files {archiveRun.TotalFiles}:
+                Skipped Files {archiveRun.TotalSkippedFiles}
+                {builder}
+                """;
+    }
+
+    private static string GetRestoreCompleteMessage(SnsMessage message, Func<SnsMessage, RestoreRun> getRun)
+    {
+        var builder = new StringBuilder();
+        var restoreRun = getRun(message);
+
+        foreach (var (filePath, metaData) in restoreRun.RequestedFiles)
+        {
+            builder.Append(
+                $"File: {filePath} Status: {metaData.Status} LastModified: {metaData.LastModified} ");
+            if (restoreRun.FailedFiles.TryGetValue(filePath, out var value))
+                builder.Append($"Failed Reason: {value} ");
+            builder.AppendLine();
+        }
+
+        return $"""
+                {message.Message}
+                Restore Id: {restoreRun.RestoreId}
+                Archive Run Id: {restoreRun.ArchiveRunId}
+                StartTime: {restoreRun.RequestedAt}
+                EndTime: {restoreRun.CompletedAt}
+                Restore Paths:{restoreRun.RestorePaths}
+                Restore Files {restoreRun.RequestedFiles.Count}:
+                {builder}
+                """;
+    }
+
+    private static string GetRestoreCompleteErrorMessage(SnsMessage message)
+    {
+        return "";
+    }
 
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
@@ -75,15 +148,13 @@ public class SnsOrchestration(
                 }
 
                 if (!snsNotification.notify) continue;
+                var messageContent = snsNotification.getMessage(message);
 
                 var request = new PublishRequest
                 {
                     TargetArn = snsNotification.arn,
                     Subject = message.Subject,
-                    Message = $"""
-                               Message:{message.Message}
-                               Data:{message}
-                               """
+                    Message = messageContent
                 };
 
                 var response = await sns.PublishAsync(request, cancellationToken);

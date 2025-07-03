@@ -65,8 +65,7 @@ public class SnsOrchestrationTests
         _snsClient.Verify(x => x.PublishAsync(It.Is<PublishRequest>(req =>
             req.TargetArn == "arn:aws:sns:us-east-1:123456789012:archive-complete" &&
             req.Subject == "Archive Complete" &&
-            req.Message.Contains("Archive operation completed successfully") &&
-            req.Message.Contains("Data:")
+            req.Message.Contains("Archive operation completed successfully")
         ), It.IsAny<CancellationToken>()), Times.Once);
 
         var infoLogs = _logger.LogRecords.Where(x => x.LogLevel == LogLevel.Information).ToList();
