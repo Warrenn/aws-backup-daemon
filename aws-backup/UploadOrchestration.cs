@@ -22,9 +22,10 @@ public sealed class UploadOrchestration(
             RunUploadAsync(chunkManifestMediator.GetDataChunksManifest, cancellationToken),
             RunUploadAsync(restoreManifestMediator.GetRestoreManifest, cancellationToken),
             RunUploadAsync(restoreRunMediator.GetRestoreRuns, cancellationToken),
-            RunUploadAsync(runMediator.GetCurrentArchiveRuns, cancellationToken),
+            RunUploadAsync(runMediator.GetCurrentArchiveRunRequests, cancellationToken),
             RunUploadAsync(restoreRequestsMediator.GetRunningRequests, cancellationToken)
         };
+
         //GetCurrentArchiveRuns
         await Task.WhenAll(workers);
     }

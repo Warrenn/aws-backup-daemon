@@ -98,11 +98,11 @@ public class UploadOrchestrationTests
         ]);
 
         var currentArchiveRunsData = CreateAsyncEnumerable([
-            new KeyValuePair<string, CurrentArchiveRuns>("currentarchive1", new CurrentArchiveRuns())
+            new KeyValuePair<string, CurrentArchiveRunRequests>("currentarchive1", new CurrentArchiveRunRequests())
         ]);
 
         _runMediator.Setup(x => x.GetArchiveRuns(It.IsAny<CancellationToken>())).Returns(() => archiveData);
-        _runMediator.Setup(x => x.GetCurrentArchiveRuns(It.IsAny<CancellationToken>()))
+        _runMediator.Setup(x => x.GetCurrentArchiveRunRequests(It.IsAny<CancellationToken>()))
             .Returns(() => currentArchiveRunsData);
         _chunkManifestMediator.Setup(x => x.GetDataChunksManifest(It.IsAny<CancellationToken>()))
             .Returns(() => chunkData);
@@ -172,8 +172,8 @@ public class UploadOrchestrationTests
         ]);
 
         _runMediator.Setup(x => x.GetArchiveRuns(It.IsAny<CancellationToken>())).Returns(() => archiveData);
-        _runMediator.Setup(x => x.GetCurrentArchiveRuns(It.IsAny<CancellationToken>()))
-            .Returns(() => CreateAsyncEnumerable<CurrentArchiveRuns>([]));
+        _runMediator.Setup(x => x.GetCurrentArchiveRunRequests(It.IsAny<CancellationToken>()))
+            .Returns(() => CreateAsyncEnumerable<CurrentArchiveRunRequests>([]));
         _chunkManifestMediator.Setup(x => x.GetDataChunksManifest(It.IsAny<CancellationToken>()))
             .Returns(() => CreateAsyncEnumerable<DataChunkManifest>([]));
         _restoreManifestMediator.Setup(x => x.GetRestoreManifest(It.IsAny<CancellationToken>()))
@@ -258,8 +258,8 @@ public class UploadOrchestrationTests
         ]);
 
         _runMediator.Setup(x => x.GetArchiveRuns(It.IsAny<CancellationToken>())).Returns(() => longRunningData);
-        _runMediator.Setup(x => x.GetCurrentArchiveRuns(It.IsAny<CancellationToken>()))
-            .Returns(() => CreateAsyncEnumerable<CurrentArchiveRuns>([]));
+        _runMediator.Setup(x => x.GetCurrentArchiveRunRequests(It.IsAny<CancellationToken>()))
+            .Returns(() => CreateAsyncEnumerable<CurrentArchiveRunRequests>([]));
         _chunkManifestMediator.Setup(x => x.GetDataChunksManifest(It.IsAny<CancellationToken>()))
             .Returns(() => CreateAsyncEnumerable<DataChunkManifest>([]));
         _restoreManifestMediator.Setup(x => x.GetRestoreManifest(It.IsAny<CancellationToken>()))
@@ -293,8 +293,8 @@ public class UploadOrchestrationTests
 
         _runMediator.Setup(x => x.GetArchiveRuns(It.IsAny<CancellationToken>()))
             .Returns(() => CreateAsyncEnumerable<ArchiveRun>([]));
-        _runMediator.Setup(x => x.GetCurrentArchiveRuns(It.IsAny<CancellationToken>()))
-            .Returns(() => CreateAsyncEnumerable<CurrentArchiveRuns>([]));
+        _runMediator.Setup(x => x.GetCurrentArchiveRunRequests(It.IsAny<CancellationToken>()))
+            .Returns(() => CreateAsyncEnumerable<CurrentArchiveRunRequests>([]));
         _chunkManifestMediator.Setup(x => x.GetDataChunksManifest(It.IsAny<CancellationToken>()))
             .Returns(() => CreateAsyncEnumerable<DataChunkManifest>([]));
         _restoreManifestMediator.Setup(x => x.GetRestoreManifest(It.IsAny<CancellationToken>()))
@@ -351,8 +351,8 @@ public class UploadOrchestrationTests
 
         _runMediator.Setup(x => x.GetArchiveRuns(It.IsAny<CancellationToken>()))
             .Returns(() => { return archiveData; });
-        _runMediator.Setup(x => x.GetCurrentArchiveRuns(It.IsAny<CancellationToken>()))
-            .Returns(() => CreateAsyncEnumerable<CurrentArchiveRuns>([]));
+        _runMediator.Setup(x => x.GetCurrentArchiveRunRequests(It.IsAny<CancellationToken>()))
+            .Returns(() => CreateAsyncEnumerable<CurrentArchiveRunRequests>([]));
         _chunkManifestMediator.Setup(x => x.GetDataChunksManifest(It.IsAny<CancellationToken>()))
             .Returns(() => CreateAsyncEnumerable<DataChunkManifest>([]));
         _restoreManifestMediator.Setup(x => x.GetRestoreManifest(It.IsAny<CancellationToken>()))
@@ -407,8 +407,8 @@ public class UploadOrchestrationTests
         ]);
 
         _runMediator.Setup(x => x.GetArchiveRuns(It.IsAny<CancellationToken>())).Returns(() => archiveData);
-        _runMediator.Setup(x => x.GetCurrentArchiveRuns(It.IsAny<CancellationToken>()))
-            .Returns(() => CreateAsyncEnumerable<CurrentArchiveRuns>([]));
+        _runMediator.Setup(x => x.GetCurrentArchiveRunRequests(It.IsAny<CancellationToken>()))
+            .Returns(() => CreateAsyncEnumerable<CurrentArchiveRunRequests>([]));
         _chunkManifestMediator.Setup(x => x.GetDataChunksManifest(It.IsAny<CancellationToken>()))
             .Returns(() => chunkData);
         _restoreManifestMediator.Setup(x => x.GetRestoreManifest(It.IsAny<CancellationToken>()))

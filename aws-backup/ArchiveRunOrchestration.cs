@@ -15,10 +15,12 @@ public sealed class ArchiveRunOrchestration(
     IArchiveService archiveService,
     IContextResolver contextResolver,
     IFileLister fileLister,
-    ILogger<ArchiveRunOrchestration> logger) : BackgroundService
+    ILogger<ArchiveRunOrchestration> logger,
+    CurrentArchiveRunRequests currentArchiveRequests) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
+        await LoadArchiveRunsFromCloud(cancellationToken);
         // This service is responsible for processing archive runs.
         // It will read from the archiveQueue and process each archive.
         await foreach (var runRequest in mediator.GetRunRequests(cancellationToken))
@@ -48,9 +50,7 @@ public sealed class ArchiveRunOrchestration(
                 }
 
             foreach (var filePath in fileLister.GetAllFiles(runRequest.PathsToArchive, ignorePatterns))
-            {
                 await archiveService.RecordLocalFile(archiveRun, filePath, cancellationToken);
-            }
 
             foreach (var filePath in archiveRun.Files.Keys)
             {
@@ -60,5 +60,11 @@ public sealed class ArchiveRunOrchestration(
 
             await archiveService.CompleteArchiveRun(archiveRun.RunId, cancellationToken);
         }
+    }
+
+    private async Task LoadArchiveRunsFromCloud(CancellationToken cancellationToken)
+    {
+        foreach (var (_, archiveRequest) in currentArchiveRequests)
+            await mediator.ScheduleRunRequest(archiveRequest, cancellationToken);
     }
 }

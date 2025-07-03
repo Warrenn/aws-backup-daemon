@@ -15,133 +15,132 @@ public sealed class Mediator(
     ISnsOrchestrationMediator
 
 {
-    // IArchiveFileMediator
-    public IAsyncEnumerable<ArchiveFileRequest> GetArchiveFiles(CancellationToken cancellationToken)
+    IAsyncEnumerable<ArchiveFileRequest> IArchiveFileMediator.GetArchiveFiles(CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public async Task ProcessFile(ArchiveFileRequest request, CancellationToken cancellationToken)
+    async Task IArchiveFileMediator.ProcessFile(ArchiveFileRequest request, CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public IAsyncEnumerable<RunRequest> GetRunRequests(CancellationToken cancellationToken)
+    IAsyncEnumerable<RunRequest> IRunRequestMediator.GetRunRequests(CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public async Task ScheduleRunRequest(RunRequest runRequest, CancellationToken cancellationToken)
+    async Task IRunRequestMediator.ScheduleRunRequest(RunRequest runRequest, CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public IAsyncEnumerable<KeyValuePair<string, ArchiveRun>> GetArchiveRuns(CancellationToken cancellationToken)
+    IAsyncEnumerable<KeyValuePair<string, ArchiveRun>> IArchiveRunMediator.GetArchiveRuns(CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public IAsyncEnumerable<KeyValuePair<string, CurrentArchiveRuns>> GetCurrentArchiveRuns(CancellationToken cancellationToken)
+    IAsyncEnumerable<KeyValuePair<string, CurrentArchiveRunRequests>> IArchiveRunMediator.GetCurrentArchiveRunRequests(CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public async Task SaveArchiveRun(ArchiveRun currentArchiveRun, CancellationToken cancellationToken)
+    async Task IArchiveRunMediator.SaveArchiveRun(ArchiveRun currentArchiveRun, CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public async Task SaveCurrentArchiveRuns(CurrentArchiveRuns currentArchiveRuns, CancellationToken cancellationToken)
+    async Task IArchiveRunMediator.SaveCurrentArchiveRunRequests(CurrentArchiveRunRequests currentArchiveRuns, CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public IAsyncEnumerable<KeyValuePair<string, DataChunkManifest>> GetDataChunksManifest(CancellationToken cancellationToken)
+    IAsyncEnumerable<KeyValuePair<string, DataChunkManifest>> IChunkManifestMediator.GetDataChunksManifest(CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public async ValueTask SaveChunkManifest(DataChunkManifest manifest, CancellationToken cancellationToken)
+    async ValueTask IChunkManifestMediator.SaveChunkManifest(DataChunkManifest manifest, CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public async Task DownloadFileFromS3(DownloadFileFromS3Request downloadFileFromS3Request, CancellationToken cancellationToken)
+    async Task IDownloadFileMediator.DownloadFileFromS3(DownloadFileFromS3Request downloadFileFromS3Request, CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public IAsyncEnumerable<DownloadFileFromS3Request> GetDownloadRequests(CancellationToken cancellationToken)
+    IAsyncEnumerable<DownloadFileFromS3Request> IDownloadFileMediator.GetDownloadRequests(CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public IAsyncEnumerable<RetryState> GetRetries(CancellationToken cancellationToken)
+    IAsyncEnumerable<RetryState> IRetryMediator.GetRetries(CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public async Task RetryAttempt(RetryState attempt, CancellationToken cancellationToken)
+    async Task IRetryMediator.RetryAttempt(RetryState attempt, CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public async Task RestoreBackup(RestoreRequest restoreRequest, CancellationToken cancellationToken)
+    async Task IRestoreRequestsMediator.RestoreBackup(RestoreRequest restoreRequest, CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public async Task SaveRunningRequest(CurrentRestoreRequests currentRestoreRequests, CancellationToken cancellationToken)
+    async Task IRestoreRequestsMediator.SaveRunningRequest(CurrentRestoreRequests currentRestoreRequests, CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public IAsyncEnumerable<KeyValuePair<string, CurrentRestoreRequests>> GetRunningRequests(CancellationToken cancellationToken)
+    IAsyncEnumerable<KeyValuePair<string, CurrentRestoreRequests>> IRestoreRequestsMediator.GetRunningRequests(CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public IAsyncEnumerable<RestoreRequest> GetRestoreRequests(CancellationToken cancellationToken)
+    IAsyncEnumerable<RestoreRequest> IRestoreRequestsMediator.GetRestoreRequests(CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public async Task SaveRestoreManifest(S3RestoreChunkManifest currentManifest, CancellationToken cancellationToken)
+    async Task IRestoreManifestMediator.SaveRestoreManifest(S3RestoreChunkManifest currentManifest, CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public IAsyncEnumerable<KeyValuePair<string, S3RestoreChunkManifest>> GetRestoreManifest(CancellationToken cancellationToken)
+    IAsyncEnumerable<KeyValuePair<string, S3RestoreChunkManifest>> IRestoreManifestMediator.GetRestoreManifest(CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public IAsyncEnumerable<KeyValuePair<string, RestoreRun>> GetRestoreRuns(CancellationToken cancellationToken)
+    IAsyncEnumerable<KeyValuePair<string, RestoreRun>> IRestoreRunMediator.GetRestoreRuns(CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public async Task SaveRestoreRun(RestoreRun restoreRun, CancellationToken cancellationToken)
+    async Task IRestoreRunMediator.SaveRestoreRun(RestoreRun restoreRun, CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public IAsyncEnumerable<UploadChunkRequest> GetChunks(CancellationToken cancellationToken)
+    IAsyncEnumerable<UploadChunkRequest> IUploadChunksMediator.GetChunks(CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public async Task ProcessChunk(UploadChunkRequest request, CancellationToken cancellationToken)
+    async Task IUploadChunksMediator.ProcessChunk(UploadChunkRequest request, CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public IAsyncEnumerable<SnsMessage> GetMessages(CancellationToken cancellationToken)
+    IAsyncEnumerable<SnsMessage> ISnsOrchestrationMediator.GetMessages(CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
 
-    public async Task PublishMessage(SnsMessage message, CancellationToken cancellationToken)
+    async Task ISnsOrchestrationMediator.PublishMessage(SnsMessage message, CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }

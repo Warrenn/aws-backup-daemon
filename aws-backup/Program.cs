@@ -92,8 +92,8 @@ var builder = Host.CreateDefaultBuilder(args)
 
 var provider = builder.Build().Services;
 
-var archiveRuns = await GetS3File<CurrentArchiveRuns>(provider, ctx => ctx.CurrentArchiveRunsBucketKey()) ??
-                  new CurrentArchiveRuns();
+var archiveRunRequests = await GetS3File<CurrentArchiveRunRequests>(provider, ctx => ctx.CurrentArchiveRunsBucketKey()) ??
+                  new CurrentArchiveRunRequests();
 var dataChunkManifest = await GetS3File<DataChunkManifest>(provider, ctx => ctx.ChunkManifestBucketKey()) ??
                         new DataChunkManifest();
 var currentRestoreRequests =
@@ -107,7 +107,7 @@ builder
     {
         services
             .AddSingleton<Mediator>()
-            .AddSingleton(archiveRuns)
+            .AddSingleton(archiveRunRequests)
             .AddSingleton(dataChunkManifest)
             .AddSingleton(currentRestoreRequests)
             .AddSingleton(chunkManifest)

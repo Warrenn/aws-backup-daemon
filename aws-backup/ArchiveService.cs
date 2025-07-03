@@ -7,11 +7,13 @@ public interface IArchiveRunMediator
 {
     IAsyncEnumerable<KeyValuePair<string, ArchiveRun>> GetArchiveRuns(CancellationToken cancellationToken);
 
-    IAsyncEnumerable<KeyValuePair<string, CurrentArchiveRuns>> GetCurrentArchiveRuns(
+    IAsyncEnumerable<KeyValuePair<string, CurrentArchiveRunRequests>> GetCurrentArchiveRunRequests(
         CancellationToken cancellationToken);
 
     Task SaveArchiveRun(ArchiveRun currentArchiveRun, CancellationToken cancellationToken);
-    Task SaveCurrentArchiveRuns(CurrentArchiveRuns currentArchiveRuns, CancellationToken cancellationToken);
+
+    Task SaveCurrentArchiveRunRequests(CurrentArchiveRunRequests currentArchiveRuns,
+        CancellationToken cancellationToken);
 }
 
 public enum ArchiveRunStatus
@@ -99,11 +101,15 @@ public interface IArchiveService
 [JsonConverter(typeof(JsonDictionaryConverter<ArchiveRun>))]
 public sealed class CurrentArchiveRuns : ConcurrentDictionary<string, ArchiveRun>;
 
+[JsonConverter(typeof(JsonDictionaryConverter<RunRequest>))]
+public sealed class CurrentArchiveRunRequests : ConcurrentDictionary<string, RunRequest>;
+
 public sealed class ArchiveService(
     IS3Service s3Service,
     IArchiveRunMediator mediator,
     ISnsOrchestrationMediator snsOrchestrationMediator,
-    CurrentArchiveRuns currentArchiveRuns
+    CurrentArchiveRuns currentArchiveRuns,
+    CurrentArchiveRunRequests currentRunRequests
 ) : IArchiveService
 {
     private readonly ConcurrentDictionary<string, TaskCompletionSource> _tcs = [];
@@ -115,8 +121,9 @@ public sealed class ArchiveService(
 
         archiveRun = await s3Service.GetArchive(runId, cancellationToken);
         if (!currentArchiveRuns.TryAdd(runId, archiveRun)) archiveRun = currentArchiveRuns[runId];
-
-        await mediator.SaveCurrentArchiveRuns(currentArchiveRuns, cancellationToken);
+        var request = new RunRequest(runId, archiveRun.PathsToArchive, archiveRun.CronSchedule);
+        currentRunRequests.TryAdd(runId, request);
+        await mediator.SaveCurrentArchiveRunRequests(currentRunRequests, cancellationToken);
         return archiveRun;
     }
 
@@ -136,8 +143,10 @@ public sealed class ArchiveService(
             _tcs[request.RunId] = tcs;
         if (!currentArchiveRuns.TryAdd(request.RunId, archiveRun))
             currentArchiveRuns[request.RunId] = archiveRun;
+        if (!currentRunRequests.TryAdd(request.RunId, request))
+            currentArchiveRuns[request.RunId] = archiveRun;
 
-        await mediator.SaveCurrentArchiveRuns(currentArchiveRuns, cancellationToken);
+        await mediator.SaveCurrentArchiveRunRequests(currentRunRequests, cancellationToken);
         await mediator.SaveArchiveRun(archiveRun, cancellationToken);
         return archiveRun;
     }
@@ -299,8 +308,9 @@ public sealed class ArchiveService(
             archiveRun.TotalSkippedFiles = archiveRun.Files.Values
                 .Count(f => f.Status == FileStatus.Skipped);
 
-            if (currentArchiveRuns.TryRemove(archiveRun.RunId, out _))
-                await mediator.SaveCurrentArchiveRuns(currentArchiveRuns, cancellationToken);
+            currentArchiveRuns.TryRemove(archiveRun.RunId, out _);
+            if(currentRunRequests.TryRemove(archiveRun.RunId, out _))
+                await mediator.SaveCurrentArchiveRunRequests(currentRunRequests, cancellationToken);
 
             if (archiveRun.Files.Values.Any(f => f.Status is FileStatus.Skipped))
                 await snsOrchestrationMediator.PublishMessage(new ArchiveCompleteErrorMessage(

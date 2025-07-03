@@ -27,7 +27,8 @@ public class RestoreRunOrchestrationTests
             _restoreService.Object,
             _logger,
             _ctx.Object,
-            Mock.Of<ISnsOrchestrationMediator>());
+            Mock.Of<ISnsOrchestrationMediator>(),
+            Mock.Of<CurrentRestoreRequests>());
     }
 
     private MethodInfo GetExecute()

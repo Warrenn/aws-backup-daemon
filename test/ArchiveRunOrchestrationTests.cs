@@ -79,7 +79,8 @@ public class ArchiveRunOrchestrationTests : IDisposable
             archiveServiceMock.Object,
             ctxMock.Object,
             fileListerMock.Object,
-            loggerMock.Object);
+            loggerMock.Object,
+            Mock.Of<CurrentArchiveRunRequests>());
 
         // Act
         await orchestrator.StartAsync(CancellationToken.None);
@@ -131,7 +132,8 @@ public class ArchiveRunOrchestrationTests : IDisposable
             archiveServiceMock.Object,
             ctxMock.Object,
             fileListerMock.Object,
-            loggerMock.Object);
+            loggerMock.Object,
+            Mock.Of<CurrentArchiveRunRequests>());
 
         // Act
         await orchestrator.StartAsync(CancellationToken.None);
@@ -196,7 +198,8 @@ public class ArchiveRunOrchestrationTests : IDisposable
             archiveServiceMock.Object,
             ctxMock.Object,
             fileListerMock.Object,
-            loggerMock.Object);
+            loggerMock.Object,
+            Mock.Of<CurrentArchiveRunRequests>());
 
         // Act
         await orchestrator.StartAsync(CancellationToken.None);
@@ -249,7 +252,8 @@ public class ArchiveRunOrchestrationTests : IDisposable
             archiveServiceMock.Object,
             ctxMock.Object,
             fileListerMock.Object,
-            loggerMock.Object);
+            loggerMock.Object,
+            Mock.Of<CurrentArchiveRunRequests>());
 
         // Act
         await orchestrator.StartAsync(CancellationToken.None);

@@ -11,11 +11,14 @@ public sealed class RestoreRunOrchestration(
     IRestoreService restoreService,
     ILogger<RestoreRunOrchestration> logger,
     IContextResolver contextResolver,
-    ISnsOrchestrationMediator snsOrchestrationMediator
+    ISnsOrchestrationMediator snsOrchestrationMediator,
+    CurrentRestoreRequests currentRestoreRequests
 ) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
+        await LoadRestoreRunsFromCloud(cancellationToken);
+
         await foreach (var restoreRequest in mediator.GetRestoreRequests(cancellationToken))
             try
             {
@@ -101,5 +104,10 @@ public sealed class RestoreRunOrchestration(
                     ex.ToString()), cancellationToken);
                 logger.LogError(ex, "Error processing restore request: {Message}", ex.Message);
             }
+    }
+
+    private async Task LoadRestoreRunsFromCloud(CancellationToken cancellationToken)
+    {
+        foreach (var (_, request) in currentRestoreRequests) await mediator.RestoreBackup(request, cancellationToken);
     }
 }
