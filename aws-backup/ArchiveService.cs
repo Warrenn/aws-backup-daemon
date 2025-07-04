@@ -102,7 +102,7 @@ public interface IArchiveService
 public sealed class CurrentArchiveRuns : ConcurrentDictionary<string, ArchiveRun>;
 
 [JsonConverter(typeof(JsonDictionaryConverter<RunRequest>))]
-public sealed class CurrentArchiveRunRequests : ConcurrentDictionary<string, RunRequest>;
+public class CurrentArchiveRunRequests : ConcurrentDictionary<string, RunRequest>;
 
 public sealed class ArchiveService(
     IS3Service s3Service,

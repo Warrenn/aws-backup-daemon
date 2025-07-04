@@ -84,8 +84,8 @@ public class HotStorageServiceManifestTests
             rnd.NextBytes(keyBytes);
             var bkey = new ByteArrayKey(keyBytes);
             var status = i % 2 == 0
-                ? S3RestoreStatus.PendingDeepArchiveRestore
-                : S3RestoreStatus.ReadyToRestore;
+                ? S3ChunkRestoreStatus.PendingDeepArchiveRestore
+                : S3ChunkRestoreStatus.ReadyToRestore;
             manifest[bkey] = status;
         }
 

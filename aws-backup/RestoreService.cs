@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Amazon.S3;
+using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
@@ -45,14 +46,14 @@ public enum RestoreRunStatus
     Completed
 }
 
-public enum S3RestoreStatus
+public enum S3ChunkRestoreStatus
 {
     PendingDeepArchiveRestore,
     ReadyToRestore
 }
 
 [JsonConverter(typeof(S3RestoreChunkManifestConverter))]
-public sealed class S3RestoreChunkManifest : ConcurrentDictionary<ByteArrayKey, S3RestoreStatus>;
+public sealed class S3RestoreChunkManifest : ConcurrentDictionary<ByteArrayKey, S3ChunkRestoreStatus>;
 
 public enum FileRestoreStatus
 {
@@ -105,231 +106,335 @@ public sealed class RestoreRun
 
 public sealed class RestoreService(
     IDownloadFileMediator mediator,
-    IRestoreRunMediator restoreRunMediator,
-    IRestoreManifestMediator restoreManifestMediator,
-    IRestoreRequestsMediator restoreRequestsMediator,
-    ISnsOrchestrationMediator snsOrchestrationMediator,
+    IRestoreRunMediator runMed,
+    IRestoreManifestMediator manifestMed,
+    IRestoreRequestsMediator requestsMed,
+    ISnsOrchestrationMediator snsMed,
     IS3Service s3Service,
     S3RestoreChunkManifest restoreManifest,
-    CurrentRestoreRequests currentRestoreRequests,
-    DataChunkManifest dataChunkManifest
-) : IRestoreService
+    CurrentRestoreRequests currentReqs,
+    DataChunkManifest chunkManifest,
+    ILogger<RestoreService> logger)
+    : IRestoreService
 {
-    //List of RestoreRun objects
-    private readonly ConcurrentDictionary<string, RestoreRun> _restoreRuns = [];
+    // instance‐scoped state
+    private readonly ConcurrentDictionary<string, RestoreRun> _restoreRuns = new();
 
-    public async Task<RestoreRun?> LookupRestoreRun(string restoreId, CancellationToken cancellationToken)
+    // per‐run locks to serialize multi‐threaded updates
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _runLocks = new();
+
+    public async Task<RestoreRun?> LookupRestoreRun(string restoreId, CancellationToken ct)
     {
-        if (_restoreRuns.TryGetValue(restoreId, out var restoreRun)) return restoreRun;
-        if (!await s3Service.RestoreExists(restoreId, cancellationToken)) return null;
-        return await s3Service.GetRestoreRun(restoreId, cancellationToken);
-    }
+        ct.ThrowIfCancellationRequested();
+        if (_restoreRuns.TryGetValue(restoreId, out var cached)) return cached;
 
-    public async Task ReportS3Storage(string bucketId, string s3Key, S3StorageClass storageClass,
-        CancellationToken cancellationToken)
-    {
-        var matchingDataChunk =
-            dataChunkManifest.Values.FirstOrDefault(d => d.S3Key == s3Key && d.BucketName == bucketId);
-        if (matchingDataChunk is null) return;
-
-        var hashKey = new ByteArrayKey(matchingDataChunk.Hash);
-        if (!restoreManifest.TryGetValue(hashKey, out var status))
-            return;
-
-        if (status == S3RestoreStatus.ReadyToRestore && storageClass != S3StorageClass.DeepArchive)
-            return;
-        if (status == S3RestoreStatus.PendingDeepArchiveRestore && storageClass == S3StorageClass.DeepArchive)
-            return;
-
-        if (status == S3RestoreStatus.PendingDeepArchiveRestore && storageClass != S3StorageClass.DeepArchive)
+        if (!await s3Service.RestoreExists(restoreId, ct))
         {
-            restoreManifest[hashKey] = S3RestoreStatus.ReadyToRestore;
-            await restoreManifestMediator.SaveRestoreManifest(restoreManifest, cancellationToken);
-
-            foreach (var restoreRun in _restoreRuns.Values)
-            {
-                var runChanged = false;
-                foreach (var fileMeta in restoreRun.RequestedFiles.Values.Where(f => f.Chunks.Contains(hashKey)))
-                {
-                    var allReadyToRestore = fileMeta.Chunks
-                        .All(c => restoreManifest[c] == S3RestoreStatus.ReadyToRestore);
-                    if (!allReadyToRestore ||
-                        fileMeta.Status is FileRestoreStatus.Completed or FileRestoreStatus.Failed) continue;
-
-                    runChanged = true;
-
-                    var cloudChunkDetails = fileMeta.Chunks
-                        .Select(c => dataChunkManifest[c])
-                        .ToArray();
-
-                    await mediator.DownloadFileFromS3(new DownloadFileFromS3Request(
-                        restoreRun.RestoreId,
-                        fileMeta.FilePath,
-                        cloudChunkDetails,
-                        fileMeta.Size
-                    )
-                    {
-                        LastModified = fileMeta.LastModified,
-                        Created = fileMeta.Created,
-                        AclEntries = fileMeta.AclEntries,
-                        Owner = fileMeta.Owner,
-                        Group = fileMeta.Group,
-                        Checksum = fileMeta.Checksum
-                    }, cancellationToken);
-
-                    fileMeta.Status = FileRestoreStatus.PendingS3Download;
-                }
-
-                if (!runChanged) continue;
-                await restoreRunMediator.SaveRestoreRun(restoreRun, cancellationToken);
-            }
+            logger.LogDebug("No remote restore run found for {RestoreId}", restoreId);
+            return null;
         }
 
-        if (status == S3RestoreStatus.ReadyToRestore && storageClass == S3StorageClass.DeepArchive)
+        var run = await s3Service.GetRestoreRun(restoreId, ct);
+        _restoreRuns[restoreId] = run;
+        logger.LogInformation("Loaded restore run {RestoreId} from S3", restoreId);
+        return run;
+    }
+
+    public async Task ReportS3Storage(
+        string bucketId,
+        string s3Key,
+        S3StorageClass storageClass,
+        CancellationToken ct
+    )
+    {
+        try
         {
-            restoreManifest[hashKey] = S3RestoreStatus.PendingDeepArchiveRestore;
-            await restoreManifestMediator.SaveRestoreManifest(restoreManifest, cancellationToken);
+            ct.ThrowIfCancellationRequested();
 
-            var scheduleDownload = false;
-            foreach (var restoreRun in _restoreRuns.Values)
-            {
-                var runChanged = false;
-                foreach (var fileMeta in restoreRun.RequestedFiles.Values.Where(f => f.Chunks.Contains(hashKey)))
-                {
-                    if (fileMeta.Status is FileRestoreStatus.Completed or FileRestoreStatus.Failed) continue;
-                    scheduleDownload = true;
-                    if (fileMeta.Status == FileRestoreStatus.PendingDeepArchiveRestore) continue;
-                    fileMeta.Status = FileRestoreStatus.PendingDeepArchiveRestore;
+            // locate our chunk
+            var chunk = chunkManifest.Values
+                .FirstOrDefault(d => d.S3Key == s3Key && d.BucketName == bucketId);
+            if (chunk is null) return;
 
-                    runChanged = true;
-                }
+            var key = new ByteArrayKey(chunk.Hash);
+            if (!restoreManifest.TryGetValue(key, out var status)) return;
 
-                if (!runChanged) continue;
-                await restoreRunMediator.SaveRestoreRun(restoreRun, cancellationToken);
-            }
-
-            if (!scheduleDownload) return;
-            await s3Service.ScheduleDeepArchiveRecovery(dataChunkManifest[hashKey], cancellationToken);
+            // dispatch based on current + incoming
+            if (status == S3ChunkRestoreStatus.PendingDeepArchiveRestore &&
+                storageClass != S3StorageClass.DeepArchive)
+                await HandlePendingToReady(key, chunk, ct);
+            else if (status == S3ChunkRestoreStatus.ReadyToRestore &&
+                     storageClass == S3StorageClass.DeepArchive)
+                await HandleReadyToPending(key, chunk, ct);
+            // all other combinations are no-ops
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            logger.LogInformation("ReportS3Storage canceled for key {Key}", s3Key);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error in ReportS3Storage for {Key}", s3Key);
+            throw;
         }
     }
 
-    public async Task ReportDownloadComplete(DownloadFileFromS3Request request, CancellationToken cancellationToken)
+    public async Task ReportDownloadComplete(
+        DownloadFileFromS3Request req,
+        CancellationToken ct
+    )
     {
-        if (!_restoreRuns.TryGetValue(request.RestoreId, out var restoreRun)) return;
-        if (!restoreRun.RequestedFiles.TryGetValue(request.FilePath, out var fileMeta)) return;
-        fileMeta.Status = FileRestoreStatus.Completed;
-        await restoreRunMediator.SaveRestoreRun(restoreRun, cancellationToken);
-        var runComplete = restoreRun.RequestedFiles.Values.All(f =>
-            f.Status is FileRestoreStatus.Completed or FileRestoreStatus.Failed);
-        if (!runComplete) return;
-        restoreRun.Status = RestoreRunStatus.Completed;
-        restoreRun.CompletedAt = DateTimeOffset.UtcNow;
-
-        if (restoreRun.RequestedFiles.Values.Any(f => f.Status is FileRestoreStatus.Failed))
-            await snsOrchestrationMediator.PublishMessage(
-                new RestoreCompleteErrorMessage(
-                    restoreRun.RestoreId,
-                    $"Restore run {restoreRun.RestoreId} completed with errors",
-                    "Some files failed to restore",
-                    restoreRun
-                ), cancellationToken);
-        else
-            await snsOrchestrationMediator.PublishMessage(
-                new RestoreCompleteMessage(
-                    restoreRun.RestoreId,
-                    $"Restore run {restoreRun.RestoreId} completed",
-                    "All files restored successfully",
-                    restoreRun
-                ), cancellationToken);
-
-        await restoreRunMediator.SaveRestoreRun(restoreRun, cancellationToken);
-        _restoreRuns.TryRemove(restoreRun.RestoreId, out _);
-        currentRestoreRequests.TryRemove(restoreRun.RestoreId, out _);
-        await restoreRequestsMediator.SaveRunningRequest(currentRestoreRequests, cancellationToken);
-    }
-
-    public async Task ReportDownloadFailed(DownloadFileFromS3Request request, Exception reason,
-        CancellationToken cancellationToken)
-    {
-        if (!_restoreRuns.TryGetValue(request.RestoreId, out var restoreRun)) return;
-        if (!restoreRun.RequestedFiles.TryGetValue(request.FilePath, out var fileMeta)) return;
-        fileMeta.Status = FileRestoreStatus.Failed;
-        restoreRun.FailedFiles[request.FilePath] = reason.Message;
-        await restoreRunMediator.SaveRestoreRun(restoreRun, cancellationToken);
-        var runComplete = restoreRun.RequestedFiles.Values.All(f =>
-            f.Status is FileRestoreStatus.Completed or FileRestoreStatus.Failed);
-
-        await snsOrchestrationMediator.PublishMessage(
-            new SnsMessage($"S3 download request failed {request}", reason.ToString()),
-            cancellationToken);
-
-        if (!runComplete) return;
-        restoreRun.Status = RestoreRunStatus.Completed;
-        restoreRun.CompletedAt = DateTimeOffset.UtcNow;
-        await restoreRunMediator.SaveRestoreRun(restoreRun, cancellationToken);
-
-        await snsOrchestrationMediator.PublishMessage(
-            new RestoreCompleteErrorMessage(
-                restoreRun.RestoreId,
-                $"Restore run {restoreRun.RestoreId} completed with errors",
-                "Some files failed to restore",
-                restoreRun
-            ), cancellationToken);
-
-        _restoreRuns.TryRemove(restoreRun.RestoreId, out _);
-        currentRestoreRequests.TryRemove(restoreRun.RestoreId, out _);
-        await restoreRequestsMediator.SaveRunningRequest(currentRestoreRequests, cancellationToken);
-    }
-
-    public async Task InitiateRestoreRun(RestoreRequest request, RestoreRun restoreRun,
-        CancellationToken cancellationToken)
-    {
-        currentRestoreRequests.TryAdd(restoreRun.RestoreId, request);
-        await restoreRequestsMediator.SaveRunningRequest(currentRestoreRequests, cancellationToken);
-
-        if (!_restoreRuns.TryAdd(restoreRun.RestoreId, restoreRun)) return;
-
-        foreach (var metaData in restoreRun.RequestedFiles.Values)
+        try
         {
-            foreach (var key in metaData.Chunks)
+            ct.ThrowIfCancellationRequested();
+            if (!_restoreRuns.TryGetValue(req.RestoreId, out var run)) return;
+            if (!run.RequestedFiles.TryGetValue(req.FilePath, out var fileMeta)) return;
+
+            fileMeta.Status = FileRestoreStatus.Completed;
+            logger.LogInformation("File {File} in run {RunId} marked Completed",
+                req.FilePath, req.RestoreId);
+            await runMed.SaveRestoreRun(run, ct);
+
+            // if *all* files done → finalize
+            if (run.RequestedFiles.Values
+                .All(f => f.Status is FileRestoreStatus.Completed or FileRestoreStatus.Failed))
+                await FinalizeRun(run, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            logger.LogInformation("ReportDownloadComplete canceled for {Run}/{File}",
+                req.RestoreId, req.FilePath);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error in ReportDownloadComplete for {Run}/{File}",
+                req.RestoreId, req.FilePath);
+            throw;
+        }
+    }
+
+    public async Task ReportDownloadFailed(
+        DownloadFileFromS3Request req,
+        Exception reason,
+        CancellationToken ct
+    )
+    {
+        try
+        {
+            ct.ThrowIfCancellationRequested();
+            if (!_restoreRuns.TryGetValue(req.RestoreId, out var run)) return;
+            if (!run.RequestedFiles.TryGetValue(req.FilePath, out var fileMeta)) return;
+
+            fileMeta.Status = FileRestoreStatus.Failed;
+            run.FailedFiles[req.FilePath] = reason.Message;
+            logger.LogWarning(reason, "File {File} in run {Run} failed", req.FilePath, req.RestoreId);
+
+            await runMed.SaveRestoreRun(run, ct);
+            await snsMed.PublishMessage(
+                new SnsMessage($"Download failed: {req}", reason.ToString()), ct);
+
+            // if all done → finalize
+            if (run.RequestedFiles.Values
+                .All(f => f.Status is FileRestoreStatus.Completed or FileRestoreStatus.Failed))
+                await FinalizeRun(run, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            logger.LogInformation("ReportDownloadFailed canceled for {Run}/{File}",
+                req.RestoreId, req.FilePath);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error in ReportDownloadFailed for {Run}/{File}",
+                req.RestoreId, req.FilePath);
+            throw;
+        }
+    }
+
+    public async Task InitiateRestoreRun(
+        RestoreRequest request,
+        RestoreRun run,
+        CancellationToken ct
+    )
+    {
+        try
+        {
+            ct.ThrowIfCancellationRequested();
+            currentReqs[run.RestoreId] = request;
+            await requestsMed.SaveRunningRequest(currentReqs, ct);
+
+            if (!_restoreRuns.TryAdd(run.RestoreId, run)) return;
+            logger.LogInformation("Initiating restore run {RunId}", run.RestoreId);
+
+            // schedule each chunk
+            foreach (var meta in run.RequestedFiles.Values)
+            foreach (var key in meta.Chunks)
             {
-                if (restoreManifest.TryGetValue(key, out var status)) continue;
-
-                var chunkDetails = dataChunkManifest[key];
-                await s3Service.ScheduleDeepArchiveRecovery(chunkDetails, cancellationToken);
-
-                status = S3RestoreStatus.PendingDeepArchiveRestore;
+                var chunk = chunkManifest[key];
+                var status = await s3Service.ScheduleDeepArchiveRecovery(chunk.S3Key, ct);
                 restoreManifest[key] = status;
+                logger.LogDebug("Chunk {Key} initial state {Status}", key, status);
             }
 
-            var readyToRestore =
-                metaData.Chunks.All(c => restoreManifest[c] is S3RestoreStatus.ReadyToRestore);
-            if (readyToRestore) continue;
+            await manifestMed.SaveRestoreManifest(restoreManifest, ct);
+            await runMed.SaveRestoreRun(run, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            logger.LogInformation("InitiateRestoreRun canceled for {RunId}", run.RestoreId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error initiating restore run {RunId}", run.RestoreId);
+            throw;
+        }
+    }
 
-            var cloudChunkDetails = metaData.Chunks
-                .Select(c => dataChunkManifest[c])
+    private async Task HandlePendingToReady(
+        ByteArrayKey key,
+        CloudChunkDetails chunk,
+        CancellationToken ct
+    )
+    {
+        logger.LogInformation("Chunk {Key} moved Pending→Ready", key);
+        restoreManifest[key] = S3ChunkRestoreStatus.ReadyToRestore;
+        await manifestMed.SaveRestoreManifest(restoreManifest, ct);
+
+        await ForEachRunLocking(key, async (run, runCts) =>
+        {
+            var affected = run.RequestedFiles.Values
+                .Where(f => f.Chunks.Contains(key))
                 .ToArray();
 
-            await mediator.DownloadFileFromS3(new DownloadFileFromS3Request(
-                restoreRun.RestoreId,
-                metaData.FilePath,
-                cloudChunkDetails,
-                metaData.Size
-            )
+            foreach (var fileMeta in affected)
             {
-                LastModified = metaData.LastModified,
-                Created = metaData.Created,
-                AclEntries = metaData.AclEntries,
-                Owner = metaData.Owner,
-                Group = metaData.Group,
-                Checksum = metaData.Checksum
-            }, cancellationToken);
+                if (fileMeta.Status is FileRestoreStatus.Completed or FileRestoreStatus.Failed)
+                    continue;
 
-            metaData.Status = FileRestoreStatus.PendingS3Download;
+                // only if *all* its chunks are now ready
+                var allReady = fileMeta.Chunks.All(c =>
+                    restoreManifest[c] == S3ChunkRestoreStatus.ReadyToRestore);
+                if (!allReady) continue;
+
+                // enqueue download
+                logger.LogDebug("Enqueuing download of {File} in run {RunId}", fileMeta.FilePath, run.RestoreId);
+                await mediator.DownloadFileFromS3(new DownloadFileFromS3Request(
+                    run.RestoreId,
+                    fileMeta.FilePath,
+                    run.RequestedFiles[fileMeta.FilePath].Chunks
+                        .Select(c => chunkManifest[c]).ToArray(),
+                    fileMeta.Size
+                )
+                {
+                    LastModified = fileMeta.LastModified,
+                    Created = fileMeta.Created,
+                    AclEntries = fileMeta.AclEntries,
+                    Owner = fileMeta.Owner,
+                    Group = fileMeta.Group,
+                    Checksum = fileMeta.Checksum
+                }, runCts);
+
+                fileMeta.Status = FileRestoreStatus.PendingS3Download;
+            }
+
+            await runMed.SaveRestoreRun(run, runCts);
+        }, ct);
+    }
+
+    private async Task HandleReadyToPending(
+        ByteArrayKey key,
+        CloudChunkDetails chunk,
+        CancellationToken ct
+    )
+    {
+        logger.LogInformation("Chunk {Key} moved Ready→PendingDeepArchive", key);
+        restoreManifest[key] = S3ChunkRestoreStatus.PendingDeepArchiveRestore;
+        await manifestMed.SaveRestoreManifest(restoreManifest, ct);
+
+        var anyScheduled = false;
+
+        await ForEachRunLocking(key, async (run, runCts) =>
+        {
+            foreach (var fileMeta in run.RequestedFiles.Values
+                         .Where(f => f.Chunks.Contains(key)))
+            {
+                if (fileMeta.Status is FileRestoreStatus.Completed or FileRestoreStatus.Failed)
+                    continue;
+                fileMeta.Status = FileRestoreStatus.PendingDeepArchiveRestore;
+                anyScheduled = true;
+            }
+
+            await runMed.SaveRestoreRun(run, runCts);
+        }, ct);
+
+        if (anyScheduled)
+        {
+            logger.LogDebug("Scheduling deep‐archive restore for {Key}", chunk.S3Key);
+            await s3Service.ScheduleDeepArchiveRecovery(chunk.S3Key, ct);
         }
+    }
 
-        await restoreManifestMediator.SaveRestoreManifest(restoreManifest, cancellationToken);
-        await restoreRunMediator.SaveRestoreRun(restoreRun, cancellationToken);
+    /// <summary>
+    ///     Called when *all* files are either Completed or Failed.
+    ///     Sends final SNS, updates run status, and cleans up in‐memory state.
+    /// </summary>
+    private async Task FinalizeRun(RestoreRun run, CancellationToken ct)
+    {
+        run.Status = RestoreRunStatus.Completed;
+        run.CompletedAt = DateTimeOffset.UtcNow;
+        logger.LogInformation("Finalizing restore run {RunId}, status {Status}",
+            run.RestoreId, run.Status);
+
+        // pick the right message
+        if (run.RequestedFiles.Values.Any(f => f.Status == FileRestoreStatus.Failed))
+            await snsMed.PublishMessage(
+                new RestoreCompleteErrorMessage(
+                    run.RestoreId,
+                    $"Run {run.RestoreId} completed WITH ERRORS",
+                    "Some files failed", run),
+                ct);
+        else
+            await snsMed.PublishMessage(
+                new RestoreCompleteMessage(
+                    run.RestoreId,
+                    $"Run {run.RestoreId} completed successfully",
+                    "All files restored", run),
+                ct);
+
+        await runMed.SaveRestoreRun(run, ct);
+
+        // clean up
+        _restoreRuns.TryRemove(run.RestoreId, out _);
+        currentReqs.TryRemove(run.RestoreId, out _);
+        await requestsMed.SaveRunningRequest(currentReqs, ct);
+    }
+
+    /// <summary>
+    ///     Helper: takes a chunk‐key, then for every run that references it,
+    ///     acquires that run’s SemaphoreSlim to serialize updates.
+    /// </summary>
+    private async Task ForEachRunLocking(
+        ByteArrayKey key,
+        Func<RestoreRun, CancellationToken, Task> action,
+        CancellationToken ct
+    )
+    {
+        ct.ThrowIfCancellationRequested();
+        foreach (var run in _restoreRuns.Values
+                     .Where(r => r.RequestedFiles.Values.Any(f => f.Chunks.Contains(key))))
+        {
+            // get or create the run‐lock
+            var sem = _runLocks.GetOrAdd(run.RestoreId, _ => new SemaphoreSlim(1, 1));
+            await sem.WaitAsync(ct);
+            try
+            {
+                await action(run, ct);
+            }
+            finally
+            {
+                sem.Release();
+            }
+        }
     }
 }
 
@@ -363,7 +468,7 @@ public sealed class S3RestoreChunkManifestConverter
             // read status (enum string)
             reader.Read();
             var statusName = reader.GetString()!;
-            if (!Enum.TryParse<S3RestoreStatus>(statusName, out var status))
+            if (!Enum.TryParse<S3ChunkRestoreStatus>(statusName, out var status))
                 throw new JsonException($"Unknown status '{statusName}'");
 
             // close inner array

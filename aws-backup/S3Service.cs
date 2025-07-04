@@ -16,7 +16,10 @@ public interface IS3Service
     Task<ArchiveRun> GetArchive(string runId, CancellationToken cancellationToken);
     Task<bool> RestoreExists(string restoreId, CancellationToken cancellationToken);
     Task<RestoreRun> GetRestoreRun(string restoreId, CancellationToken cancellationToken);
-    Task ScheduleDeepArchiveRecovery(CloudChunkDetails cloudChunkDetails, CancellationToken cancellationToken);
+
+    Task<S3ChunkRestoreStatus> ScheduleDeepArchiveRecovery(string chunkS3Key,
+        CancellationToken cancellationToken);
+
     IAsyncEnumerable<S3StorageInfo> GetStorageClasses(CancellationToken cancellationToken);
 }
 
@@ -54,12 +57,17 @@ public sealed class S3Service(
         return (await hotStorageService.DownloadAsync<RestoreRun>(key, cancellationToken))!;
     }
 
-    public async Task ScheduleDeepArchiveRecovery(CloudChunkDetails cloudChunkDetails,
+    public async Task<S3ChunkRestoreStatus> ScheduleDeepArchiveRecovery(string chunkS3Key,
         CancellationToken cancellationToken)
     {
-        var chunkS3Key = cloudChunkDetails.S3Key;
         var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
         var bucketName = contextResolver.S3BucketId();
+
+        var (storageClass, restoreInProgress) =
+            await GetStorageClass(s3Client, bucketName, chunkS3Key, cancellationToken);
+        if (storageClass != S3StorageClass.DeepArchive) return S3ChunkRestoreStatus.ReadyToRestore;
+        if (restoreInProgress) return S3ChunkRestoreStatus.PendingDeepArchiveRestore;
+
         var daysToKeepRestoredCopy = contextResolver.DaysToKeepRestoredCopy();
         var restoreRequest = new RestoreObjectRequest
         {
@@ -69,6 +77,8 @@ public sealed class S3Service(
             RetrievalTier = GlacierJobTier.Standard
         };
         await s3Client.RestoreObjectAsync(restoreRequest, cancellationToken);
+
+        return S3ChunkRestoreStatus.PendingDeepArchiveRestore;
     }
 
     public async IAsyncEnumerable<S3StorageInfo> GetStorageClasses(
@@ -99,5 +109,21 @@ public sealed class S3Service(
             // If the response is truncated, set the token to get the next page
             request.ContinuationToken = response.NextContinuationToken;
         } while (response.IsTruncated ?? false);
+    }
+
+    private static async Task<(S3StorageClass storageClass, bool restoreInProgress)> GetStorageClass(IAmazonS3 s3Client,
+        string bucketName, string s3Key,
+        CancellationToken cancellationToken)
+    {
+        var request = new GetObjectMetadataRequest
+        {
+            BucketName = bucketName,
+            Key = s3Key
+        };
+
+        var metadata = await s3Client.GetObjectMetadataAsync(request, cancellationToken);
+
+        // StorageClass is a nullable enum; if AWS returned no header it will be null
+        return (metadata.StorageClass, metadata.RestoreInProgress ?? false);
     }
 }

@@ -13,8 +13,12 @@ public sealed class S3StorageClassOrchestration(
         while (!cancellationToken.IsCancellationRequested)
         {
             await foreach (var s3StorageInfo in s3Service.GetStorageClasses(cancellationToken))
+            {
                 await restoreService.ReportS3Storage(s3StorageInfo.BucketName, s3StorageInfo.Key,
                     s3StorageInfo.StorageClass, cancellationToken);
+                await Task.Delay(100, cancellationToken); // small delay to avoid overwhelming the service
+            }
+
             var storageCheckDelay = resolver.StorageCheckDelaySeconds();
             await Task.Delay(storageCheckDelay, cancellationToken);
         }

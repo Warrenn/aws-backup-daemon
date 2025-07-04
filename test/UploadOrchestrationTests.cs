@@ -52,7 +52,7 @@ public class UploadOrchestrationTests
         _contextResolver.Setup(x => x.DelayBetweenUploadsSeconds()).Returns(1);
 
         var archiveData = CreateAsyncEnumerable([
-            new KeyValuePair<string, ArchiveRun>("archive1", new ArchiveRun
+            new S3LocationAndValue<ArchiveRun>("archive1", new ArchiveRun
             {
                 Status = ArchiveRunStatus.Processing,
                 RunId = "1",
@@ -62,7 +62,7 @@ public class UploadOrchestrationTests
                 PathsToArchive = "/test",
                 Files = new ConcurrentDictionary<string, FileMetaData>()
             }),
-            new KeyValuePair<string, ArchiveRun>("archive2", new ArchiveRun
+            new S3LocationAndValue<ArchiveRun>("archive2", new ArchiveRun
             {
                 Status = ArchiveRunStatus.Processing,
                 RunId = "2",
@@ -75,15 +75,15 @@ public class UploadOrchestrationTests
         ]);
 
         var chunkData = CreateAsyncEnumerable([
-            new KeyValuePair<string, DataChunkManifest>("chunk1", new DataChunkManifest())
+            new S3LocationAndValue<DataChunkManifest>("chunk1", new DataChunkManifest())
         ]);
 
         var restoreManifestData = CreateAsyncEnumerable([
-            new KeyValuePair<string, S3RestoreChunkManifest>("restore1", new S3RestoreChunkManifest())
+            new S3LocationAndValue<S3RestoreChunkManifest>("restore1", new S3RestoreChunkManifest())
         ]);
 
         var restoreRunData = CreateAsyncEnumerable([
-            new KeyValuePair<string, RestoreRun>("run1", new RestoreRun
+            new S3LocationAndValue<RestoreRun>("run1", new RestoreRun
             {
                 RestoreId = "1",
                 RestorePaths = "/restore",
@@ -94,11 +94,11 @@ public class UploadOrchestrationTests
         ]);
 
         var restoreRequestData = CreateAsyncEnumerable([
-            new KeyValuePair<string, CurrentRestoreRequests>("current1", new CurrentRestoreRequests())
+            new S3LocationAndValue<CurrentRestoreRequests>("current1", new CurrentRestoreRequests())
         ]);
 
         var currentArchiveRunsData = CreateAsyncEnumerable([
-            new KeyValuePair<string, CurrentArchiveRunRequests>("currentarchive1", new CurrentArchiveRunRequests())
+            new S3LocationAndValue<CurrentArchiveRunRequests>("currentarchive1", new CurrentArchiveRunRequests())
         ]);
 
         _runMediator.Setup(x => x.GetArchiveRuns(It.IsAny<CancellationToken>())).Returns(() => archiveData);
@@ -149,7 +149,7 @@ public class UploadOrchestrationTests
 
         var testException = new InvalidOperationException("Upload failed");
         var archiveData = CreateAsyncEnumerable([
-            new KeyValuePair<string, ArchiveRun>("failing-key", new ArchiveRun
+            new S3LocationAndValue<ArchiveRun>("failing-key", new ArchiveRun
             {
                 Status = ArchiveRunStatus.Processing,
                 RunId = "1",
@@ -159,7 +159,7 @@ public class UploadOrchestrationTests
                 PathsToArchive = "/test",
                 Files = new ConcurrentDictionary<string, FileMetaData>()
             }),
-            new KeyValuePair<string, ArchiveRun>("success-key", new ArchiveRun
+            new S3LocationAndValue<ArchiveRun>("success-key", new ArchiveRun
             {
                 Status = ArchiveRunStatus.Processing,
                 RunId = "2",
@@ -225,7 +225,7 @@ public class UploadOrchestrationTests
         _contextResolver.Setup(x => x.DelayBetweenUploadsSeconds()).Returns(0);
 
         var longRunningData = CreateAsyncEnumerable([
-            new KeyValuePair<string, ArchiveRun>("key1", new ArchiveRun
+            new S3LocationAndValue<ArchiveRun>("key1", new ArchiveRun
             {
                 Status = ArchiveRunStatus.Processing,
                 RunId = "1",
@@ -235,7 +235,7 @@ public class UploadOrchestrationTests
                 PathsToArchive = "/test",
                 Files = new ConcurrentDictionary<string, FileMetaData>()
             }),
-            new KeyValuePair<string, ArchiveRun>("key2", new ArchiveRun
+            new S3LocationAndValue<ArchiveRun>("key2", new ArchiveRun
             {
                 Status = ArchiveRunStatus.Processing,
                 RunId = "2",
@@ -245,7 +245,7 @@ public class UploadOrchestrationTests
                 PathsToArchive = "/test",
                 Files = new ConcurrentDictionary<string, FileMetaData>()
             }),
-            new KeyValuePair<string, ArchiveRun>("key3", new ArchiveRun
+            new S3LocationAndValue<ArchiveRun>("key3", new ArchiveRun
             {
                 Status = ArchiveRunStatus.Processing,
                 RunId = "3",
@@ -327,7 +327,7 @@ public class UploadOrchestrationTests
         _contextResolver.Setup(x => x.DelayBetweenUploadsSeconds()).Returns(1);
 
         var archiveData = CreateAsyncEnumerable([
-            new KeyValuePair<string, ArchiveRun>("key1", new ArchiveRun
+            new S3LocationAndValue<ArchiveRun>("key1", new ArchiveRun
             {
                 Status = ArchiveRunStatus.Processing,
                 RunId = "1",
@@ -337,7 +337,7 @@ public class UploadOrchestrationTests
                 PathsToArchive = "/test",
                 Files = new ConcurrentDictionary<string, FileMetaData>()
             }),
-            new KeyValuePair<string, ArchiveRun>("key2", new ArchiveRun
+            new S3LocationAndValue<ArchiveRun>("key2", new ArchiveRun
             {
                 Status = ArchiveRunStatus.Processing,
                 RunId = "2",
@@ -390,7 +390,7 @@ public class UploadOrchestrationTests
         var chunkException = new ArgumentException("Chunk upload failed");
 
         var archiveData = CreateAsyncEnumerable([
-            new KeyValuePair<string, ArchiveRun>("archive-key", new ArchiveRun
+            new S3LocationAndValue<ArchiveRun>("archive-key", new ArchiveRun
             {
                 Status = ArchiveRunStatus.Processing,
                 RunId = "archive1",
@@ -403,7 +403,7 @@ public class UploadOrchestrationTests
         ]);
 
         var chunkData = CreateAsyncEnumerable([
-            new KeyValuePair<string, DataChunkManifest>("chunk-key", new DataChunkManifest())
+            new S3LocationAndValue<DataChunkManifest>("chunk-key", new DataChunkManifest())
         ]);
 
         _runMediator.Setup(x => x.GetArchiveRuns(It.IsAny<CancellationToken>())).Returns(() => archiveData);
@@ -438,8 +438,8 @@ public class UploadOrchestrationTests
         Assert.Contains(errorLogs, log => log.Exception == chunkException);
     }
 
-    private static async IAsyncEnumerable<KeyValuePair<string, T>> CreateAsyncEnumerable<T>(
-        IEnumerable<KeyValuePair<string, T>> items)
+    private static async IAsyncEnumerable<S3LocationAndValue<T>> CreateAsyncEnumerable<T>(
+        IEnumerable<S3LocationAndValue<T>> items) where T : notnull
     {
         foreach (var item in items)
         {
