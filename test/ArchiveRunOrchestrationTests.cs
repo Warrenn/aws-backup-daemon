@@ -99,8 +99,6 @@ public class ArchiveRunOrchestrationTests : IDisposable
                 It.Is<ArchiveFileRequest>(r => r.RunId == runId && r.FilePath == "fileB"),
                 It.IsAny<CancellationToken>()),
             Times.Once);
-        archiveServiceMock.Verify(
-            a => a.CompleteArchiveRun(It.Is<string>(i => i == runId), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -147,8 +145,6 @@ public class ArchiveRunOrchestrationTests : IDisposable
             a => a.RecordLocalFile(It.IsAny<ArchiveRun>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
         fileMediatorMock.Verify(m => m.ProcessFile(It.IsAny<ArchiveFileRequest>(), It.IsAny<CancellationToken>()),
-            Times.Never);
-        archiveServiceMock.Verify(a => a.CompleteArchiveRun(It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 

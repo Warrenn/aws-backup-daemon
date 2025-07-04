@@ -283,7 +283,6 @@ public class SnsOrchestrationTests
         cts.Cancel();
         await Task.Delay(200); // Allow cancellation to propagate
         await (_orchestration.ExecuteTask ?? Task.CompletedTask);
-        await _orchestration.StopAsync(CancellationToken.None);
 
         // Assert - Should not throw and should handle cancellation gracefully
         var errorLogs = _logger.LogRecords.Where(x => x.LogLevel == LogLevel.Error).ToList();

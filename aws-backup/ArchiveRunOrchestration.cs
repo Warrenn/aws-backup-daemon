@@ -57,8 +57,6 @@ public sealed class ArchiveRunOrchestration(
                 var archiveFileRequest = new ArchiveFileRequest(archiveRun.RunId, filePath);
                 await archiveFileMediator.ProcessFile(archiveFileRequest, cancellationToken);
             }
-
-            await archiveService.CompleteArchiveRun(archiveRun.RunId, cancellationToken);
         }
     }
 

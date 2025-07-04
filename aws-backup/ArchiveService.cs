@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
@@ -24,7 +25,7 @@ public enum ArchiveRunStatus
 
 public enum FileStatus
 {
-    Added,  
+    Added,
     Processed,
     Skipped
 }
@@ -94,7 +95,6 @@ public interface IArchiveService
         CancellationToken cancellationToken);
 
     Task RecordLocalFile(ArchiveRun archiveRun, string filePath, CancellationToken cancellationToken);
-    Task CompleteArchiveRun(string archiveRunId, CancellationToken cancellationToken);
     bool IsTheFileSkipped(string archiveRunId, string parentFile);
 }
 
@@ -106,228 +106,330 @@ public class CurrentArchiveRunRequests : ConcurrentDictionary<string, RunRequest
 
 public sealed class ArchiveService(
     IS3Service s3Service,
-    IArchiveRunMediator mediator,
-    ISnsOrchestrationMediator snsOrchestrationMediator,
-    CurrentArchiveRuns currentArchiveRuns,
-    CurrentArchiveRunRequests currentRunRequests
-) : IArchiveService
+    IArchiveRunMediator runMed,
+    ISnsOrchestrationMediator snsMed,
+    CurrentArchiveRuns currentRuns,
+    CurrentArchiveRunRequests currentRequests,
+    ILogger<ArchiveService> logger)
+    : IArchiveService, IDisposable
 {
-    private readonly ConcurrentDictionary<string, TaskCompletionSource> _tcs = [];
-
-    public async Task<ArchiveRun?> LookupArchiveRun(string runId, CancellationToken cancellationToken)
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _runLocks = new();
+    
+    public async Task<ArchiveRun?> LookupArchiveRun(string runId, CancellationToken ct)
     {
-        if (currentArchiveRuns.TryGetValue(runId, out var archiveRun)) return archiveRun;
-        if (!await s3Service.RunExists(runId, cancellationToken)) return null;
+        
+        if (currentRuns.TryGetValue(runId, out var cached))
+        {
+            logger.LogDebug("LookupArchiveRun({RunId}) => cached", runId);
+            return cached;
+        }
 
-        archiveRun = await s3Service.GetArchive(runId, cancellationToken);
-        if (!currentArchiveRuns.TryAdd(runId, archiveRun)) archiveRun = currentArchiveRuns[runId];
-        var request = new RunRequest(runId, archiveRun.PathsToArchive, archiveRun.CronSchedule);
-        currentRunRequests.TryAdd(runId, request);
-        await mediator.SaveCurrentArchiveRunRequests(currentRunRequests, cancellationToken);
-        return archiveRun;
+        if (!await s3Service.RunExists(runId, ct))
+        {
+            logger.LogInformation("LookupArchiveRun({RunId}) => not found in S3", runId);
+            return null;
+        }
+
+        var run = await s3Service.GetArchive(runId, ct);
+        logger.LogInformation("LookupArchiveRun({RunId}) => loaded from S3", runId);
+
+        var lockSlim = _runLocks.GetOrAdd(runId, _ => new SemaphoreSlim(1, 1));
+        await lockSlim.WaitAsync(ct);
+        try
+        {
+            currentRuns[runId] = run;
+            currentRequests[runId] = new RunRequest(runId, run.PathsToArchive, run.CronSchedule);
+            await runMed.SaveCurrentArchiveRunRequests(currentRequests, ct);
+        }
+        finally
+        {
+            lockSlim.Release();
+        }
+
+        return run;
     }
 
-    public async Task<ArchiveRun> StartNewArchiveRun(RunRequest request, CancellationToken cancellationToken)
+    public async Task<ArchiveRun> StartNewArchiveRun(RunRequest request, CancellationToken ct)
     {
-        var archiveRun = new ArchiveRun
+        
+        var runId = request.RunId;
+        var run = new ArchiveRun
         {
-            RunId = request.RunId,
+            RunId = runId,
             CronSchedule = request.CronSchedule,
             PathsToArchive = request.PathsToArchive,
             CreatedAt = DateTimeOffset.UtcNow,
             Status = ArchiveRunStatus.Processing
         };
-        var tcs = new TaskCompletionSource();
 
-        if (!_tcs.TryAdd(request.RunId, tcs))
-            _tcs[request.RunId] = tcs;
-        if (!currentArchiveRuns.TryAdd(request.RunId, archiveRun))
-            currentArchiveRuns[request.RunId] = archiveRun;
-        if (!currentRunRequests.TryAdd(request.RunId, request))
-            currentArchiveRuns[request.RunId] = archiveRun;
+        logger.LogInformation("Starting new archive run {RunId}", runId);
 
-        await mediator.SaveCurrentArchiveRunRequests(currentRunRequests, cancellationToken);
-        await mediator.SaveArchiveRun(archiveRun, cancellationToken);
-        return archiveRun;
-    }
-
-    public async Task<bool> DoesFileRequireProcessing(string archiveRunId, string filePath,
-        CancellationToken cancellationToken)
-    {
-        var archiveRun = await LookupArchiveRun(archiveRunId, cancellationToken);
-        if (archiveRun is null) return false;
-
-        if (archiveRun.Files.TryGetValue(filePath, out var fileMeta))
-            return fileMeta.Status is not FileStatus.Processed and not FileStatus.Skipped;
-
-        fileMeta = new FileMetaData(filePath)
+        var lockSlim = _runLocks.GetOrAdd(runId, _ => new SemaphoreSlim(1, 1));
+        await lockSlim.WaitAsync(ct);
+        try
         {
-            Status = FileStatus.Added
-        };
-        archiveRun.Files[filePath] = fileMeta;
-        await CheckIfRunComplete(archiveRun, cancellationToken);
-        return true;
-    }
-
-    public async Task ReportProcessingResult(string archiveRunId, FileProcessResult result,
-        CancellationToken cancellationToken)
-    {
-        var archiveRun = await LookupArchiveRun(archiveRunId, cancellationToken);
-        if (archiveRun is null) return;
-
-        var filePath = result.LocalFilePath;
-        if (!archiveRun.Files.TryGetValue(filePath, out var fileMeta)) return;
-
-        fileMeta.Status = FileStatus.Processed;
-        fileMeta.CompressedSize = result.Chunks.Sum(c => c.Size);
-        fileMeta.OriginalSize = result.OriginalSize;
-        fileMeta.HashKey = result.FullFileHash;
-        fileMeta.Chunks = result.Chunks;
-
-        await CheckIfRunComplete(archiveRun, cancellationToken);
-    }
-
-    public async Task UpdateTimeStamps(string runId, string localFilePath, DateTimeOffset created,
-        DateTimeOffset modified,
-        CancellationToken cancellationToken)
-    {
-        var archiveRun = await LookupArchiveRun(runId, cancellationToken);
-        if (archiveRun is null) return;
-
-        if (!archiveRun.Files.TryGetValue(localFilePath, out var fileMeta)) return;
-        var updatedMeta = fileMeta with
+            currentRuns[runId] = run;
+            currentRequests[runId] = request;
+            await runMed.SaveCurrentArchiveRunRequests(currentRequests, ct);
+            await runMed.SaveArchiveRun(run, ct);
+        }
+        finally
         {
-            Created = created,
-            LastModified = modified
-        };
-        archiveRun.Files[localFilePath] = updatedMeta;
-        await CheckIfRunComplete(archiveRun, cancellationToken);
-    }
-
-    public async Task UpdateOwnerGroup(string runId, string localFilePath, string owner, string group,
-        CancellationToken cancellationToken)
-    {
-        var archiveRun = await LookupArchiveRun(runId, cancellationToken);
-        if (archiveRun is null) return;
-
-        if (!archiveRun.Files.TryGetValue(localFilePath, out var fileMeta)) return;
-        var updatedMeta = fileMeta with
-        {
-            Owner = owner,
-            Group = group
-        };
-        archiveRun.Files[localFilePath] = updatedMeta;
-        await CheckIfRunComplete(archiveRun, cancellationToken);
-    }
-
-    public async Task UpdateAclEntries(string runId, string localFilePath, AclEntry[] aclEntries,
-        CancellationToken cancellationToken)
-    {
-        var archiveRun = await LookupArchiveRun(runId, cancellationToken);
-        if (archiveRun is null) return;
-
-        if (!archiveRun.Files.TryGetValue(localFilePath, out var fileMeta)) return;
-        var updatedMeta = fileMeta with
-        {
-            AclEntries = aclEntries
-        };
-        archiveRun.Files[localFilePath] = updatedMeta;
-        await CheckIfRunComplete(archiveRun, cancellationToken);
-    }
-
-    public async Task RecordFailedFile(string archiveRunId, string localFilePath, Exception exception,
-        CancellationToken cancellationToken)
-    {
-        var archiveRun = await LookupArchiveRun(archiveRunId, cancellationToken);
-        if (archiveRun is null) return;
-
-        if (!archiveRun.Files.TryGetValue(localFilePath, out var fileMeta))
-            fileMeta = new FileMetaData(localFilePath);
-
-        fileMeta.Status = FileStatus.Skipped;
-        archiveRun.Files[localFilePath] = fileMeta;
-
-        archiveRun.SkipReason[localFilePath] = exception.Message;
-
-        await snsOrchestrationMediator.PublishMessage(new ExceptionMessage(
-            $"File Skipped: {localFilePath} in run {archiveRunId}",
-            $"File {localFilePath} was skipped due to: {exception.Message}"), cancellationToken);
-
-        await CheckIfRunComplete(archiveRun, cancellationToken);
-    }
-
-    public async Task RecordLocalFile(ArchiveRun archiveRun, string localFilePath, CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(localFilePath)) return;
-        if (archiveRun.Files.ContainsKey(localFilePath)) return;
-
-        var fileMeta = new FileMetaData(localFilePath)
-        {
-            Status = FileStatus.Added
-        };
-
-        if (!archiveRun.Files.TryAdd(localFilePath, fileMeta)) return;
-        await mediator.SaveArchiveRun(archiveRun, cancellationToken);
-    }
-
-    public async Task CompleteArchiveRun(string archiveRunId, CancellationToken cancellationToken)
-    {
-        var archiveRun = await LookupArchiveRun(archiveRunId, cancellationToken);
-        if (archiveRun is null) return;
-
-        await CheckIfRunComplete(archiveRun, cancellationToken);
-        if (!_tcs.TryGetValue(archiveRunId, out var tc)) tc = new TaskCompletionSource();
-        if (cancellationToken.IsCancellationRequested && !tc.Task.IsCompleted) tc.TrySetCanceled(cancellationToken);
-        await tc.Task;
-    }
-
-    public bool IsTheFileSkipped(string archiveRunId, string localFilePath)
-    {
-        if (!currentArchiveRuns.TryGetValue(archiveRunId, out var archiveRun)) return false;
-        if (!archiveRun.Files.TryGetValue(localFilePath, out var fileMeta)) return false;
-        return fileMeta.Status == FileStatus.Skipped;
-    }
-
-    private async Task CheckIfRunComplete(ArchiveRun archiveRun, CancellationToken cancellationToken)
-    {
-        var complete =
-            archiveRun.Files.Values.All(f => f.Status is FileStatus.Processed or FileStatus.Skipped);
-
-        if (!_tcs.TryGetValue(archiveRun.RunId, out var tc)) tc = new TaskCompletionSource();
-        if (complete)
-        {
-            archiveRun.Status = ArchiveRunStatus.Completed;
-            archiveRun.CompletedAt = DateTimeOffset.UtcNow;
-            archiveRun.CompressedSize = archiveRun.Files.Values
-                .Where(f => f.Status == FileStatus.Processed)
-                .Sum(f => f.CompressedSize ?? 0);
-            archiveRun.OriginalSize = archiveRun.Files.Values
-                .Where(f => f.Status == FileStatus.Processed)
-                .Sum(f => f.OriginalSize ?? 0);
-            archiveRun.TotalFiles = archiveRun.Files.Count;
-            archiveRun.TotalSkippedFiles = archiveRun.Files.Values
-                .Count(f => f.Status == FileStatus.Skipped);
-
-            currentArchiveRuns.TryRemove(archiveRun.RunId, out _);
-            if(currentRunRequests.TryRemove(archiveRun.RunId, out _))
-                await mediator.SaveCurrentArchiveRunRequests(currentRunRequests, cancellationToken);
-
-            if (archiveRun.Files.Values.Any(f => f.Status is FileStatus.Skipped))
-                await snsOrchestrationMediator.PublishMessage(new ArchiveCompleteErrorMessage(
-                    archiveRun.RunId,
-                    $"Archive run {archiveRun.RunId} completed with errors",
-                    "Some files were skipped during the archive run.",
-                    archiveRun), cancellationToken);
-            else
-                await snsOrchestrationMediator.PublishMessage(new ArchiveCompleteMessage(
-                    archiveRun.RunId,
-                    $"Archive run {archiveRun.RunId} completed",
-                    "The archive run has completed successfully.",
-                    archiveRun), cancellationToken);
-
-            tc.TrySetResult();
+            lockSlim.Release();
         }
 
-        await mediator.SaveArchiveRun(archiveRun, cancellationToken);
+        return run;
+    }
+
+    public async Task<bool> DoesFileRequireProcessing(
+        string runId, string filePath, CancellationToken ct)
+    {
+        
+        var run = await LookupArchiveRun(runId, ct);
+        if (run is null) return false;
+
+        var lockSlim = _runLocks.GetOrAdd(runId, _ => new SemaphoreSlim(1, 1));
+        await lockSlim.WaitAsync(ct);
+        try
+        {
+            if (run.Files.TryGetValue(filePath, out var meta))
+            {
+                var need = meta.Status is not (FileStatus.Processed or FileStatus.Skipped);
+                logger.LogDebug("DoesFileRequireProcessing({Run},{File}) => {Need}", runId, filePath, need);
+                return need;
+            }
+
+            logger.LogDebug("DoesFileRequireProcessing({Run},{File}) => Added", runId, filePath);
+            run.Files[filePath] = new FileMetaData(filePath) { Status = FileStatus.Added };
+            await SaveAndFinalizeIfComplete(run, ct);
+            return true;
+        }
+        finally
+        {
+            lockSlim.Release();
+        }
+    }
+
+    public async Task ReportProcessingResult(
+        string runId, FileProcessResult result, CancellationToken ct)
+    {
+        
+        var run = await LookupArchiveRun(runId, ct);
+        if (run is null) return;
+
+        var filePath = result.LocalFilePath;
+        var lockSlim = _runLocks.GetOrAdd(runId, _ => new SemaphoreSlim(1, 1));
+        await lockSlim.WaitAsync(ct);
+        try
+        {
+            if (!run.Files.TryGetValue(filePath, out var meta)) return;
+
+            logger.LogInformation("ReportProcessingResult: {Run}/{File} => Processed", runId, filePath);
+            meta = meta with
+            {
+                Status = FileStatus.Processed,
+                CompressedSize = result.Chunks.Sum(c => c.Size),
+                OriginalSize = result.OriginalSize,
+                HashKey = result.FullFileHash,
+                Chunks = result.Chunks
+            };
+            run.Files[filePath] = meta;
+
+            await SaveAndFinalizeIfComplete(run, ct);
+        }
+        finally
+        {
+            lockSlim.Release();
+        }
+    }
+
+    public async Task UpdateTimeStamps(
+        string runId, string localFilePath, DateTimeOffset created, DateTimeOffset modified,
+        CancellationToken ct)
+    {
+        
+        var run = await LookupArchiveRun(runId, ct);
+        if (run is null) return;
+
+        var lockSlim = _runLocks.GetOrAdd(runId, _ => new SemaphoreSlim(1, 1));
+        await lockSlim.WaitAsync(ct);
+        try
+        {
+            if (!run.Files.TryGetValue(localFilePath, out var meta)) return;
+
+            logger.LogDebug("UpdateTimeStamps: {Run}/{File}", runId, localFilePath);
+            run.Files[localFilePath] = meta with { Created = created, LastModified = modified };
+            await SaveAndFinalizeIfComplete(run, ct);
+        }
+        finally
+        {
+            lockSlim.Release();
+        }
+    }
+
+    public async Task UpdateOwnerGroup(
+        string runId, string localFilePath, string owner, string group,
+        CancellationToken ct)
+    {
+        
+        var run = await LookupArchiveRun(runId, ct);
+        if (run is null) return;
+
+        var lockSlim = _runLocks.GetOrAdd(runId, _ => new SemaphoreSlim(1, 1));
+        await lockSlim.WaitAsync(ct);
+        try
+        {
+            if (!run.Files.TryGetValue(localFilePath, out var meta)) return;
+
+            logger.LogDebug("UpdateOwnerGroup: {Run}/{File}", runId, localFilePath);
+            run.Files[localFilePath] = meta with { Owner = owner, Group = group };
+            await SaveAndFinalizeIfComplete(run, ct);
+        }
+        finally
+        {
+            lockSlim.Release();
+        }
+    }
+
+    public async Task UpdateAclEntries(
+        string runId, string localFilePath, AclEntry[] aclEntries,
+        CancellationToken ct)
+    {
+        
+        var run = await LookupArchiveRun(runId, ct);
+        if (run is null) return;
+
+        var lockSlim = _runLocks.GetOrAdd(runId, _ => new SemaphoreSlim(1, 1));
+        await lockSlim.WaitAsync(ct);
+        try
+        {
+            if (!run.Files.TryGetValue(localFilePath, out var meta)) return;
+
+            logger.LogDebug("UpdateAclEntries: {Run}/{File}", runId, localFilePath);
+            run.Files[localFilePath] = meta with { AclEntries = aclEntries };
+            await SaveAndFinalizeIfComplete(run, ct);
+        }
+        finally
+        {
+            lockSlim.Release();
+        }
+    }
+
+    public async Task RecordFailedFile(
+        string runId, string localFilePath, Exception exception,
+        CancellationToken ct)
+    {
+        
+        var run = await LookupArchiveRun(runId, ct);
+        if (run is null) return;
+
+        var lockSlim = _runLocks.GetOrAdd(runId, _ => new SemaphoreSlim(1, 1));
+        await lockSlim.WaitAsync(ct);
+        try
+        {
+            logger.LogWarning(exception, "RecordFailedFile: {Run}/{File}", runId, localFilePath);
+
+            var meta = run.Files.GetValueOrDefault(localFilePath)
+                       ?? new FileMetaData(localFilePath);
+            meta = meta with { Status = FileStatus.Skipped };
+            run.Files[localFilePath] = meta;
+            run.SkipReason[localFilePath] = exception.Message;
+
+            // notify via SNS
+            await snsMed.PublishMessage(new ExceptionMessage(
+                $"File Skipped: {localFilePath} in run {runId}",
+                $"Skipped due to: {exception.Message}"
+            ), ct);
+
+            await SaveAndFinalizeIfComplete(run, ct);
+        }
+        finally
+        {
+            lockSlim.Release();
+        }
+    }
+
+    public async Task RecordLocalFile(
+        ArchiveRun run, string localFilePath,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(localFilePath)) return;
+
+        var runId = run.RunId;
+        var lockSlim = _runLocks.GetOrAdd(runId, _ => new SemaphoreSlim(1, 1));
+        await lockSlim.WaitAsync(ct);
+        try
+        {
+            if (run.Files.ContainsKey(localFilePath)) return;
+
+            logger.LogDebug("RecordLocalFile: {Run}/{File}", runId, localFilePath);
+            run.Files[localFilePath] = new FileMetaData(localFilePath) { Status = FileStatus.Added };
+            await runMed.SaveArchiveRun(run, ct);
+        }
+        finally
+        {
+            lockSlim.Release();
+        }
+    }
+
+    public bool IsTheFileSkipped(string runId, string localFilePath)
+    {
+        if (!currentRuns.TryGetValue(runId, out var run)) return false;
+        if (!run.Files.TryGetValue(localFilePath, out var meta)) return false;
+        return meta.Status == FileStatus.Skipped;
+    }
+
+    public void Dispose()
+    {
+        foreach (var sem in _runLocks.Values) sem.Dispose();
+    }
+
+    private async Task SaveAndFinalizeIfComplete(ArchiveRun run, CancellationToken ct)
+    {
+        // persist current state
+        await runMed.SaveArchiveRun(run, ct);
+
+        // check for completion
+        if (run.Files.Values.All(f => f.Status is FileStatus.Processed or FileStatus.Skipped))
+            await FinalizeRun(run, ct);
+    }
+
+    private async Task FinalizeRun(ArchiveRun run, CancellationToken ct)
+    {
+        var runId = run.RunId;
+        logger.LogInformation("Finalizing run {RunId}", runId);
+
+        // update summary fields
+        run.Status = ArchiveRunStatus.Completed;
+        run.CompletedAt = DateTimeOffset.UtcNow;
+        run.CompressedSize = run.Files.Values.Where(f => f.Status == FileStatus.Processed)
+            .Sum(f => f.CompressedSize ?? 0);
+        run.OriginalSize = run.Files.Values.Where(f => f.Status == FileStatus.Processed).Sum(f => f.OriginalSize ?? 0);
+        run.TotalFiles = run.Files.Count;
+        run.TotalSkippedFiles = run.Files.Values.Count(f => f.Status == FileStatus.Skipped);
+
+        // publish summary
+        if (run.TotalSkippedFiles > 0)
+            await snsMed.PublishMessage(new ArchiveCompleteErrorMessage(
+                runId,
+                $"Archive run {runId} completed with errors",
+                "Some files were skipped.",
+                run
+            ), ct);
+        else
+            await snsMed.PublishMessage(new ArchiveCompleteMessage(
+                runId,
+                $"Archive run {runId} completed successfully",
+                "All files processed.",
+                run
+            ), ct);
+
+        // persist final
+        await runMed.SaveArchiveRun(run, ct);
+
+        // remove from in‐memory caches
+        currentRuns.TryRemove(runId, out _);
+        currentRequests.TryRemove(runId, out _);
+        logger.LogInformation("Run {RunId} removed from in‐memory cache", runId);
     }
 }
