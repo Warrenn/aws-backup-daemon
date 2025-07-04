@@ -5,9 +5,9 @@ namespace aws_backup;
 
 public interface IArchiveRunMediator
 {
-    IAsyncEnumerable<KeyValuePair<string, ArchiveRun>> GetArchiveRuns(CancellationToken cancellationToken);
+    IAsyncEnumerable<S3LocationAndValue<ArchiveRun>> GetArchiveRuns(CancellationToken cancellationToken);
 
-    IAsyncEnumerable<KeyValuePair<string, CurrentArchiveRunRequests>> GetCurrentArchiveRunRequests(
+    IAsyncEnumerable<S3LocationAndValue<CurrentArchiveRunRequests>> GetCurrentArchiveRunRequests(
         CancellationToken cancellationToken);
 
     Task SaveArchiveRun(ArchiveRun currentArchiveRun, CancellationToken cancellationToken);
@@ -24,7 +24,7 @@ public enum ArchiveRunStatus
 
 public enum FileStatus
 {
-    Added,
+    Added,  
     Processed,
     Skipped
 }

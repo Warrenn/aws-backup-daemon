@@ -6,10 +6,10 @@ namespace aws_backup;
 
 public interface IChunkManifestMediator
 {
-    IAsyncEnumerable<KeyValuePair<string, DataChunkManifest>> GetDataChunksManifest(
+    IAsyncEnumerable<S3LocationAndValue<DataChunkManifest>> GetDataChunksManifest(
         CancellationToken cancellationToken);
 
-    ValueTask SaveChunkManifest(DataChunkManifest manifest, CancellationToken cancellationToken);
+    Task SaveChunkManifest(DataChunkManifest manifest, CancellationToken cancellationToken);
 }
 
 public sealed record CloudChunkDetails(

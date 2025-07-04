@@ -1,3 +1,6 @@
+using System.Runtime.CompilerServices;
+using System.Threading.Channels;
+
 namespace aws_backup;
 
 public sealed class Mediator(
@@ -13,135 +16,273 @@ public sealed class Mediator(
     IRestoreRunMediator,
     IUploadChunksMediator,
     ISnsOrchestrationMediator
-
 {
+    private readonly Channel<ArchiveFileRequest> _archiveFileRequestChannel =
+        Channel.CreateUnbounded<ArchiveFileRequest>(
+            new UnboundedChannelOptions
+            {
+                SingleReader = false,
+                SingleWriter = false
+            });
+
+    private readonly Channel<ArchiveRun> _archiveRunChannel =
+        Channel.CreateUnbounded<ArchiveRun>(
+            new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = false
+            });
+
+    private readonly Channel<CurrentArchiveRunRequests> _currentArchiveRunRequestsChannel =
+        Channel.CreateBounded<CurrentArchiveRunRequests>(
+            new BoundedChannelOptions(1)
+            {
+                FullMode = BoundedChannelFullMode.DropOldest,
+                SingleReader = true,
+                SingleWriter = false
+            });
+
+    private readonly Channel<CurrentRestoreRequests> _currentRestoreRequestsChannel =
+        Channel.CreateBounded<CurrentRestoreRequests>(
+            new BoundedChannelOptions(1)
+            {
+                FullMode = BoundedChannelFullMode.DropOldest,
+                SingleReader = true,
+                SingleWriter = false
+            });
+
+    private readonly Channel<DataChunkManifest> _dataChunksManifestChannel =
+        Channel.CreateBounded<DataChunkManifest>(
+            new BoundedChannelOptions(1)
+            {
+                FullMode = BoundedChannelFullMode.DropOldest,
+                SingleReader = true,
+                SingleWriter = false
+            });
+
+    private readonly Channel<DownloadFileFromS3Request> _downloadFileFromS3Channel =
+        Channel.CreateUnbounded<DownloadFileFromS3Request>(
+            new UnboundedChannelOptions
+            {
+                SingleReader = false,
+                SingleWriter = false
+            });
+
+    private readonly Channel<S3RestoreChunkManifest> _restoreManifestChannel =
+        Channel.CreateBounded<S3RestoreChunkManifest>(
+            new BoundedChannelOptions(1)
+            {
+                FullMode = BoundedChannelFullMode.DropOldest,
+                SingleReader = true,
+                SingleWriter = false
+            });
+
+    private readonly Channel<RestoreRequest> _restoreRequestsChannel =
+        Channel.CreateUnbounded<RestoreRequest>(
+            new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = false
+            });
+
+    private readonly Channel<RestoreRun> _restoreRunChannel =
+        Channel.CreateUnbounded<RestoreRun>(
+            new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = false
+            });
+
+    private readonly Channel<RetryState> _retryStateChannel =
+        Channel.CreateUnbounded<RetryState>(
+            new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = false
+            });
+
+    private readonly Channel<RunRequest> _runRequestChannel =
+        Channel.CreateUnbounded<RunRequest>(
+            new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = false
+            });
+    
+    private readonly Channel<SnsMessage> _snsMessageChannel =
+        Channel.CreateUnbounded<SnsMessage>(
+            new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = false
+            });
+    
+    private readonly Channel<UploadChunkRequest> _uploadChunksChannel =
+        Channel.CreateUnbounded<UploadChunkRequest>(
+            new UnboundedChannelOptions
+            {
+                SingleReader = false,
+                SingleWriter = false
+            });
+
     IAsyncEnumerable<ArchiveFileRequest> IArchiveFileMediator.GetArchiveFiles(CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        return _archiveFileRequestChannel.Reader.ReadAllAsync(cancellationToken);
     }
 
     async Task IArchiveFileMediator.ProcessFile(ArchiveFileRequest request, CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        await _archiveFileRequestChannel.Writer.WriteAsync(request, cancellationToken);
     }
 
-    IAsyncEnumerable<RunRequest> IRunRequestMediator.GetRunRequests(CancellationToken cancellationToken)
+    async IAsyncEnumerable<S3LocationAndValue<ArchiveRun>> IArchiveRunMediator.GetArchiveRuns(
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        await foreach (var run in _archiveRunChannel.Reader.ReadAllAsync(cancellationToken))
+        {
+            var key = resolver.RunIdBucketKey(run.RunId);
+            yield return new S3LocationAndValue<ArchiveRun>(key, run);
+        }
     }
 
-    async Task IRunRequestMediator.ScheduleRunRequest(RunRequest runRequest, CancellationToken cancellationToken)
+    async IAsyncEnumerable<S3LocationAndValue<CurrentArchiveRunRequests>> IArchiveRunMediator.
+        GetCurrentArchiveRunRequests(
+            [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
-    }
-
-    IAsyncEnumerable<KeyValuePair<string, ArchiveRun>> IArchiveRunMediator.GetArchiveRuns(CancellationToken cancellationToken)
-    {
-        throw new NotImplementedException();
-    }
-
-    IAsyncEnumerable<KeyValuePair<string, CurrentArchiveRunRequests>> IArchiveRunMediator.GetCurrentArchiveRunRequests(CancellationToken cancellationToken)
-    {
-        throw new NotImplementedException();
+        var key = resolver.CurrentArchiveRunsBucketKey();
+        await foreach (var request in _currentArchiveRunRequestsChannel
+                           .Reader.ReadAllAsync(cancellationToken))
+            yield return new S3LocationAndValue<CurrentArchiveRunRequests>(key, request);
     }
 
     async Task IArchiveRunMediator.SaveArchiveRun(ArchiveRun currentArchiveRun, CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        await _archiveRunChannel.Writer.WriteAsync(currentArchiveRun, cancellationToken);
     }
 
-    async Task IArchiveRunMediator.SaveCurrentArchiveRunRequests(CurrentArchiveRunRequests currentArchiveRuns, CancellationToken cancellationToken)
+    async Task IArchiveRunMediator.SaveCurrentArchiveRunRequests(CurrentArchiveRunRequests currentArchiveRuns,
+        CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        await _currentArchiveRunRequestsChannel.Writer.WriteAsync(currentArchiveRuns, cancellationToken);
     }
 
-    IAsyncEnumerable<KeyValuePair<string, DataChunkManifest>> IChunkManifestMediator.GetDataChunksManifest(CancellationToken cancellationToken)
+    async IAsyncEnumerable<S3LocationAndValue<DataChunkManifest>> IChunkManifestMediator.GetDataChunksManifest(
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        var key = resolver.ChunkManifestBucketKey();
+        await foreach (var manifest in _dataChunksManifestChannel.Reader.ReadAllAsync(cancellationToken))
+            yield return new S3LocationAndValue<DataChunkManifest>(key, manifest);
     }
 
-    async ValueTask IChunkManifestMediator.SaveChunkManifest(DataChunkManifest manifest, CancellationToken cancellationToken)
+    async Task IChunkManifestMediator.SaveChunkManifest(DataChunkManifest manifest,
+        CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        await _dataChunksManifestChannel.Writer.WriteAsync(manifest, cancellationToken);
     }
 
-    async Task IDownloadFileMediator.DownloadFileFromS3(DownloadFileFromS3Request downloadFileFromS3Request, CancellationToken cancellationToken)
+    async Task IDownloadFileMediator.DownloadFileFromS3(DownloadFileFromS3Request downloadFileFromS3Request,
+        CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        await _downloadFileFromS3Channel.Writer.WriteAsync(downloadFileFromS3Request, cancellationToken);
     }
 
-    IAsyncEnumerable<DownloadFileFromS3Request> IDownloadFileMediator.GetDownloadRequests(CancellationToken cancellationToken)
+    IAsyncEnumerable<DownloadFileFromS3Request> IDownloadFileMediator.GetDownloadRequests(
+        CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        return _downloadFileFromS3Channel.Reader.ReadAllAsync(cancellationToken);
     }
 
-    IAsyncEnumerable<RetryState> IRetryMediator.GetRetries(CancellationToken cancellationToken)
+    async Task IRestoreManifestMediator.SaveRestoreManifest(S3RestoreChunkManifest currentManifest,
+        CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        await _restoreManifestChannel.Writer.WriteAsync(currentManifest, cancellationToken);
     }
 
-    async Task IRetryMediator.RetryAttempt(RetryState attempt, CancellationToken cancellationToken)
+    async IAsyncEnumerable<S3LocationAndValue<S3RestoreChunkManifest>> IRestoreManifestMediator.GetRestoreManifest(
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        var key = resolver.RestoreManifestBucketKey();
+        await foreach (var manifest in _restoreManifestChannel.Reader.ReadAllAsync(cancellationToken))
+            yield return new S3LocationAndValue<S3RestoreChunkManifest>(key, manifest);
     }
 
-    async Task IRestoreRequestsMediator.RestoreBackup(RestoreRequest restoreRequest, CancellationToken cancellationToken)
+    async Task IRestoreRequestsMediator.RestoreBackup(RestoreRequest restoreRequest,
+        CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        await _restoreRequestsChannel.Writer.WriteAsync(restoreRequest, cancellationToken);
     }
 
-    async Task IRestoreRequestsMediator.SaveRunningRequest(CurrentRestoreRequests currentRestoreRequests, CancellationToken cancellationToken)
+    async Task IRestoreRequestsMediator.SaveRunningRequest(CurrentRestoreRequests currentRestoreRequests,
+        CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        await _currentRestoreRequestsChannel.Writer.WriteAsync(currentRestoreRequests, cancellationToken);
     }
 
-    IAsyncEnumerable<KeyValuePair<string, CurrentRestoreRequests>> IRestoreRequestsMediator.GetRunningRequests(CancellationToken cancellationToken)
+    async IAsyncEnumerable<S3LocationAndValue<CurrentRestoreRequests>> IRestoreRequestsMediator.GetRunningRequests(
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        var key = resolver.CurrentRestoreBucketKey();
+        await foreach (var request in _currentRestoreRequestsChannel.Reader.ReadAllAsync(cancellationToken))
+            yield return new S3LocationAndValue<CurrentRestoreRequests>(key, request);
     }
 
     IAsyncEnumerable<RestoreRequest> IRestoreRequestsMediator.GetRestoreRequests(CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        return _restoreRequestsChannel.Reader.ReadAllAsync(cancellationToken);
     }
 
-    async Task IRestoreManifestMediator.SaveRestoreManifest(S3RestoreChunkManifest currentManifest, CancellationToken cancellationToken)
+    async IAsyncEnumerable<S3LocationAndValue<RestoreRun>> IRestoreRunMediator.GetRestoreRuns(
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
-    }
-
-    IAsyncEnumerable<KeyValuePair<string, S3RestoreChunkManifest>> IRestoreManifestMediator.GetRestoreManifest(CancellationToken cancellationToken)
-    {
-        throw new NotImplementedException();
-    }
-
-    IAsyncEnumerable<KeyValuePair<string, RestoreRun>> IRestoreRunMediator.GetRestoreRuns(CancellationToken cancellationToken)
-    {
-        throw new NotImplementedException();
+        await foreach (var run in _restoreRunChannel.Reader.ReadAllAsync(cancellationToken))
+        {
+            var key = resolver.RestoreIdBucketKey(run.RestoreId);
+            yield return new S3LocationAndValue<RestoreRun>(key, run);
+        }
     }
 
     async Task IRestoreRunMediator.SaveRestoreRun(RestoreRun restoreRun, CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        await _restoreRunChannel.Writer.WriteAsync(restoreRun, cancellationToken);
     }
 
-    IAsyncEnumerable<UploadChunkRequest> IUploadChunksMediator.GetChunks(CancellationToken cancellationToken)
+    IAsyncEnumerable<RetryState> IRetryMediator.GetRetries(CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        return _retryStateChannel.Reader.ReadAllAsync(cancellationToken);
     }
 
-    async Task IUploadChunksMediator.ProcessChunk(UploadChunkRequest request, CancellationToken cancellationToken)
+    async Task IRetryMediator.RetryAttempt(RetryState attempt, CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        await _retryStateChannel.Writer.WriteAsync(attempt, cancellationToken);
+    }
+
+    IAsyncEnumerable<RunRequest> IRunRequestMediator.GetRunRequests(CancellationToken cancellationToken)
+    {
+        return _runRequestChannel.Reader.ReadAllAsync(cancellationToken);
+    }
+
+    async Task IRunRequestMediator.ScheduleRunRequest(RunRequest runRequest, CancellationToken cancellationToken)
+    {
+        await _runRequestChannel.Writer.WriteAsync(runRequest, cancellationToken);
     }
 
     IAsyncEnumerable<SnsMessage> ISnsOrchestrationMediator.GetMessages(CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        return _snsMessageChannel.Reader.ReadAllAsync(cancellationToken);
     }
 
     async Task ISnsOrchestrationMediator.PublishMessage(SnsMessage message, CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        await _snsMessageChannel.Writer.WriteAsync(message, cancellationToken);
+    }
+
+    IAsyncEnumerable<UploadChunkRequest> IUploadChunksMediator.GetChunks(CancellationToken cancellationToken)
+    {
+        return _uploadChunksChannel.Reader.ReadAllAsync(cancellationToken);
+    }
+
+    async Task IUploadChunksMediator.ProcessChunk(UploadChunkRequest request, CancellationToken cancellationToken)
+    {
+        await _uploadChunksChannel.Writer.WriteAsync(request, cancellationToken);
     }
 }

@@ -31,8 +31,8 @@ public sealed class UploadOrchestration(
     }
 
     private Task RunUploadAsync<T>(
-        Func<CancellationToken, IAsyncEnumerable<KeyValuePair<string, T>>> getData,
-        CancellationToken cancellationToken)
+        Func<CancellationToken, IAsyncEnumerable<S3LocationAndValue<T>>> getData,
+        CancellationToken cancellationToken) where T : notnull
     {
         return Task.Run(async () =>
         {

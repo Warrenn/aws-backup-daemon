@@ -21,13 +21,13 @@ public interface IRestoreManifestMediator
 {
     Task SaveRestoreManifest(S3RestoreChunkManifest currentManifest, CancellationToken cancellationToken);
 
-    IAsyncEnumerable<KeyValuePair<string, S3RestoreChunkManifest>> GetRestoreManifest(
+    IAsyncEnumerable<S3LocationAndValue<S3RestoreChunkManifest>> GetRestoreManifest(
         CancellationToken cancellationToken);
 }
 
 public interface IRestoreRunMediator
 {
-    IAsyncEnumerable<KeyValuePair<string, RestoreRun>> GetRestoreRuns(CancellationToken cancellationToken);
+    IAsyncEnumerable<S3LocationAndValue<RestoreRun>> GetRestoreRuns(CancellationToken cancellationToken);
     Task SaveRestoreRun(RestoreRun restoreRun, CancellationToken cancellationToken);
 }
 

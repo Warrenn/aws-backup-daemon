@@ -13,7 +13,7 @@ public interface IRestoreRequestsMediator
     Task RestoreBackup(RestoreRequest restoreRequest, CancellationToken cancellationToken);
     Task SaveRunningRequest(CurrentRestoreRequests currentRestoreRequests, CancellationToken cancellationToken);
 
-    IAsyncEnumerable<KeyValuePair<string, CurrentRestoreRequests>> GetRunningRequests(
+    IAsyncEnumerable<S3LocationAndValue<CurrentRestoreRequests>> GetRunningRequests(
         CancellationToken cancellationToken);
 
     IAsyncEnumerable<RestoreRequest> GetRestoreRequests(CancellationToken cancellationToken);
