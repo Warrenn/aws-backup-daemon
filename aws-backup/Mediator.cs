@@ -15,7 +15,8 @@ public sealed class Mediator(
     IRestoreManifestMediator,
     IRestoreRunMediator,
     IUploadChunksMediator,
-    ISnsOrchestrationMediator
+    ISnsOrchestrationMediator,
+    IRollingFileMediator
 {
     private readonly Channel<ArchiveFileRequest> _archiveFileRequestChannel =
         Channel.CreateUnbounded<ArchiveFileRequest>(
@@ -68,6 +69,16 @@ public sealed class Mediator(
                 SingleWriter = false
             });
 
+    private readonly Channel<string> _loggingFile =
+        Channel.CreateBounded<string>(
+            new BoundedChannelOptions(1)
+            {
+                FullMode = BoundedChannelFullMode.DropOldest,
+                AllowSynchronousContinuations = false,
+                SingleReader = true,
+                SingleWriter = true
+            });
+
     private readonly Channel<S3RestoreChunkManifest> _restoreManifestChannel =
         Channel.CreateBounded<S3RestoreChunkManifest>(
             new BoundedChannelOptions(1)
@@ -108,7 +119,7 @@ public sealed class Mediator(
                 SingleReader = true,
                 SingleWriter = false
             });
-    
+
     private readonly Channel<SnsMessage> _snsMessageChannel =
         Channel.CreateUnbounded<SnsMessage>(
             new UnboundedChannelOptions
@@ -116,7 +127,7 @@ public sealed class Mediator(
                 SingleReader = true,
                 SingleWriter = false
             });
-    
+
     private readonly Channel<UploadChunkRequest> _uploadChunksChannel =
         Channel.CreateUnbounded<UploadChunkRequest>(
             new UnboundedChannelOptions
@@ -255,6 +266,13 @@ public sealed class Mediator(
     {
         await _retryStateChannel.Writer.WriteAsync(attempt, cancellationToken);
     }
+
+    public IAsyncEnumerable<string> GetNextLoggingFile(CancellationToken cancellationToken)
+    {
+        return _loggingFile.Reader.ReadAllAsync(cancellationToken);
+    }
+
+    public ChannelWriter<string> Writer => _loggingFile.Writer;
 
     IAsyncEnumerable<RunRequest> IRunRequestMediator.GetRunRequests(CancellationToken cancellationToken)
     {

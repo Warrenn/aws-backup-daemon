@@ -7,6 +7,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Serilog;
+using Serilog.Core;
+using Serilog.Sinks.File;
 
 // Required options (non-nullable fields)
 var clientIdOpt = new Option<string>("--client-id", "-i")
@@ -92,8 +95,9 @@ var builder = Host.CreateDefaultBuilder(args)
 
 var provider = builder.Build().Services;
 
-var archiveRunRequests = await GetS3File<CurrentArchiveRunRequests>(provider, ctx => ctx.CurrentArchiveRunsBucketKey()) ??
-                  new CurrentArchiveRunRequests();
+var archiveRunRequests =
+    await GetS3File<CurrentArchiveRunRequests>(provider, ctx => ctx.CurrentArchiveRunsBucketKey()) ??
+    new CurrentArchiveRunRequests();
 var dataChunkManifest = await GetS3File<DataChunkManifest>(provider, ctx => ctx.ChunkManifestBucketKey()) ??
                         new DataChunkManifest();
 var currentRestoreRequests =
@@ -122,6 +126,7 @@ builder
             .AddSingleton<IRestoreManifestMediator>(sp => sp.GetRequiredService<Mediator>())
             .AddSingleton<IRestoreRunMediator>(sp => sp.GetRequiredService<Mediator>())
             .AddSingleton<IUploadChunksMediator>(sp => sp.GetRequiredService<Mediator>())
+            .AddSingleton<IRollingFileMediator>(sp => sp.GetRequiredService<Mediator>())
             .AddSingleton<IAwsClientFactory, AwsClientFactory>()
             .AddSingleton<IArchiveService, ArchiveService>()
             .AddSingleton<IChunkedEncryptingFileProcessor, ChunkedEncryptingFileProcessor>()
@@ -133,6 +138,7 @@ builder
             .AddSingleton<IRestoreService, RestoreService>()
             .AddSingleton<IS3ChunkedFileReconstructor, S3ChunkedFileReconstructor>()
             .AddSingleton<IS3Service, S3Service>()
+            .AddSingleton<FileLifecycleHooks, UploadToS3Hooks>()
             .AddSingleton<TimeProvider>(_ => TimeProvider.System)
             .AddHostedService<CronJobOrchestration>()
             .AddHostedService<ArchiveFilesOrchestration>()
@@ -144,7 +150,34 @@ builder
             .AddHostedService<SqsPollingOrchestration>()
             .AddHostedService<UploadChunkDataOrchestration>()
             .AddHostedService<UploadOrchestration>()
-            .AddHostedService<SnsOrchestration>();
+            .AddHostedService<SnsOrchestration>()
+            .AddHostedService<RollingFileOrchestration>()
+            .AddSingleton<Logger>(sp =>
+            {
+                var resolver = sp.GetService<IContextResolver>()!;
+                var logFolder = resolver.LogPath();
+                Directory.CreateDirectory(logFolder);
+
+                var logLevel = resolver.LogLevel();
+
+                var hooks = sp.GetRequiredService<FileLifecycleHooks>();
+
+                var logger = new LoggerConfiguration()
+                    .MinimumLevel.Is(logLevel) // adjust as you like
+                    .Enrich.FromLogContext()
+                    .WriteTo.File(
+                        // use {Date} to get YYYY-MM-DD in the filename:
+                        Path.Combine(logFolder, "{Date}.log"),
+                        outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}",
+                        rollingInterval: RollingInterval.Day,
+                        retainedFileCountLimit: 1, // keep the last 31 days of logs
+                        rollOnFileSizeLimit: false,
+                        hooks: hooks // add the custom hooks for file lifecycle events
+                    )
+                    .CreateLogger();
+                Log.Logger = logger;
+                return logger;
+            });
     });
 
 var host = builder.Build();

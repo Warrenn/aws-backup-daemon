@@ -27,7 +27,7 @@ public class ArchiveRunOrchestrationTests : IDisposable
         }
     }
 
-    private async IAsyncEnumerable<RunRequest> SingleRunAsync(string runId, string path)
+    private static async IAsyncEnumerable<RunRequest> SingleRunAsync(string runId, string path)
     {
         yield return new RunRequest(runId, "", "") { PathsToArchive = path };
     }

@@ -56,5 +56,7 @@ public sealed record Configuration(
     bool? NotifyOnRestoreComplete = null,
     bool? NotifyOnRestoreCompleteErrors = null,
     bool? NotifyOnException = null,
-    int? DaysToKeepRestoredCopy = null
+    int? DaysToKeepRestoredCopy = null,
+    string? LogFolder = null,
+    string? LogLevel = null
 );

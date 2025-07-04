@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Runtime.CompilerServices;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using aws_backup;
@@ -363,7 +364,7 @@ public class SnsOrchestrationTests
     }
 
     private static async IAsyncEnumerable<SnsMessage> CreateLongRunningAsyncEnumerable(
-        CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var count = 0;
         while (!cancellationToken.IsCancellationRequested && count < 100)

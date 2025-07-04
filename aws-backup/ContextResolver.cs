@@ -4,6 +4,7 @@ using Amazon.S3;
 using Amazon.SimpleSystemsManagement;
 using Amazon.SimpleSystemsManagement.Model;
 using Microsoft.Extensions.Options;
+using Serilog.Events;
 
 namespace aws_backup;
 
@@ -86,6 +87,9 @@ public interface IContextResolver
     string RestoreIdBucketKey(string restoreId);
     int DaysToKeepRestoredCopy();
     string S3DataPrefix();
+    string LogPath();
+    string S3LogFolder();
+    LogEventLevel LogLevel();
 }
 
 public sealed class ContextResolver : IContextResolver
@@ -111,6 +115,8 @@ public sealed class ContextResolver : IContextResolver
     private bool? _keepTimeStamps;
     private string? _localCacheFolder;
     private string? _localRestoreFolder;
+    private LogEventLevel? _logLevel;
+    private string? _logPath;
     private int? _noOfConcurrentDownloadsPerFile;
     private int? _noOfS3FilesToDownloadConcurrently;
     private int? _noOfS3FilesToUploadConcurrently;
@@ -549,6 +555,30 @@ public sealed class ContextResolver : IContextResolver
         return $"{_clientId}/data";
     }
 
+    public string LogPath()
+    {
+        if (!string.IsNullOrWhiteSpace(_logPath)) return _logPath;
+        _logPath = _configOptions.CurrentValue.LogFolder ?? Path.Combine(AppContext.BaseDirectory, "logs");
+        return _logPath;
+    }
+
+    public string S3LogFolder()
+    {
+        return $"{_clientId}/logs";
+    }
+
+    public LogEventLevel LogLevel()
+    {
+        if (_logLevel is not null) return _logLevel.Value;
+
+        var logLevel = _configOptions.CurrentValue.LogLevel;
+        if (string.IsNullOrWhiteSpace(logLevel) || !Enum.TryParse<LogEventLevel>(logLevel, true, out var level))
+            level = LogEventLevel.Warning; // Default log level
+
+        _logLevel = level;
+        return level;
+    }
+
     private void ClearCache()
     {
         _awsRegion = null;
@@ -558,6 +588,7 @@ public sealed class ContextResolver : IContextResolver
         _awsRetryMode = null;
         _localCacheFolder = null;
         _localRestoreFolder = null;
+        _logLevel = null;
 
         // Clear primitive caches
         _readBufferSize = null;
@@ -579,6 +610,7 @@ public sealed class ContextResolver : IContextResolver
         _encryptSqs = null;
         _useS3Accelerate = null;
         _encryptFiles = null;
+        _logPath = null;
     }
 
     private static S3StorageClass ResolveStorageClass(string? storageClassName, S3StorageClass defaultStorageClass)
