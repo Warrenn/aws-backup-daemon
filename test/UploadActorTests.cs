@@ -7,7 +7,7 @@ using Moq;
 
 namespace test;
 
-public class UploadOrchestrationTests
+public class UploadActorTests
 {
     private readonly Mock<IChunkManifestMediator> _chunkManifestMediator;
     private readonly Mock<IContextResolver> _contextResolver;
@@ -16,10 +16,10 @@ public class UploadOrchestrationTests
     private readonly Mock<IRestoreRequestsMediator> _restoreRequestsMediator;
     private readonly Mock<IRestoreRunMediator> _restoreRunMediator;
     private readonly Mock<IArchiveRunMediator> _runMediator;
-    private TestLoggerClass<UploadOrchestration> _logger;
-    private UploadOrchestration _orchestration;
+    private TestLoggerClass<UploadActor> _logger;
+    private UploadActor _actor;
 
-    public UploadOrchestrationTests()
+    public UploadActorTests()
     {
         _hotStorageService = new Mock<IHotStorageService>();
         _runMediator = new Mock<IArchiveRunMediator>();
@@ -28,16 +28,16 @@ public class UploadOrchestrationTests
         _restoreRunMediator = new Mock<IRestoreRunMediator>();
         _contextResolver = new Mock<IContextResolver>();
         _restoreRequestsMediator = new Mock<IRestoreRequestsMediator>();
-        _logger = new TestLoggerClass<UploadOrchestration>();
+        _logger = new TestLoggerClass<UploadActor>();
 
-        _orchestration = new UploadOrchestration(
+        _actor = new UploadActor(
             _hotStorageService.Object,
             _runMediator.Object,
             _chunkManifestMediator.Object,
             _restoreManifestMediator.Object,
             _restoreRunMediator.Object,
             _restoreRequestsMediator.Object,
-            Mock.Of<ISnsOrchestrationMediator>(),
+            Mock.Of<ISnsMessageMediator>(),
             _contextResolver.Object,
             _logger);
     }
@@ -114,10 +114,10 @@ public class UploadOrchestrationTests
             .Returns(() => restoreRequestData);
 
         // Act
-        await _orchestration.StartAsync(cancellationToken);
+        await _actor.StartAsync(cancellationToken);
         await Task.Delay(2000); // Allow some processing time
-        await (_orchestration.ExecuteTask ?? Task.CompletedTask);
-        await _orchestration.StopAsync(cancellationToken);
+        await (_actor.ExecuteTask ?? Task.CompletedTask);
+        await _actor.StopAsync(cancellationToken);
 
         // Assert
         _hotStorageService.Verify(x => x.UploadAsync("archive1", It.IsAny<object>(), It.IsAny<CancellationToken>()),
@@ -189,22 +189,22 @@ public class UploadOrchestrationTests
             .Returns(Task.CompletedTask);
 
         // Act
-        _logger = new TestLoggerClass<UploadOrchestration>();
+        _logger = new TestLoggerClass<UploadActor>();
 
-        _orchestration = new UploadOrchestration(
+        _actor = new UploadActor(
             _hotStorageService.Object,
             _runMediator.Object,
             _chunkManifestMediator.Object,
             _restoreManifestMediator.Object,
             _restoreRunMediator.Object,
             _restoreRequestsMediator.Object,
-            Mock.Of<ISnsOrchestrationMediator>(),
+            Mock.Of<ISnsMessageMediator>(),
             _contextResolver.Object,
             _logger);
 
-        await _orchestration.StartAsync(cancellationToken);
-        await (_orchestration.ExecuteTask ?? Task.CompletedTask);
-        await _orchestration.StopAsync(cancellationToken);
+        await _actor.StartAsync(cancellationToken);
+        await (_actor.ExecuteTask ?? Task.CompletedTask);
+        await _actor.StopAsync(cancellationToken);
 
         // Assert
         var errorLogs = _logger.LogRecords.Where(x => x.LogLevel == LogLevel.Error).ToList();
@@ -273,12 +273,12 @@ public class UploadOrchestrationTests
             .Returns(async () => { await Task.Delay(100, cts.Token); });
 
         // Act
-        await _orchestration.StartAsync(cts.Token);
+        await _actor.StartAsync(cts.Token);
         await Task.Delay(50); // Let it start processing
         cts.Cancel();
         await Task.Delay(200); // Allow cancellation to propagate
-        await _orchestration.StopAsync(CancellationToken.None);
-        await (_orchestration.ExecuteTask ?? Task.CompletedTask);
+        await _actor.StopAsync(CancellationToken.None);
+        await (_actor.ExecuteTask ?? Task.CompletedTask);
 
         // Assert - Should not throw and should handle cancellation gracefully
         var errorLogs = _logger.LogRecords.Where(x => x.LogLevel == LogLevel.Error).ToList();
@@ -305,10 +305,10 @@ public class UploadOrchestrationTests
             .Returns(() => CreateAsyncEnumerable<RestoreRun>([]));
 
         // Act
-        await _orchestration.StartAsync(cancellationToken);
+        await _actor.StartAsync(cancellationToken);
         await Task.Delay(100);
-        await (_orchestration.ExecuteTask ?? Task.CompletedTask);
-        await _orchestration.StopAsync(cancellationToken);
+        await (_actor.ExecuteTask ?? Task.CompletedTask);
+        await _actor.StopAsync(cancellationToken);
 
         // Assert
         _hotStorageService.Verify(
@@ -363,11 +363,11 @@ public class UploadOrchestrationTests
             .Returns(() => CreateAsyncEnumerable<CurrentRestoreRequests>([]));
 
         // Act
-        await _orchestration.StartAsync(cancellationToken);
+        await _actor.StartAsync(cancellationToken);
         await Task.Delay(1200); // Allow time for processing with delays
-        await (_orchestration.ExecuteTask ?? Task.CompletedTask);
-        await _orchestration.StopAsync(cancellationToken);
-        await (_orchestration.ExecuteTask ?? Task.CompletedTask);
+        await (_actor.ExecuteTask ?? Task.CompletedTask);
+        await _actor.StopAsync(cancellationToken);
+        await (_actor.ExecuteTask ?? Task.CompletedTask);
         stopwatch.Stop();
 
         // Assert
@@ -426,9 +426,9 @@ public class UploadOrchestrationTests
             .ThrowsAsync(chunkException);
 
         // Act
-        await _orchestration.StartAsync(cancellationToken);
-        await (_orchestration.ExecuteTask ?? Task.CompletedTask);
-        await _orchestration.StopAsync(cancellationToken);
+        await _actor.StartAsync(cancellationToken);
+        await (_actor.ExecuteTask ?? Task.CompletedTask);
+        await _actor.StopAsync(cancellationToken);
 
         // Assert
         var errorLogs = _logger.LogRecords.Where(x => x.LogLevel == LogLevel.Error).ToList();

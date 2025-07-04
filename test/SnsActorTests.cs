@@ -8,22 +8,22 @@ using Moq;
 
 namespace test;
 
-public class SnsOrchestrationTests
+public class SnsActorTests
 {
     private readonly Mock<IAwsClientFactory> _clientFactory;
     private readonly Mock<IContextResolver> _contextResolver;
-    private readonly TestLoggerClass<SnsOrchestration> _logger;
-    private readonly SnsOrchestration _orchestration;
+    private readonly TestLoggerClass<SnsActor> _logger;
+    private readonly SnsActor _actor;
     private readonly Mock<IAmazonSimpleNotificationService> _snsClient;
-    private readonly Mock<ISnsOrchestrationMediator> _snsOrchestrationMediator;
+    private readonly Mock<ISnsMessageMediator> _snsOrchestrationMediator;
 
-    public SnsOrchestrationTests()
+    public SnsActorTests()
     {
-        _snsOrchestrationMediator = new Mock<ISnsOrchestrationMediator>();
+        _snsOrchestrationMediator = new Mock<ISnsMessageMediator>();
         _contextResolver = new Mock<IContextResolver>();
         _clientFactory = new Mock<IAwsClientFactory>();
         _snsClient = new Mock<IAmazonSimpleNotificationService>();
-        _logger = new TestLoggerClass<SnsOrchestration>();
+        _logger = new TestLoggerClass<SnsActor>();
 
         // Setup default context resolver responses
         SetupDefaultContextResolver();
@@ -31,7 +31,7 @@ public class SnsOrchestrationTests
         _clientFactory.Setup(x => x.CreateSnsClient(It.IsAny<CancellationToken>()))
             .ReturnsAsync(_snsClient.Object);
 
-        _orchestration = new SnsOrchestration(
+        _actor = new SnsActor(
             _snsOrchestrationMediator.Object,
             _logger,
             _contextResolver.Object,
@@ -58,9 +58,9 @@ public class SnsOrchestrationTests
             .ReturnsAsync(publishResponse);
 
         // Act
-        await _orchestration.StartAsync(CancellationToken.None);
-        await (_orchestration.ExecuteTask ?? Task.CompletedTask);
-        await _orchestration.StopAsync(CancellationToken.None);
+        await _actor.StartAsync(CancellationToken.None);
+        await (_actor.ExecuteTask ?? Task.CompletedTask);
+        await _actor.StopAsync(CancellationToken.None);
 
         // Assert
         _snsClient.Verify(x => x.PublishAsync(It.Is<PublishRequest>(req =>
@@ -94,9 +94,9 @@ public class SnsOrchestrationTests
             .ReturnsAsync(publishResponse);
 
         // Act
-        await _orchestration.StartAsync(CancellationToken.None);
-        await (_orchestration.ExecuteTask ?? Task.CompletedTask);
-        await _orchestration.StopAsync(CancellationToken.None);
+        await _actor.StartAsync(CancellationToken.None);
+        await (_actor.ExecuteTask ?? Task.CompletedTask);
+        await _actor.StopAsync(CancellationToken.None);
 
         // Assert
         _snsClient.Verify(x => x.PublishAsync(It.Is<PublishRequest>(req =>
@@ -125,9 +125,9 @@ public class SnsOrchestrationTests
             .ReturnsAsync(publishResponse);
 
         // Act
-        await _orchestration.StartAsync(CancellationToken.None);
-        await (_orchestration.ExecuteTask ?? Task.CompletedTask);
-        await _orchestration.StopAsync(CancellationToken.None);
+        await _actor.StartAsync(CancellationToken.None);
+        await (_actor.ExecuteTask ?? Task.CompletedTask);
+        await _actor.StopAsync(CancellationToken.None);
 
         // Assert
         _snsClient.Verify(x => x.PublishAsync(It.Is<PublishRequest>(req =>
@@ -153,9 +153,9 @@ public class SnsOrchestrationTests
             .ReturnsAsync(publishResponse);
 
         // Act
-        await _orchestration.StartAsync(CancellationToken.None);
-        await (_orchestration.ExecuteTask ?? Task.CompletedTask);
-        await _orchestration.StopAsync(CancellationToken.None);
+        await _actor.StartAsync(CancellationToken.None);
+        await (_actor.ExecuteTask ?? Task.CompletedTask);
+        await _actor.StopAsync(CancellationToken.None);
 
         // Assert
         _snsClient.Verify(x => x.PublishAsync(It.Is<PublishRequest>(req =>
@@ -184,7 +184,7 @@ public class SnsOrchestrationTests
             .Returns(messages);
 
         // Act
-        var orchestration = new SnsOrchestration(
+        var orchestration = new SnsActor(
             _snsOrchestrationMediator.Object,
             _logger,
             _contextResolver.Object,
@@ -211,9 +211,9 @@ public class SnsOrchestrationTests
             .Returns(messages);
 
         // Act
-        await _orchestration.StartAsync(CancellationToken.None);
-        await (_orchestration.ExecuteTask ?? Task.CompletedTask);
-        await _orchestration.StopAsync(CancellationToken.None);
+        await _actor.StartAsync(CancellationToken.None);
+        await (_actor.ExecuteTask ?? Task.CompletedTask);
+        await _actor.StopAsync(CancellationToken.None);
 
         // Assert
         var warningLogs = _logger.LogRecords.Where(x => x.LogLevel == LogLevel.Warning).ToList();
@@ -244,9 +244,9 @@ public class SnsOrchestrationTests
             .ReturnsAsync(new PublishResponse { MessageId = "msg-2" });
 
         // Act
-        await _orchestration.StartAsync(CancellationToken.None);
-        await (_orchestration.ExecuteTask ?? Task.CompletedTask);
-        await _orchestration.StopAsync(CancellationToken.None);
+        await _actor.StartAsync(CancellationToken.None);
+        await (_actor.ExecuteTask ?? Task.CompletedTask);
+        await _actor.StopAsync(CancellationToken.None);
 
         // Assert
         var errorLogs = _logger.LogRecords.Where(x => x.LogLevel == LogLevel.Error).ToList();
@@ -279,11 +279,11 @@ public class SnsOrchestrationTests
             });
 
         // Act
-        await _orchestration.StartAsync(cts.Token);
+        await _actor.StartAsync(cts.Token);
         await Task.Delay(50); // Let it start processing
         cts.Cancel();
         await Task.Delay(200); // Allow cancellation to propagate
-        await (_orchestration.ExecuteTask ?? Task.CompletedTask);
+        await (_actor.ExecuteTask ?? Task.CompletedTask);
 
         // Assert - Should not throw and should handle cancellation gracefully
         var errorLogs = _logger.LogRecords.Where(x => x.LogLevel == LogLevel.Error).ToList();
@@ -310,9 +310,9 @@ public class SnsOrchestrationTests
             .ReturnsAsync(new PublishResponse { MessageId = "msg-123" });
 
         // Act
-        await _orchestration.StartAsync(CancellationToken.None);
-        await (_orchestration.ExecuteTask ?? Task.CompletedTask);
-        await _orchestration.StopAsync(CancellationToken.None);
+        await _actor.StartAsync(CancellationToken.None);
+        await (_actor.ExecuteTask ?? Task.CompletedTask);
+        await _actor.StopAsync(CancellationToken.None);
 
         // Assert
         _snsClient.Verify(x => x.PublishAsync(It.Is<PublishRequest>(req =>

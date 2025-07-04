@@ -6,16 +6,16 @@ using Moq;
 
 namespace test;
 
-public class DownloadFileOrchestrationTests
+public class DownloadFileActorTests
 {
     private readonly Mock<IContextResolver> _ctx = new();
-    private readonly Mock<ILogger<DownloadFileOrchestration>> _logger = new();
+    private readonly Mock<ILogger<DownloadFileActor>> _logger = new();
     private readonly Mock<IDownloadFileMediator> _mediator = new();
     private readonly Mock<IS3ChunkedFileReconstructor> _reconstructor = new();
     private readonly Mock<IRestoreService> _restoreService = new();
     private readonly Mock<IRetryMediator> _retryMediator = new();
 
-    private DownloadFileOrchestration CreateOrch(Channel<DownloadFileFromS3Request> chan)
+    private DownloadFileActor CreateOrch(Channel<DownloadFileFromS3Request> chan)
     {
         _mediator.Setup(m => m.GetDownloadRequests(It.IsAny<CancellationToken>()))
             .Returns(chan.Reader.ReadAllAsync());
@@ -26,7 +26,7 @@ public class DownloadFileOrchestrationTests
         _ctx.Setup(c => c.KeepOwnerGroup()).Returns(false);
         _ctx.Setup(c => c.KeepAclEntries()).Returns(false);
 
-        return new DownloadFileOrchestration(
+        return new DownloadFileActor(
             _retryMediator.Object,
             _mediator.Object,
             _reconstructor.Object,
@@ -37,7 +37,7 @@ public class DownloadFileOrchestrationTests
 
     private MethodInfo GetWorker()
     {
-        return typeof(DownloadFileOrchestration)
+        return typeof(DownloadFileActor)
             .GetMethod("WorkerLoopAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
     }
 

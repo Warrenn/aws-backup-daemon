@@ -5,9 +5,9 @@ using Moq;
 
 namespace test;
 
-public class ArchiveFilesOrchestrationTests
+public class ArchiveFilesActorTests
 {
-    private ArchiveFilesOrchestration CreateOrchestrator(
+    private ArchiveFilesActor CreateOrchestrator(
         IAsyncEnumerable<ArchiveFileRequest> archiveFiles,
         bool requireProcessing,
         bool keepTimeStamps,
@@ -31,9 +31,9 @@ public class ArchiveFilesOrchestrationTests
         ctxMock.Setup(c => c.KeepOwnerGroup()).Returns(keepOwnerGroup);
         ctxMock.Setup(c => c.KeepAclEntries()).Returns(keepAclEntries);
 
-        var loggerMock = new Mock<ILogger<ArchiveFilesOrchestration>>();
+        var loggerMock = new Mock<ILogger<ArchiveFilesActor>>();
 
-        return new ArchiveFilesOrchestration(
+        return new ArchiveFilesActor(
             mediatorMock.Object,
             retryMediatorMock.Object,
             processorMock.Object,

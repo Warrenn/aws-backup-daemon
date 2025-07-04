@@ -4,12 +4,12 @@ using Moq;
 
 namespace test;
 
-public class ArchiveRunOrchestrationTests : IDisposable
+public class ArchiveRunActorTests : IDisposable
 {
     private readonly string _ignoreFilePath;
     private readonly string _tempDir;
 
-    public ArchiveRunOrchestrationTests()
+    public ArchiveRunActorTests()
     {
         _tempDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
         Directory.CreateDirectory(_tempDir);
@@ -41,7 +41,7 @@ public class ArchiveRunOrchestrationTests : IDisposable
         var archiveServiceMock = new Mock<IArchiveService>();
         var ctxMock = new Mock<IContextResolver>();
         var fileListerMock = new Mock<IFileLister>();
-        var loggerMock = new Mock<ILogger<ArchiveRunOrchestration>>();
+        var loggerMock = new Mock<ILogger<ArchiveRunActor>>();
 
         var runId = "run1";
         var path = _tempDir;
@@ -73,7 +73,7 @@ public class ArchiveRunOrchestrationTests : IDisposable
         fileListerMock.Setup(f => f.GetAllFiles(path, It.IsAny<string[]>()))
             .Returns(["fileA", "fileB"]);
 
-        var orchestrator = new ArchiveRunOrchestration(
+        var orchestrator = new ArchiveRunActor(
             mediatorMock.Object,
             archiveFileMediatorMock.Object,
             archiveServiceMock.Object,
@@ -110,7 +110,7 @@ public class ArchiveRunOrchestrationTests : IDisposable
         var archiveServiceMock = new Mock<IArchiveService>();
         var ctxMock = new Mock<IContextResolver>();
         var fileListerMock = new Mock<IFileLister>();
-        var loggerMock = new Mock<ILogger<ArchiveRunOrchestration>>();
+        var loggerMock = new Mock<ILogger<ArchiveRunActor>>();
 
         var runId = "run2";
         var path = _tempDir;
@@ -124,7 +124,7 @@ public class ArchiveRunOrchestrationTests : IDisposable
         archiveServiceMock.Setup(a => a.LookupArchiveRun(runId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(existingRun);
 
-        var orchestrator = new ArchiveRunOrchestration(
+        var orchestrator = new ArchiveRunActor(
             mediatorMock.Object,
             fileMediatorMock.Object,
             archiveServiceMock.Object,
@@ -159,7 +159,7 @@ public class ArchiveRunOrchestrationTests : IDisposable
         var archiveServiceMock = new Mock<IArchiveService>();
         var ctxMock = new Mock<IContextResolver>();
         var fileListerMock = new Mock<IFileLister>();
-        var loggerMock = new Mock<ILogger<ArchiveRunOrchestration>>();
+        var loggerMock = new Mock<ILogger<ArchiveRunActor>>();
 
         var runId = "run3";
         var path = _tempDir;
@@ -188,7 +188,7 @@ public class ArchiveRunOrchestrationTests : IDisposable
                     It.Is<string[]>(p => p.SequenceEqual(new[] { "*.tmp" }))))
             .Returns(new[] { "keep.txt" });
 
-        var orchestrator = new ArchiveRunOrchestration(
+        var orchestrator = new ArchiveRunActor(
             mediatorMock.Object,
             archiveFileMediatorMock.Object,
             archiveServiceMock.Object,
@@ -223,7 +223,7 @@ public class ArchiveRunOrchestrationTests : IDisposable
         var archiveServiceMock = new Mock<IArchiveService>();
         var ctxMock = new Mock<IContextResolver>();
         var fileListerMock = new Mock<IFileLister>();
-        var loggerMock = new Mock<ILogger<ArchiveRunOrchestration>>();
+        var loggerMock = new Mock<ILogger<ArchiveRunActor>>();
 
         var runId = "run4";
         var path = _tempDir;
@@ -242,7 +242,7 @@ public class ArchiveRunOrchestrationTests : IDisposable
         fileListerMock.Setup(f => f.GetAllFiles(path, originalLines))
             .Returns(new[] { "fileX" });
 
-        var orchestrator = new ArchiveRunOrchestration(
+        var orchestrator = new ArchiveRunActor(
             mediatorMock.Object,
             fileMock.Object,
             archiveServiceMock.Object,

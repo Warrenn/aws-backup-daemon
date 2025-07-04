@@ -11,7 +11,7 @@ public class ArchiveServiceTests
     private readonly Mock<ILogger<ArchiveService>> _loggerMock = new();
     private readonly Mock<IArchiveRunMediator> _runMed = new();
     private readonly Mock<IS3Service> _s3Service = new();
-    private readonly Mock<ISnsOrchestrationMediator> _snsMed = new();
+    private readonly Mock<ISnsMessageMediator> _snsMed = new();
 
     private ArchiveService CreateSut()
     {

@@ -107,7 +107,7 @@ public class CurrentArchiveRunRequests : ConcurrentDictionary<string, RunRequest
 public sealed class ArchiveService(
     IS3Service s3Service,
     IArchiveRunMediator runMed,
-    ISnsOrchestrationMediator snsMed,
+    ISnsMessageMediator snsMed,
     CurrentArchiveRuns currentRuns,
     CurrentArchiveRunRequests currentRequests,
     ILogger<ArchiveService> logger)

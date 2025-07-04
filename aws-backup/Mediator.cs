@@ -15,7 +15,7 @@ public sealed class Mediator(
     IRestoreManifestMediator,
     IRestoreRunMediator,
     IUploadChunksMediator,
-    ISnsOrchestrationMediator,
+    ISnsMessageMediator,
     IRollingFileMediator
 {
     private readonly Channel<ArchiveFileRequest> _archiveFileRequestChannel =
@@ -284,12 +284,12 @@ public sealed class Mediator(
         await _runRequestChannel.Writer.WriteAsync(runRequest, cancellationToken);
     }
 
-    IAsyncEnumerable<SnsMessage> ISnsOrchestrationMediator.GetMessages(CancellationToken cancellationToken)
+    IAsyncEnumerable<SnsMessage> ISnsMessageMediator.GetMessages(CancellationToken cancellationToken)
     {
         return _snsMessageChannel.Reader.ReadAllAsync(cancellationToken);
     }
 
-    async Task ISnsOrchestrationMediator.PublishMessage(SnsMessage message, CancellationToken cancellationToken)
+    async Task ISnsMessageMediator.PublishMessage(SnsMessage message, CancellationToken cancellationToken)
     {
         await _snsMessageChannel.Writer.WriteAsync(message, cancellationToken);
     }

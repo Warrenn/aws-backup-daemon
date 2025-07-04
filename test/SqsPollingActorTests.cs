@@ -8,16 +8,16 @@ using Moq;
 
 namespace test;
 
-public class SqsPollingOrchestrationTests
+public class SqsPollingActorTests
 {
     private readonly byte[] _aesKey = new byte[32]; // dummy key for AES
     private readonly Mock<IContextResolver> _ctx = new();
     private readonly Mock<IAwsClientFactory> _factory = new();
-    private readonly TestLoggerClass<SqsPollingOrchestration> _logger = new();
+    private readonly TestLoggerClass<SqsPollingActor> _logger = new();
     private readonly Mock<IRestoreRequestsMediator> _mediator = new();
     private readonly Mock<IAmazonSQS> _sqs = new();
 
-    private SqsPollingOrchestration CreateOrch()
+    private SqsPollingActor CreateOrch()
     {
         RandomNumberGenerator.Fill(_aesKey);
         _factory.Setup(f => f.CreateSqsClient(It.IsAny<CancellationToken>()))
@@ -33,12 +33,12 @@ public class SqsPollingOrchestrationTests
         _ctx.Setup(c => c.SqsEncryptionKey(It.IsAny<CancellationToken>()))
             .ReturnsAsync(_aesKey); // no encryption key
 
-        return new SqsPollingOrchestration(
+        return new SqsPollingActor(
             _factory.Object,
             _logger,
             _mediator.Object,
             _ctx.Object,
-            Mock.Of<ISnsOrchestrationMediator>()
+            Mock.Of<ISnsMessageMediator>()
         );
     }
 

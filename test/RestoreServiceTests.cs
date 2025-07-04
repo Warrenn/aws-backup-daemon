@@ -16,7 +16,7 @@ public class RestoreServiceTests
     private readonly S3RestoreChunkManifest _restoreMan = new();
     private readonly Mock<IRestoreRunMediator> _runMed = new();
     private readonly Mock<IS3Service> _s3Service = new();
-    private readonly Mock<ISnsOrchestrationMediator> _snsMed = new();
+    private readonly Mock<ISnsMessageMediator> _snsMed = new();
 
     private RestoreService CreateSut()
     {

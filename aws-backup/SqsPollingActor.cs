@@ -6,12 +6,12 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
-public sealed class SqsPollingOrchestration(
+public sealed class SqsPollingActor(
     IAwsClientFactory clientFactory,
-    ILogger<SqsPollingOrchestration> logger,
+    ILogger<SqsPollingActor> logger,
     IRestoreRequestsMediator mediator,
     IContextResolver contextResolver,
-    ISnsOrchestrationMediator snsOrchestrationMediator
+    ISnsMessageMediator snsMessageMediator
 ) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
@@ -108,7 +108,7 @@ public sealed class SqsPollingOrchestration(
                 }
                 catch (Exception ex)
                 {
-                    await snsOrchestrationMediator.PublishMessage(new SnsMessage(
+                    await snsMessageMediator.PublishMessage(new SnsMessage(
                         $"Failed to process SQS message {msg.MessageId}, it will become visible again",
                         ex.ToString()), cancellationToken);
                     logger.LogError(ex, "Failed to process message {Id}, it will become visible again", msg.MessageId);

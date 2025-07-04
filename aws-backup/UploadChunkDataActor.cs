@@ -17,9 +17,9 @@ public interface IUploadChunksMediator
     Task ProcessChunk(UploadChunkRequest request, CancellationToken cancellationToken);
 }
 
-public sealed class UploadChunkDataOrchestration(
+public sealed class UploadChunkDataActor(
     IUploadChunksMediator mediator,
-    ILogger<UploadChunkDataOrchestration> logger,
+    ILogger<UploadChunkDataActor> logger,
     IAwsClientFactory awsClientFactory,
     IContextResolver contextResolver,
     IDataChunkService dataChunkService,

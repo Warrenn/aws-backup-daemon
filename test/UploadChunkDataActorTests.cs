@@ -9,18 +9,18 @@ using Moq;
 
 namespace test;
 
-public class UploadChunkDataOrchestrationTests
+public class UploadChunkDataActorTests
 {
     private readonly Mock<IArchiveService> _archiveSvc = new();
     private readonly Mock<IAwsClientFactory> _awsFactory = new();
     private readonly Mock<IDataChunkService> _chunkSvc = new();
     private readonly Mock<IContextResolver> _ctx = new();
-    private readonly Mock<ILogger<UploadChunkDataOrchestration>> _logger = new();
+    private readonly Mock<ILogger<UploadChunkDataActor>> _logger = new();
     private readonly Mock<IUploadChunksMediator> _mediator = new();
     private readonly Mock<IRetryMediator> _retryMed = new();
 
     // weave together an orchestration whose WorkerLoopAsync we can call
-    private UploadChunkDataOrchestration CreateOrch(Channel<UploadChunkRequest> chan)
+    private UploadChunkDataActor CreateOrch(Channel<UploadChunkRequest> chan)
     {
         _mediator
             .Setup(m => m.GetChunks(It.IsAny<CancellationToken>()))
@@ -30,7 +30,7 @@ public class UploadChunkDataOrchestrationTests
         _ctx.Setup(c => c.NoOfS3FilesToUploadConcurrently()).Returns(1);
         _ctx.Setup(c => c.UploadAttemptLimit()).Returns(3);
 
-        return new UploadChunkDataOrchestration(
+        return new UploadChunkDataActor(
             _mediator.Object,
             _logger.Object,
             _awsFactory.Object,
@@ -43,7 +43,7 @@ public class UploadChunkDataOrchestrationTests
 
     private MethodInfo GetWorker()
     {
-        return typeof(UploadChunkDataOrchestration)
+        return typeof(UploadChunkDataActor)
             .GetMethod("WorkerLoopAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
     }
 

@@ -3,12 +3,12 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
-public sealed class DownloadFileOrchestration(
+public sealed class DownloadFileActor(
     IRetryMediator retryMediator,
     IDownloadFileMediator mediator,
     IS3ChunkedFileReconstructor reconstructor,
     IRestoreService restoreService,
-    ILogger<DownloadFileOrchestration> logger,
+    ILogger<DownloadFileActor> logger,
     IContextResolver contextResolver) : BackgroundService
 {
     private Task[] _workers = [];
@@ -43,6 +43,7 @@ public sealed class DownloadFileOrchestration(
                 var keepOwnerGroup = contextResolver.KeepOwnerGroup();
                 var keepAclEntries = contextResolver.KeepAclEntries();
 
+                logger.LogInformation("Processing download request {FilePath}", downloadRequest.FilePath);
                 var localFilePath = await reconstructor.ReconstructAsync(downloadRequest, cancellationToken);
                 var checkDownloadHash = contextResolver.CheckDownloadHash();
                 var hashPassed = !checkDownloadHash ||
@@ -51,11 +52,13 @@ public sealed class DownloadFileOrchestration(
 
                 if (!hashPassed)
                 {
+                    logger.LogWarning("Download hash verification failed for {FilePath}", downloadRequest.FilePath);
                     downloadRequest.Exception = new InvalidOperationException("Download hash verification failed");
                     await retryMediator.RetryAttempt(downloadRequest, cancellationToken);
                     continue;
                 }
 
+                logger.LogInformation("Download completed for {FilePath}", downloadRequest.FilePath);
                 if (keepTimeStamps)
                     FileHelper.SetTimestamps(localFilePath, downloadRequest.Created ?? DateTimeOffset.UtcNow,
                         downloadRequest.LastModified ?? DateTimeOffset.UtcNow);
@@ -68,7 +71,7 @@ public sealed class DownloadFileOrchestration(
                         cancellationToken);
 
                 if (keepAclEntries) FileHelper.ApplyAcl(downloadRequest.AclEntries ?? [], localFilePath);
-
+                
                 await restoreService.ReportDownloadComplete(downloadRequest, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -77,6 +80,7 @@ public sealed class DownloadFileOrchestration(
             }
             catch (Exception exception)
             {
+                logger.LogError(exception, "Error processing download request {FilePath}", downloadRequest.FilePath);
                 //queue to the failed queue;
                 downloadRequest.Exception = exception;
                 await retryMediator.RetryAttempt(downloadRequest, cancellationToken);

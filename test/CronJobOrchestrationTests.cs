@@ -74,7 +74,7 @@ public class CronJobOrchestrationTests
             mockFactory.Object,
             NullLogger<CronJobOrchestration>.Instance,
             timeProvider,
-            Mock.Of<ISnsOrchestrationMediator>());
+            Mock.Of<ISnsMessageMediator>());
 
         // Act: run in background
         var cts = new CancellationTokenSource();
@@ -149,7 +149,7 @@ public class CronJobOrchestrationTests
             mockFactory.Object,
             NullLogger<CronJobOrchestration>.Instance,
             timeProvider,
-            Mock.Of<ISnsOrchestrationMediator>());
+            Mock.Of<ISnsMessageMediator>());
 
         // Act
         var exec = orchestrator.StartAsync(cts.Token);
@@ -213,7 +213,7 @@ public class CronJobOrchestrationTests
             mockFactory.Object,
             NullLogger<CronJobOrchestration>.Instance,
             clock,
-            Mock.Of<ISnsOrchestrationMediator>());
+            Mock.Of<ISnsMessageMediator>());
 
         // Act
         await orchestrator.StartAsync(CancellationToken.None);

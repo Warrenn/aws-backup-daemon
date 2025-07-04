@@ -7,33 +7,33 @@ using Moq;
 
 namespace test;
 
-public class RestoreRunOrchestrationTests
+public class RestoreRunActorTests
 {
     private readonly Mock<IArchiveService> _archiveService = new();
     private readonly Mock<IContextResolver> _ctx = new();
-    private readonly TestLoggerClass<RestoreRunOrchestration> _logger = new();
+    private readonly TestLoggerClass<RestoreRunActor> _logger = new();
     private readonly Mock<IRestoreRequestsMediator> _mediator = new();
     private readonly Mock<IRestoreService> _restoreService = new();
 
-    private RestoreRunOrchestration CreateOrchestration(Channel<RestoreRequest> chan)
+    private RestoreRunActor CreateOrchestration(Channel<RestoreRequest> chan)
     {
         _mediator.Setup(m => m.GetRestoreRequests(It.IsAny<CancellationToken>()))
             .Returns(chan.Reader.ReadAllAsync());
         _ctx.Setup(c => c.RestoreId(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTimeOffset>()))
             .Returns((string runId, string paths, DateTimeOffset _) => $"rid-{runId}-{paths}");
-        return new RestoreRunOrchestration(
+        return new RestoreRunActor(
             _mediator.Object,
             _archiveService.Object,
             _restoreService.Object,
             _logger,
             _ctx.Object,
-            Mock.Of<ISnsOrchestrationMediator>(),
+            Mock.Of<ISnsMessageMediator>(),
             Mock.Of<CurrentRestoreRequests>());
     }
 
     private MethodInfo GetExecute()
     {
-        return typeof(RestoreRunOrchestration)
+        return typeof(RestoreRunActor)
             .GetMethod("ExecuteAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
     }
 

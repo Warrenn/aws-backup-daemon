@@ -14,12 +14,12 @@ public sealed record ArchiveFileRequest(
     string FilePath
 ) : RetryState;
 
-public sealed class ArchiveFilesOrchestration(
+public sealed class ArchiveFilesActor(
     IArchiveFileMediator mediator,
     IRetryMediator retryMediator,
     IChunkedEncryptingFileProcessor processor,
     IArchiveService archiveService,
-    ILogger<ArchiveFilesOrchestration> logger,
+    ILogger<ArchiveFilesActor> logger,
     IContextResolver contextResolver)
     : BackgroundService
 {

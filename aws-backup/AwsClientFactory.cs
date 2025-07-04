@@ -23,7 +23,7 @@ public sealed class AwsClientFactory : IAwsClientFactory
 {
     private readonly ConcurrentDictionary<Type, object> _clientCache = new();
     private readonly ILogger<AwsClientFactory> _logger;
-    private readonly ISnsOrchestrationMediator _orchestrationMediator;
+    private readonly ISnsMessageMediator _messageMediator;
     private readonly IContextResolver _resolver;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private readonly ITemporaryCredentialsServer _temporaryCredentialsServer;
@@ -33,13 +33,13 @@ public sealed class AwsClientFactory : IAwsClientFactory
         IContextResolver resolver,
         ILogger<AwsClientFactory> logger,
         ITemporaryCredentialsServer temporaryCredentialsServer,
-        ISnsOrchestrationMediator orchestrationMediator)
+        ISnsMessageMediator messageMediator)
     {
         _resolver = resolver;
         resolver.SetSsmClientFactory(CreateSsmClient);
         _logger = logger;
         _temporaryCredentialsServer = temporaryCredentialsServer;
-        _orchestrationMediator = orchestrationMediator;
+        _messageMediator = messageMediator;
     }
 
     public async Task<IAmazonS3> CreateS3Client(CancellationToken cancellationToken)
@@ -148,7 +148,7 @@ public sealed class AwsClientFactory : IAwsClientFactory
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to validate AWS credentials");
-            await _orchestrationMediator.PublishMessage(
+            await _messageMediator.PublishMessage(
                 new SnsMessage("Failed to validate AWS credentials", ex.ToString()),
                 cancellationToken);
             return false;
@@ -187,7 +187,7 @@ public sealed class AwsClientFactory : IAwsClientFactory
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to resolve AWS credentials using {CredentialSource}", name);
-                await _orchestrationMediator.PublishMessage(
+                await _messageMediator.PublishMessage(
                     new SnsMessage($"Failed to resolve AWS credentials using {name}", ex.ToString()),
                     cancellationToken);
             }

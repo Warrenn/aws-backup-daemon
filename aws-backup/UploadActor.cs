@@ -3,16 +3,16 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
-public sealed class UploadOrchestration(
+public sealed class UploadActor(
     IHotStorageService hotStorageService,
     IArchiveRunMediator runMediator,
     IChunkManifestMediator chunkManifestMediator,
     IRestoreManifestMediator restoreManifestMediator,
     IRestoreRunMediator restoreRunMediator,
     IRestoreRequestsMediator restoreRequestsMediator,
-    ISnsOrchestrationMediator snsOrchestrationMediator,
+    ISnsMessageMediator snsMessageMediator,
     IContextResolver contextResolver,
-    ILogger<UploadOrchestration> logger) : BackgroundService
+    ILogger<UploadActor> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
@@ -49,7 +49,7 @@ public sealed class UploadOrchestration(
                 }
                 catch (Exception ex)
                 {
-                    await snsOrchestrationMediator.PublishMessage(
+                    await snsMessageMediator.PublishMessage(
                         new ExceptionMessage($"Error processing upload {bucketKey}", ex.ToString()), cancellationToken);
                     logger.LogError(ex, "Error processing upload {BucketKey}", bucketKey);
                     // Optionally, you can rethrow or handle the exception as needed

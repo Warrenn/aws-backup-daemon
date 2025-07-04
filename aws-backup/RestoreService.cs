@@ -109,7 +109,7 @@ public sealed class RestoreService(
     IRestoreRunMediator runMed,
     IRestoreManifestMediator manifestMed,
     IRestoreRequestsMediator requestsMed,
-    ISnsOrchestrationMediator snsMed,
+    ISnsMessageMediator snsMed,
     IS3Service s3Service,
     S3RestoreChunkManifest restoreManifest,
     CurrentRestoreRequests currentReqs,
@@ -125,7 +125,7 @@ public sealed class RestoreService(
 
     public async Task<RestoreRun?> LookupRestoreRun(string restoreId, CancellationToken ct)
     {
-        ct.ThrowIfCancellationRequested();
+        
         if (_restoreRuns.TryGetValue(restoreId, out var cached)) return cached;
 
         if (!await s3Service.RestoreExists(restoreId, ct))
@@ -149,8 +149,6 @@ public sealed class RestoreService(
     {
         try
         {
-            ct.ThrowIfCancellationRequested();
-
             // locate our chunk
             var chunk = chunkManifest.Values
                 .FirstOrDefault(d => d.S3Key == s3Key && d.BucketName == bucketId);
@@ -186,7 +184,6 @@ public sealed class RestoreService(
     {
         try
         {
-            ct.ThrowIfCancellationRequested();
             if (!_restoreRuns.TryGetValue(req.RestoreId, out var run)) return;
             if (!run.RequestedFiles.TryGetValue(req.FilePath, out var fileMeta)) return;
 
@@ -221,7 +218,6 @@ public sealed class RestoreService(
     {
         try
         {
-            ct.ThrowIfCancellationRequested();
             if (!_restoreRuns.TryGetValue(req.RestoreId, out var run)) return;
             if (!run.RequestedFiles.TryGetValue(req.FilePath, out var fileMeta)) return;
 
@@ -259,7 +255,6 @@ public sealed class RestoreService(
     {
         try
         {
-            ct.ThrowIfCancellationRequested();
             currentReqs[run.RestoreId] = request;
             await requestsMed.SaveRunningRequest(currentReqs, ct);
 
@@ -419,7 +414,7 @@ public sealed class RestoreService(
         CancellationToken ct
     )
     {
-        ct.ThrowIfCancellationRequested();
+        
         foreach (var run in _restoreRuns.Values
                      .Where(r => r.RequestedFiles.Values.Any(f => f.Chunks.Contains(key))))
         {

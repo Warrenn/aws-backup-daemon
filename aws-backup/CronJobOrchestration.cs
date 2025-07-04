@@ -43,7 +43,7 @@ public sealed class CronJobOrchestration(
     ICronSchedulerFactory cronSchedulerFactory,
     ILogger<CronJobOrchestration> logger,
     TimeProvider timeProvider,
-    ISnsOrchestrationMediator snsOrchestrationMediator)
+    ISnsMessageMediator snsMessageMediator)
     : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
@@ -94,7 +94,7 @@ public sealed class CronJobOrchestration(
             }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
-                await snsOrchestrationMediator.PublishMessage(
+                await snsMessageMediator.PublishMessage(
                     new SnsMessage($"Error running cron job {configurationMonitor.CurrentValue.CronSchedule}",
                         ex.ToString()),
                     cancellationToken);

@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
-public interface ISnsOrchestrationMediator
+public interface ISnsMessageMediator
 {
     IAsyncEnumerable<SnsMessage> GetMessages(CancellationToken cancellationToken);
     Task PublishMessage(SnsMessage message, CancellationToken cancellationToken);
@@ -44,9 +44,9 @@ public sealed record ExceptionMessage(
     string Subject,
     string Message) : SnsMessage(Subject, Message);
 
-public sealed class SnsOrchestration(
-    ISnsOrchestrationMediator snsOrchestrationMediator,
-    ILogger<SnsOrchestration> logger,
+public sealed class SnsActor(
+    ISnsMessageMediator snsMessageMediator,
+    ILogger<SnsActor> logger,
     IContextResolver contextResolver,
     IAwsClientFactory clientFactory) : BackgroundService
 {
@@ -133,7 +133,7 @@ public sealed class SnsOrchestration(
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         var sns = await clientFactory.CreateSnsClient(cancellationToken);
-        await foreach (var message in snsOrchestrationMediator.GetMessages(cancellationToken))
+        await foreach (var message in snsMessageMediator.GetMessages(cancellationToken))
             try
             {
                 if (!_messageTypeToSnsArn.TryGetValue(message.GetType(), out var snsNotification))

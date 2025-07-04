@@ -18,22 +18,27 @@ public class UploadToS3Hooks(IRollingFileMediator rollingFileMediator) : FileLif
 {
     public override void OnFileDeleting(string path)
     {
-        File.Move(path, $"{path}.gz");
-        rollingFileMediator.Writer.TryWrite($"{path}.gz");
+        var uploadPath = $"{path}.gz";
+        if (File.Exists(uploadPath))
+            File.Delete(uploadPath);
+        File.Copy(path, uploadPath);
+        rollingFileMediator.Writer.TryWrite(uploadPath);
     }
 }
 
-public class RollingFileOrchestration(
+public class RollingFileActor(
     IRollingFileMediator rollingFileMediator,
     IContextResolver contextResolver,
     IAwsClientFactory factory,
-    ILogger<RollingFileOrchestration> logger) : BackgroundService
+    ILogger<RollingFileActor> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         await foreach (var filePath in rollingFileMediator.GetNextLoggingFile(cancellationToken))
             try
             {
+                if (!File.Exists(filePath)) continue;
+
                 var pipe = new Pipe();
                 var s3 = await factory.CreateS3Client(cancellationToken);
                 var logFolder = contextResolver.S3LogFolder();
@@ -73,6 +78,8 @@ public class RollingFileOrchestration(
                 await pipe.Writer.CompleteAsync();
 
                 await uploadTask;
+
+                File.Delete(filePath); // Delete the original file after upload
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

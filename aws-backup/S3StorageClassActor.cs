@@ -2,7 +2,7 @@ using Microsoft.Extensions.Hosting;
 
 namespace aws_backup;
 
-public sealed class S3StorageClassOrchestration(
+public sealed class S3StorageClassActor(
     IS3Service s3Service,
     IRestoreService restoreService,
     IContextResolver resolver

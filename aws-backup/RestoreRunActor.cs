@@ -5,13 +5,13 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
-public sealed class RestoreRunOrchestration(
+public sealed class RestoreRunActor(
     IRestoreRequestsMediator mediator,
     IArchiveService archiveService,
     IRestoreService restoreService,
-    ILogger<RestoreRunOrchestration> logger,
+    ILogger<RestoreRunActor> logger,
     IContextResolver contextResolver,
-    ISnsOrchestrationMediator snsOrchestrationMediator,
+    ISnsMessageMediator snsMessageMediator,
     CurrentRestoreRequests currentRestoreRequests
 ) : BackgroundService
 {
@@ -99,7 +99,7 @@ public sealed class RestoreRunOrchestration(
             }
             catch (Exception ex)
             {
-                await snsOrchestrationMediator.PublishMessage(new ExceptionMessage(
+                await snsMessageMediator.PublishMessage(new ExceptionMessage(
                     $"Error processing restore request: {ex.Message}",
                     ex.ToString()), cancellationToken);
                 logger.LogError(ex, "Error processing restore request: {Message}", ex.Message);
