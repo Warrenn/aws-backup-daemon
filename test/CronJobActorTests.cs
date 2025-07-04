@@ -21,7 +21,7 @@ internal class StubScheduler : ICronScheduler
     }
 }
 
-public class CronJobOrchestrationTests
+public class CronJobActorTests
 {
     [Fact]
     public async Task ExecutesJob_OnSchedule()
@@ -67,12 +67,12 @@ public class CronJobOrchestrationTests
         scheduler.Enqueue(() => startTime.AddSeconds(11));
         scheduler.Enqueue(() => null);
 
-        var orchestrator = new CronJobOrchestration(
+        var orchestrator = new CronJobActor(
             cfgMon.Object,
             mediatorMock.Object,
             resolverMock.Object,
             mockFactory.Object,
-            NullLogger<CronJobOrchestration>.Instance,
+            NullLogger<CronJobActor>.Instance,
             timeProvider,
             Mock.Of<ISnsMessageMediator>());
 
@@ -142,12 +142,12 @@ public class CronJobOrchestrationTests
             return Task.CompletedTask;
         };
 
-        var orchestrator = new CronJobOrchestration(
+        var orchestrator = new CronJobActor(
             cfgMon.Object,
             mediatorMock.Object,
             resolverMock.Object,
             mockFactory.Object,
-            NullLogger<CronJobOrchestration>.Instance,
+            NullLogger<CronJobActor>.Instance,
             timeProvider,
             Mock.Of<ISnsMessageMediator>());
 
@@ -206,12 +206,12 @@ public class CronJobOrchestrationTests
             return Task.CompletedTask;
         };
 
-        var orchestrator = new CronJobOrchestration(
+        var orchestrator = new CronJobActor(
             cfgMon.Object,
             mediatorMock.Object,
             resolverMock.Object,
             mockFactory.Object,
-            NullLogger<CronJobOrchestration>.Instance,
+            NullLogger<CronJobActor>.Instance,
             clock,
             Mock.Of<ISnsMessageMediator>());
 

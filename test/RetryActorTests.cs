@@ -8,18 +8,18 @@ namespace test;
 
 internal record TestRetryState : RetryState;
 
-public class RetryOrchestrationTests
+public class RetryActorTests
 {
     private readonly Mock<IContextResolver> _ctx = new();
-    private readonly Mock<ILogger<RetryOrchestration>> _logger = new();
+    private readonly Mock<ILogger<RetryActor>> _logger = new();
     private readonly Mock<IRetryMediator> _mediator = new();
 
-    private RetryOrchestration CreateOrch(Channel<RetryState> chan, TimeProvider tp)
+    private RetryActor CreateOrch(Channel<RetryState> chan, TimeProvider tp)
     {
         _mediator
             .Setup(m => m.GetRetries(It.IsAny<CancellationToken>()))
             .Returns(chan.Reader.ReadAllAsync());
-        return new RetryOrchestration(
+        return new RetryActor(
             _mediator.Object,
             _ctx.Object,
             _logger.Object,

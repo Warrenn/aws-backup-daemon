@@ -160,7 +160,7 @@ public sealed class RestoreService(
             // dispatch based on current + incoming
             if (status == S3ChunkRestoreStatus.PendingDeepArchiveRestore &&
                 storageClass != S3StorageClass.DeepArchive)
-                await HandlePendingToReady(key, chunk, ct);
+                await HandlePendingToReady(key, ct);
             else if (status == S3ChunkRestoreStatus.ReadyToRestore &&
                      storageClass == S3StorageClass.DeepArchive)
                 await HandleReadyToPending(key, chunk, ct);
@@ -285,11 +285,8 @@ public sealed class RestoreService(
         }
     }
 
-    private async Task HandlePendingToReady(
-        ByteArrayKey key,
-        CloudChunkDetails chunk,
-        CancellationToken ct
-    )
+    private async Task HandlePendingToReady(ByteArrayKey key,
+        CancellationToken ct)
     {
         logger.LogInformation("Chunk {Key} moved Pending→Ready", key);
         restoreManifest[key] = S3ChunkRestoreStatus.ReadyToRestore;

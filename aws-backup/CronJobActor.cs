@@ -36,12 +36,12 @@ public class CronScheduler(string cron) : ICronScheduler
     }
 }
 
-public sealed class CronJobOrchestration(
+public sealed class CronJobActor(
     IOptionsMonitor<Configuration> configurationMonitor,
     IRunRequestMediator mediator,
     IContextResolver contextResolver,
     ICronSchedulerFactory cronSchedulerFactory,
-    ILogger<CronJobOrchestration> logger,
+    ILogger<CronJobActor> logger,
     TimeProvider timeProvider,
     ISnsMessageMediator snsMessageMediator)
     : BackgroundService

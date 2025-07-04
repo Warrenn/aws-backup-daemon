@@ -120,6 +120,7 @@ public sealed class UploadChunkDataActor(
             }
             catch (Exception ex)
             {
+                logger.LogError(ex, "Upload failed");
                 request.Exception = ex;
                 await retryMediator.RetryAttempt(request, cancellationToken);
             }

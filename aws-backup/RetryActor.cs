@@ -19,10 +19,10 @@ public interface IRetryMediator
     Task RetryAttempt(RetryState attempt, CancellationToken cancellationToken);
 }
 
-public sealed class RetryOrchestration(
+public sealed class RetryActor(
     IRetryMediator mediator,
     IContextResolver contextResolver,
-    ILogger<RetryOrchestration> logger,
+    ILogger<RetryActor> logger,
     TimeProvider provider) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
