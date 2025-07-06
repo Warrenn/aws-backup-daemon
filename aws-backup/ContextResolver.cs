@@ -90,6 +90,7 @@ public interface IContextResolver
     string LogPath();
     string S3LogFolder();
     LogEventLevel LogLevel();
+    int StoragePageDelayMilliseconds();
 }
 
 public sealed class ContextResolver : IContextResolver
@@ -577,6 +578,11 @@ public sealed class ContextResolver : IContextResolver
 
         _logLevel = level;
         return level;
+    }
+
+    public int StoragePageDelayMilliseconds()
+    {
+        return _configOptions.CurrentValue.StoragePageDelayMilliseconds ?? 5;
     }
 
     private void ClearCache()

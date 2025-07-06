@@ -36,6 +36,7 @@ public sealed record Configuration(
     int? ShutdownTimeoutSeconds = null,
     int? RetryCheckIntervalMs = null,
     int? StorageCheckDelaySeconds = null,
+    int? StoragePageDelayMilliseconds = null,
     int? DelayBetweenUploadsSeconds = null,
     int? DownloadAttemptLimit = null,
     int? UploadAttemptLimit = null,

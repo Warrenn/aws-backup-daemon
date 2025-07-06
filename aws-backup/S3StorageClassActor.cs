@@ -16,7 +16,8 @@ public sealed class S3StorageClassActor(
             {
                 await restoreService.ReportS3Storage(s3StorageInfo.BucketName, s3StorageInfo.Key,
                     s3StorageInfo.StorageClass, cancellationToken);
-                await Task.Delay(100, cancellationToken); // small delay to avoid overwhelming the service
+                var storagePageDelay = resolver.StoragePageDelayMilliseconds();
+                await Task.Delay(storagePageDelay, cancellationToken); // small delay to avoid overwhelming the service
             }
 
             var storageCheckDelay = resolver.StorageCheckDelaySeconds();
