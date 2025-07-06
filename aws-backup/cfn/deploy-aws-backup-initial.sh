@@ -39,10 +39,11 @@ wait_for_stable_status() {
 echo "Checking existing stack status..."
 CURRENT_STATUS=$(check_stack_status)
 
-if [[ "$CURRENT_STATUS" == "ROLLBACK_COMPLETE" || "$CURRENT_STATUS" == "CREATE_FAILED" ]]; then
+if [[ "$CURRENT_STATUS" == *"ROLLBACK_COMPLETE" || "$CURRENT_STATUS" == *"CREATE_FAILED" ]]; then
   echo "Deleting failed stack: $CURRENT_STATUS"
   aws cloudformation delete-stack --stack-name "$STACK_NAME" --region "$REGION"
   aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME" --region "$REGION"
+  CURRENT_STATUS="STACK_NOT_FOUND"
   echo "Stack deleted"
 elif [[ "$CURRENT_STATUS" == *_IN_PROGRESS ]]; then
   echo "Stack is in progress: waiting until stable..."

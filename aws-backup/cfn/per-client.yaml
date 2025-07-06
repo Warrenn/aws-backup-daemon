@@ -27,7 +27,7 @@ Parameters:
 
   ParamBasePath:
     Type: String
-    Default: "/aws-backup"
+    Default: "/backup-application"
     Description: Base path for SSM parameter names
 
 Resources:
@@ -62,10 +62,13 @@ Resources:
           - Effect: Allow
             Principal:
               Service: rolesanywhere.amazonaws.com
-            Action: sts:AssumeRole
+            Action: 
+             - sts:AssumeRole
+             - sts:SetSourceIdentity
+             - sts:TagSession
             Condition:
               StringEquals:
-                aws:SourceArn: !GetAtt TrustAnchor.Arn
+                aws:SourceArn: !Sub "arn:${AWS::Partition}:rolesanywhere:${AWS::Region}:${AWS::AccountId}:trust-anchor/${TrustAnchor}"
       MaxSessionDuration: !Ref MaxSessionDuration
       Path: "/"
       Policies:
@@ -76,36 +79,38 @@ Resources:
               - Effect: Allow
                 Action:
                   - sts:GetCallerIdentity
+                  - sts:SetSourceIdentity
+                  - sts:TagSession
+                  - sts:GetSourceIdentity
                 Resource: "*"
 
               - Effect: Allow
                 Action:
                   - sqs:ReceiveMessage
                   - sqs:DeleteMessage
+                  - sqs:SendMessage
                   - sqs:GetQueueAttributes
                 Resource: !GetAtt ClientQueue.Arn
 
               - Effect: Allow
-                Action: sns:Publish
-                Resource: !Sub "arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ClientId}/*"
+                Action: 
+                  - sns:Publish
+                  - sns:ListSubscriptionsByTopic
+                  - sns:GetTopicAttributes
+                Resource: !Sub "arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ClientId}-*"
 
               - Effect: Allow
                 Action:
                   - ssm:DescribeParameters
                   - ssm:GetParameters
                   - ssm:GetParameter
-                  - ssm:PutParameter
                 Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:${ParamBasePath}/${ClientId}/*"
 
               - Effect: Allow
                 Action:
                   - kms:Decrypt
-                  - kms:Encrypt
                   - kms:GenerateDataKey
-                Resource: "*"
-                Condition:
-                  StringEquals:
-                    kms:ViaService: !Sub "ssm.${AWS::Region}.amazonaws.com"
+                Resource: "arn:aws:kms:*:*:key/alias/aws/ssm"
 
               - Effect: Allow
                 Action:
@@ -117,18 +122,25 @@ Resources:
                   - s3:GetObjectAttributes
                   - s3:RestoreObject
                 Resource:
-                  - !ImportValue aws-backup-initial-BucketArn
-                  - !Sub "${!ImportValue aws-backup-initial-bucket-arn}/${ClientId}/*"
-
+                  - !ImportValue aws-backup-initial-bucket-arn
+                  - !Sub
+                    - "${BucketArn}/${ClientId}/*"
+                    - BucketArn: !ImportValue aws-backup-initial-bucket-arn
+                      
               - Effect: Allow
                 Action:
                   - s3:GetObjectTagging
                   - s3:PutObjectTagging
                   - s3:DeleteObjectTagging
-                Resource: !Sub "${!ImportValue aws-backup-initial-bucket-arn}/${ClientId}/*"
+                Resource:
+                  - !Sub
+                    - "${BucketArn}/${ClientId}/*"
+                    - BucketArn: !ImportValue aws-backup-initial-bucket-arn
 
   ClientQueue:
     Type: AWS::SQS::Queue
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       QueueName: !Sub "${ClientId}-queue"
       VisibilityTimeout: !Ref VisibilityTimeout
@@ -157,64 +169,62 @@ Resources:
   ArchiveCompleteTopic:
     Type: AWS::SNS::Topic
     Properties:
-      TopicName: !Sub "${ClientId}/archive-complete"
+      TopicName: !Sub "${ClientId}-archive-complete"
       Tags:
         - Key: client-id
           Value: !Ref ClientId
-
+          
   RestoreCompleteTopic:
     Type: AWS::SNS::Topic
     Properties:
-      TopicName: !Sub "${ClientId}/restore-complete"
+      TopicName: !Sub "${ClientId}-restore-complete"
       Tags:
         - Key: client-id
           Value: !Ref ClientId
-
+          
   ArchiveCompleteErrorsTopic:
     Type: AWS::SNS::Topic
     Properties:
-      TopicName: !Sub "${ClientId}/archive-complete-errors"
+      TopicName: !Sub "${ClientId}-archive-complete-errors"
       Tags:
         - Key: client-id
           Value: !Ref ClientId
-
+          
   RestoreCompleteErrorsTopic:
     Type: AWS::SNS::Topic
     Properties:
-      TopicName: !Sub "${ClientId}/restore-complete-errors"
+      TopicName: !Sub "${ClientId}-restore-complete-errors"
       Tags:
         - Key: client-id
           Value: !Ref ClientId
-
+          
   ExceptionTopic:
     Type: AWS::SNS::Topic
     Properties:
-      TopicName: !Sub "${ClientId}/exception"
+      TopicName: !Sub "${ClientId}-exception"
       Tags:
         - Key: client-id
           Value: !Ref ClientId
-
+          
   AesFileEncryptionKeyParam:
     Type: AWS::SSM::Parameter
     Properties:
       Name: !Sub "${ParamBasePath}/${ClientId}/aes-file-encryption-key"
-      Type: SecureString
+      Type: String
       Value: "PLACEHOLDER_FILE_KEY"
       Tier: Standard
       Tags:
-        - Key: client-id
-          Value: !Ref ClientId
+        client-id: !Ref ClientId
 
   AesSqsEncryptionKeyParam:
     Type: AWS::SSM::Parameter
     Properties:
       Name: !Sub "${ParamBasePath}/${ClientId}/aes-sqs-encryption-key"
-      Type: SecureString
+      Type: String
       Value: "PLACEHOLDER_SQS_KEY"
       Tier: Standard
       Tags:
-        - Key: client-id
-          Value: !Ref ClientId
+        client-id: !Ref ClientId
 
 Outputs:
   QueueUrl:
@@ -227,11 +237,11 @@ Outputs:
 
   TrustAnchorArn:
     Description: ARN of the Roles Anywhere Trust Anchor
-    Value: !GetAtt TrustAnchor.Arn
+    Value: !Sub "arn:${AWS::Partition}:rolesanywhere:${AWS::Region}:${AWS::AccountId}:trust-anchor/${TrustAnchor}"
 
   ProfileArn:
     Description: ARN of the Roles Anywhere Profile
-    Value: !GetAtt RolesAnywhereProfile.Arn
+    Value: !Sub "arn:${AWS::Partition}:rolesanywhere:${AWS::Region}:${AWS::AccountId}:profile/${RolesAnywhereProfile}"
 
   RoleArn:
     Description: ARN of the IAM Role assumed via Roles Anywhere

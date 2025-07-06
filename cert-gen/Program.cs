@@ -47,6 +47,12 @@ public static class Program
             Description = "Path to the public client certificate file (PEM format).",
             Required = true
         };
+        var expiryOpt = new Option<DateTime>("--expiry", "-e")
+        {
+            Description = "Certificate expiry date in ISO 8601 format (defaults to 10 years from now).",
+            Required = false,
+            DefaultValueFactory = _ => DateTime.UtcNow.AddYears(10)
+        };
 
         var rootCommand = new RootCommand
         {
@@ -54,7 +60,8 @@ public static class Program
             caPrivateKeyOpt,
             caCertOpt,
             clientPrivateKeyOpt,
-            clientCertOpt
+            clientCertOpt,
+            expiryOpt
         };
 
         rootCommand.SetAction(parsedArgs =>
@@ -64,15 +71,22 @@ public static class Program
             var caCertPath = parsedArgs.GetRequiredValue(caCertOpt);
             var clientPrivateKeyPath = parsedArgs.GetRequiredValue(clientPrivateKeyOpt);
             var clientCertPath = parsedArgs.GetRequiredValue(clientCertOpt);
+            var expiryDate = parsedArgs.GetValue(expiryOpt);
+
+            username = RegexHelper
+                .NonAlphanumericRegex()
+                .Replace(username, string.Empty)
+                .Trim()
+                .ToLowerInvariant();
 
             // 1) Generate CA
             var caKeyPair = GenerateRsaKeyPair(2048);
-            var caCert = GenerateCaCertificate(caKeyPair, $"Root CA {username}");
+            var caCert = GenerateCaCertificate(caKeyPair, $"Root CA {username}-ca", expiryDate);
 
             // 2) Generate client cert
             var clientKeyPair = GenerateRsaKeyPair(2048);
             var clientCert = GenerateClientCertificate(
-                clientKeyPair.Public, caKeyPair.Private, caCert, username);
+                clientKeyPair.Public, caKeyPair.Private, caCert, $"{username}-client", expiryDate);
 
             // 3) Export as PEM
             ExportPrivateKeyPem(caKeyPair.Private, caPrivateKeyPath);
@@ -100,13 +114,13 @@ public static class Program
 
     private static X509Certificate GenerateCaCertificate(
         AsymmetricCipherKeyPair keyPair,
-        string subjectCn)
+        string subjectCn,
+        DateTime notAfter)
     {
         var certGen = new X509V3CertificateGenerator();
         var cn = new X509Name($"CN={subjectCn}");
         var serial = BigInteger.ProbablePrime(120, GetRandom());
         var notBefore = DateTime.UtcNow.Date;
-        var notAfter = notBefore.AddYears(10);
 
         certGen.SetSerialNumber(serial);
         certGen.SetIssuerDN(cn);
@@ -142,14 +156,14 @@ public static class Program
         AsymmetricKeyParameter clientPub,
         AsymmetricKeyParameter caPrivate,
         X509Certificate caCert,
-        string subjectCn)
+        string subjectCn,
+        DateTime notAfter)
     {
         var certGen = new X509V3CertificateGenerator();
         var subj = new X509Name($"CN={subjectCn}");
         var issuer = caCert.SubjectDN;
         var serial = BigInteger.ProbablePrime(120, GetRandom());
         var notBefore = DateTime.UtcNow.Date;
-        var notAfter = notBefore.AddYears(1);
 
         certGen.SetSerialNumber(serial);
         certGen.SetIssuerDN(issuer);
