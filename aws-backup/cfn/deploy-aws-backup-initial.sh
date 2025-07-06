@@ -59,6 +59,10 @@ if [[ "$CURRENT_STATUS" == "STACK_NOT_FOUND" ]]; then
     --template-body "file://${TEMPLATE_FILE}" \
     --capabilities CAPABILITY_NAMED_IAM \
     --parameters ParameterKey=BucketNamePrefix,ParameterValue="$BUCKET_PREFIX"
+  echo "Waiting for stack operation to complete..."
+  aws cloudformation wait stack-create-complete \
+    --stack-name "$STACK_NAME" \
+    --region "$REGION" 2>/dev/null
 else
   echo "Updating existing stack..."
   set +e
@@ -77,15 +81,11 @@ else
     echo "Update failed with code $UPDATE_CODE"
     exit $UPDATE_CODE
   fi
+  echo "Waiting for stack update to complete..."
+  aws cloudformation wait stack-update-complete \
+    --stack-name "$STACK_NAME" \
+    --region "$REGION"
 fi
-
-echo "Waiting for stack operation to complete..."
-aws cloudformation wait stack-create-complete \
-  --stack-name "$STACK_NAME" \
-  --region "$REGION" 2>/dev/null || \
-aws cloudformation wait stack-update-complete \
-  --stack-name "$STACK_NAME" \
-  --region "$REGION"
 
 FINAL_STATUS=$(check_stack_status)
 if [[ "$FINAL_STATUS" == "CREATE_COMPLETE" || "$FINAL_STATUS" == "UPDATE_COMPLETE" ]]; then
