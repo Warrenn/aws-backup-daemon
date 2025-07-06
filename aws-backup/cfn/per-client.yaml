@@ -205,26 +205,6 @@ Resources:
       Tags:
         - Key: client-id
           Value: !Ref ClientId
-          
-  AesFileEncryptionKeyParam:
-    Type: AWS::SSM::Parameter
-    Properties:
-      Name: !Sub "${ParamBasePath}/${ClientId}/aes-file-encryption-key"
-      Type: String
-      Value: "PLACEHOLDER_FILE_KEY"
-      Tier: Standard
-      Tags:
-        client-id: !Ref ClientId
-
-  AesSqsEncryptionKeyParam:
-    Type: AWS::SSM::Parameter
-    Properties:
-      Name: !Sub "${ParamBasePath}/${ClientId}/aes-sqs-encryption-key"
-      Type: String
-      Value: "PLACEHOLDER_SQS_KEY"
-      Tier: Standard
-      Tags:
-        client-id: !Ref ClientId
 
 Outputs:
   QueueUrl:
