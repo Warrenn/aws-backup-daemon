@@ -32,7 +32,7 @@ public static class IamExtensions
         } while (marker != null);
 
         return new AwsConfiguration(
-            tags.TryGetValue("chunk-size-bytes", out var chunkSize) ? long.Parse(chunkSize) : 0,
+            tags.TryGetValue("chunk-size-bytes", out var chunkSize) ? long.Parse(chunkSize) : 524288000L,
             tags.GetValueOrDefault("aes-sqs-encryption-path", string.Empty),
             tags.GetValueOrDefault("aes-file-encryption-path", string.Empty),
             tags.GetValueOrDefault("bucket-name", string.Empty),
