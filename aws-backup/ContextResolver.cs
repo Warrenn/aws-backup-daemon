@@ -1,10 +1,6 @@
 using Amazon;
 using Amazon.Runtime;
 using Amazon.S3;
-using Amazon.SimpleSystemsManagement;
-using Amazon.SimpleSystemsManagement.Model;
-using Microsoft.Extensions.Options;
-using Serilog.Events;
 
 namespace aws_backup;
 
@@ -29,15 +25,12 @@ public interface IContextResolver
     DateTimeOffset NextRetryTime(int attemptCount);
 
     // s3
-    string S3BucketId();
     S3StorageClass ColdStorage();
     S3StorageClass HotStorage();
+    S3StorageClass LowCostStorage();
     ServerSideEncryptionMethod ServerSideEncryption();
     int ReadBufferSize();
-    long ChunkSizeBytes();
     long S3PartSize();
-    Task<byte[]> AesFileEncryptionKey(CancellationToken cancellationToken);
-    Task<byte[]> SqsEncryptionKey(CancellationToken cancellationToken);
     bool KeepTimeStamps();
     bool KeepOwnerGroup();
     bool KeepAclEntries();
@@ -53,7 +46,6 @@ public interface IContextResolver
     int DelayBetweenUploadsSeconds();
     int DownloadAttemptLimit();
     int UploadAttemptLimit();
-    string SqsQueueUrl();
     int? SqsWaitTimeSeconds();
     int? SqsMaxNumberOfMessages();
     int? SqsVisibilityTimeout();
@@ -61,14 +53,13 @@ public interface IContextResolver
     bool EncryptSqs();
     int GeneralRetryLimit();
     bool UseS3Accelerate();
-    RegionEndpoint GetAwsRegion();
     RequestRetryMode GetAwsRetryMode();
+    RegionEndpoint GetAwsRegion();
     string RolesAnyWhereProfileArn();
     string RolesAnyWhereRoleArn();
     string RolesAnyWhereTrustAnchorArn();
     string RolesAnyWhereCertificateFileName();
     string RolesAnyWherePrivateKeyFileName();
-    public void SetSsmClientFactory(Func<CancellationToken, Task<IAmazonSimpleSystemsManagement>> ssmFactory);
     string CurrentRestoreBucketKey();
     string CurrentArchiveRunsBucketKey();
     string ChunkManifestBucketKey();
@@ -78,46 +69,42 @@ public interface IContextResolver
     bool NotifyOnRestoreComplete();
     bool NotifyOnRestoreCompleteErrors();
     bool NotifyOnException();
-    string ArchiveCompleteSnsArn();
-    string RestoreCompleteSnsArn();
-    string ArchiveCompleteErrorSnsArn();
-    string RestoreCompleteErrorSnsArn();
-    string ExceptionSnsArn();
     string RunIdBucketKey(string runId);
     string RestoreIdBucketKey(string restoreId);
     int DaysToKeepRestoredCopy();
     string S3DataPrefix();
-    string LogPath();
     string S3LogFolder();
-    LogEventLevel LogLevel();
     int StoragePageDelayMilliseconds();
+    string PathsToArchive();
+    string ClientId();
+    string SettingsPath();
+    void UpdateConfiguration(Configuration configOptions);
 }
 
 public sealed class ContextResolver : IContextResolver
 {
     private readonly string _clientId;
-    private readonly IOptionsMonitor<Configuration> _configOptions;
-    private readonly GlobalConfiguration _globalConfigOptions;
+    private readonly string _settingsPath;
+    private RegionEndpoint? _awsRegion;
 
     // Cached values
-    private RegionEndpoint? _awsRegion;
     private RequestRetryMode? _awsRetryMode;
     private bool? _checkDownloadHash;
     private S3StorageClass? _coldStorageClass;
+    private Configuration _configOptions;
     private int? _delayBetweenUploadsSeconds;
     private int? _downloadAttemptLimit;
-    private bool? _encryptFiles;
     private bool? _encryptSqs;
-    private byte[]? _fileEncryptionKey;
     private int? _generalRetryLimit;
     private S3StorageClass? _hotStorageClass;
+    private string? _ignoreFile;
     private bool? _keepAclEntries;
     private bool? _keepOwnerGroup;
     private bool? _keepTimeStamps;
     private string? _localCacheFolder;
     private string? _localRestoreFolder;
-    private LogEventLevel? _logLevel;
     private string? _logPath;
+    private S3StorageClass? _lowCostStorage;
     private int? _noOfConcurrentDownloadsPerFile;
     private int? _noOfS3FilesToDownloadConcurrently;
     private int? _noOfS3FilesToUploadConcurrently;
@@ -126,52 +113,42 @@ public sealed class ContextResolver : IContextResolver
     private long? _s3PartSize;
     private ServerSideEncryptionMethod? _serverSideEncryptionMethod;
     private int? _shutdownTimeoutSeconds;
-    private byte[]? _sqsEncryptionKey;
-
-    private Func<CancellationToken, Task<IAmazonSimpleSystemsManagement>>
-        _ssmClientFactory = _ => Task.FromResult<IAmazonSimpleSystemsManagement>(null!);
-
     private int? _storageCheckDelaySeconds;
     private int? _uploadAttemptLimit;
     private bool? _useS3Accelerate;
 
     public ContextResolver(
-        IOptionsMonitor<Configuration> configOptions,
-        GlobalConfiguration globalConfigOptions)
+        string settingsPath,
+        Configuration configOptions)
     {
+        _settingsPath = settingsPath;
         _configOptions = configOptions;
-        _globalConfigOptions = globalConfigOptions;
-        _configOptions.OnChange((_, _) =>
-        {
-            // Clear cached values on configuration change
-            ClearCache();
-        });
-        _clientId = ScrubClientId(_configOptions.CurrentValue.ClientId);
-    }
-
-    public string S3BucketId()
-    {
-        return _globalConfigOptions.BucketId;
+        _clientId = ScrubClientId(_configOptions.ClientId);
     }
 
     public S3StorageClass ColdStorage()
     {
-        if (_coldStorageClass is not null) return _coldStorageClass;
-        _coldStorageClass = ResolveStorageClass(_configOptions.CurrentValue.ColdStorage, S3StorageClass.DeepArchive);
-        return _coldStorageClass;
+        return _coldStorageClass ??=
+            ResolveStorageClass(_configOptions.ColdStorage, S3StorageClass.DeepArchive);
     }
 
     public S3StorageClass HotStorage()
     {
-        if (_hotStorageClass is not null) return _hotStorageClass;
-        _hotStorageClass = ResolveStorageClass(_configOptions.CurrentValue.HotStorage, S3StorageClass.Standard);
-        return _hotStorageClass;
+        return _hotStorageClass ??=
+            ResolveStorageClass(_configOptions.HotStorage, S3StorageClass.Standard);
+    }
+
+    public S3StorageClass LowCostStorage()
+    {
+        return _lowCostStorage ??= ResolveStorageClass(
+            _configOptions.LowCostStorage,
+            S3StorageClass.IntelligentTiering);
     }
 
     public ServerSideEncryptionMethod ServerSideEncryption()
     {
         if (_serverSideEncryptionMethod is not null) return _serverSideEncryptionMethod;
-        var encryptionMethod = _configOptions.CurrentValue.ServerSideEncryption;
+        var encryptionMethod = _configOptions.ServerSideEncryption;
         _serverSideEncryptionMethod = string.IsNullOrWhiteSpace(encryptionMethod)
             ? ServerSideEncryptionMethod.AES256
             : ServerSideEncryptionMethod.FindValue(encryptionMethod);
@@ -181,7 +158,7 @@ public sealed class ContextResolver : IContextResolver
     public RegionEndpoint GetAwsRegion()
     {
         if (_awsRegion is not null) return _awsRegion;
-        var configRegion = _configOptions.CurrentValue.AwsRegion;
+        var configRegion = _configOptions.AwsRegion;
         _awsRegion = string.IsNullOrWhiteSpace(configRegion)
             ? string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AWS_DEFAULT_REGION"))
                 ? string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AWS_REGION"))
@@ -195,7 +172,7 @@ public sealed class ContextResolver : IContextResolver
     public RequestRetryMode GetAwsRetryMode()
     {
         if (_awsRetryMode is not null) return _awsRetryMode.Value;
-        var retryMode = _configOptions.CurrentValue.AwsRetryMode;
+        var retryMode = _configOptions.AwsRetryMode;
         _awsRetryMode = string.IsNullOrWhiteSpace(retryMode)
             ? RequestRetryMode.Adaptive
             : Enum.TryParse<RequestRetryMode>(retryMode, true, out var mode)
@@ -209,228 +186,184 @@ public sealed class ContextResolver : IContextResolver
         if (!string.IsNullOrWhiteSpace(_localCacheFolder) && Directory.Exists(_localCacheFolder))
             return _localCacheFolder;
 
-        var configFolder = _configOptions.CurrentValue.LocalCacheFolder;
-        if (string.IsNullOrWhiteSpace(configFolder) || !Directory.Exists(configFolder))
+        _localCacheFolder = _configOptions.LocalCacheFolder;
+        if (string.IsNullOrWhiteSpace(_localCacheFolder) || !Path.IsPathRooted(_localCacheFolder))
             _localCacheFolder = Path.GetTempPath();
-        else
-            _localCacheFolder = configFolder;
+
+        Directory.CreateDirectory(_localCacheFolder);
 
         return _localCacheFolder;
     }
 
     public string? LocalIgnoreFile()
     {
-        var ignoreFile = _configOptions.CurrentValue.LocalIgnoreFile;
-        return string.IsNullOrWhiteSpace(ignoreFile) ? null : ignoreFile;
+        if (!string.IsNullOrWhiteSpace(_ignoreFile) && File.Exists(_ignoreFile))
+            return _ignoreFile;
+        _ignoreFile = _configOptions.LocalIgnoreFile;
+        return string.IsNullOrWhiteSpace(_ignoreFile) ? null : _ignoreFile;
     }
 
     public string LocalRestoreFolder(string requestRestoreId)
     {
-        if (_localRestoreFolder is not null)
-            return Path.Combine(_localRestoreFolder, requestRestoreId);
+        if (string.IsNullOrWhiteSpace(_localRestoreFolder) || !Directory.Exists(_localCacheFolder))
+            _localRestoreFolder = _configOptions.LocalRestoreFolderBase;
 
-        var configFolder = _configOptions.CurrentValue.LocalRestoreFolderBase;
-        _localRestoreFolder = string.IsNullOrWhiteSpace(configFolder)
-            ? Path.Combine(Path.GetTempPath(), "restores")
-            : configFolder;
+        if (string.IsNullOrWhiteSpace(_localRestoreFolder) || !Path.IsPathRooted(_localRestoreFolder))
+            _localRestoreFolder = AppContext.BaseDirectory;
 
-        return Path.Combine(_localRestoreFolder, requestRestoreId);
-    }
+        if (!Directory.Exists(_localRestoreFolder))
+            Directory.CreateDirectory(_localRestoreFolder);
 
-    public string SqsQueueUrl()
-    {
-        return $"{_globalConfigOptions.SqsQueueBaseName}/{_clientId}";
+        if (string.IsNullOrWhiteSpace(requestRestoreId))
+            requestRestoreId = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+
+        var returnValue = Path.Combine(_localRestoreFolder, requestRestoreId);
+
+        if (!Directory.Exists(returnValue))
+            Directory.CreateDirectory(returnValue);
+
+        return returnValue;
     }
 
     // Roles Anywhere methods
     public string RolesAnyWhereProfileArn()
     {
-        return _configOptions.CurrentValue.RolesAnyWhereProfileArn ?? "";
+        return _configOptions.RolesAnyWhereProfileArn ?? "";
     }
 
     public string RolesAnyWhereRoleArn()
     {
-        return _configOptions.CurrentValue.RolesAnyWhereRoleArn ?? "";
+        return _configOptions.RolesAnyWhereRoleArn ?? "";
     }
 
     public string RolesAnyWhereTrustAnchorArn()
     {
-        return _configOptions.CurrentValue.RolesAnyWhereTrustAnchorArn ?? "";
+        return _configOptions.RolesAnyWhereTrustAnchorArn ?? "";
     }
 
     public string RolesAnyWhereCertificateFileName()
     {
-        return _configOptions.CurrentValue.RolesAnyWhereCertificateFileName ?? "";
+        return _configOptions.RolesAnyWhereCertificateFileName ?? "";
     }
 
     public string RolesAnyWherePrivateKeyFileName()
     {
-        return _configOptions.CurrentValue.RolesAnyWherePrivateKeyFileName ?? "";
+        return _configOptions.RolesAnyWherePrivateKeyFileName ?? "";
     }
 
     // Integer configuration methods with defaults
     public int ReadBufferSize()
     {
-        return _readBufferSize ??= _configOptions.CurrentValue.ReadBufferSize ?? 65536;
+        return _readBufferSize ??= _configOptions.ReadBufferSize ?? 65536;
         // 64KB default
     }
 
     public int NoOfConcurrentDownloadsPerFile()
     {
-        return _noOfConcurrentDownloadsPerFile ??= _configOptions.CurrentValue.NoOfConcurrentDownloadsPerFile ?? 4;
+        return _noOfConcurrentDownloadsPerFile ??= _configOptions.NoOfConcurrentDownloadsPerFile ?? 4;
     }
 
     public int NoOfS3FilesToDownloadConcurrently()
     {
         return _noOfS3FilesToDownloadConcurrently ??=
-            _configOptions.CurrentValue.NoOfS3FilesToDownloadConcurrently ?? 10;
+            _configOptions.NoOfS3FilesToDownloadConcurrently ?? 10;
     }
 
     public int NoOfS3FilesToUploadConcurrently()
     {
-        return _noOfS3FilesToUploadConcurrently ??= _configOptions.CurrentValue.NoOfS3FilesToUploadConcurrently ?? 10;
+        return _noOfS3FilesToUploadConcurrently ??= _configOptions.NoOfS3FilesToUploadConcurrently ?? 10;
     }
 
     public int ShutdownTimeoutSeconds()
     {
-        return _shutdownTimeoutSeconds ??= _configOptions.CurrentValue.ShutdownTimeoutSeconds ?? 30;
+        return _shutdownTimeoutSeconds ??= _configOptions.ShutdownTimeoutSeconds ?? 30;
     }
 
     public int RetryCheckIntervalMs()
     {
-        return _retryCheckIntervalMs ??= _configOptions.CurrentValue.RetryCheckIntervalMs ?? 5000;
+        return _retryCheckIntervalMs ??= _configOptions.RetryCheckIntervalMs ?? 5000;
     }
 
     public int StorageCheckDelaySeconds()
     {
-        return _storageCheckDelaySeconds ??= _configOptions.CurrentValue.StorageCheckDelaySeconds ?? 300;
+        return _storageCheckDelaySeconds ??= _configOptions.StorageCheckDelaySeconds ?? 300;
     }
 
     public int DelayBetweenUploadsSeconds()
     {
-        return _delayBetweenUploadsSeconds ??= _configOptions.CurrentValue.DelayBetweenUploadsSeconds ?? 1;
+        return _delayBetweenUploadsSeconds ??= _configOptions.DelayBetweenUploadsSeconds ?? 1;
     }
 
     public int DownloadAttemptLimit()
     {
-        return _downloadAttemptLimit ??= _configOptions.CurrentValue.DownloadAttemptLimit ?? 3;
+        return _downloadAttemptLimit ??= _configOptions.DownloadAttemptLimit ?? 3;
     }
 
     public int UploadAttemptLimit()
     {
-        return _uploadAttemptLimit ??= _configOptions.CurrentValue.UploadAttemptLimit ?? 3;
+        return _uploadAttemptLimit ??= _configOptions.UploadAttemptLimit ?? 3;
     }
 
     public int GeneralRetryLimit()
     {
-        return _generalRetryLimit ??= _configOptions.CurrentValue.GeneralRetryLimit ?? 3;
+        return _generalRetryLimit ??= _configOptions.GeneralRetryLimit ?? 3;
     }
 
     public int? SqsWaitTimeSeconds()
     {
-        return _configOptions.CurrentValue.SqsWaitTimeSeconds ?? 20;
+        return _configOptions.SqsWaitTimeSeconds ?? 20;
     }
 
     public int? SqsMaxNumberOfMessages()
     {
-        return _configOptions.CurrentValue.SqsMaxNumberOfMessages ?? 10;
+        return _configOptions.SqsMaxNumberOfMessages ?? 10;
     }
 
     public int? SqsVisibilityTimeout()
     {
-        return _configOptions.CurrentValue.SqsVisibilityTimeout ?? 300;
-    }
-
-    // Long configuration methods with defaults
-    public long ChunkSizeBytes()
-    {
-        return _globalConfigOptions.ChunkSizeBytes <= 0 ? 524288000L : _globalConfigOptions.ChunkSizeBytes;
-        // 500MB default
+        return _configOptions.SqsVisibilityTimeout ?? 300;
     }
 
     public long S3PartSize()
     {
-        return _s3PartSize ??= _configOptions.CurrentValue.S3PartSize ?? 5242880L;
+        return _s3PartSize ??= _configOptions.S3PartSize ?? 5242880L;
         // 5MB default
     }
 
     public long SqsRetryDelaySeconds()
     {
-        return _configOptions.CurrentValue.SqsRetryDelaySeconds ?? 60L;
+        return _configOptions.SqsRetryDelaySeconds ?? 60L;
     }
 
     // Boolean configuration methods with defaults
     public bool KeepTimeStamps()
     {
-        return _keepTimeStamps ??= _configOptions.CurrentValue.KeepTimeStamps ?? false;
+        return _keepTimeStamps ??= _configOptions.KeepTimeStamps ?? false;
     }
 
     public bool KeepOwnerGroup()
     {
-        return _keepOwnerGroup ??= _configOptions.CurrentValue.KeepOwnerGroup ?? false;
+        return _keepOwnerGroup ??= _configOptions.KeepOwnerGroup ?? false;
     }
 
     public bool KeepAclEntries()
     {
-        return _keepAclEntries ??= _configOptions.CurrentValue.KeepAclEntries ?? false;
+        return _keepAclEntries ??= _configOptions.KeepAclEntries ?? false;
     }
 
     public bool CheckDownloadHash()
     {
-        return _checkDownloadHash ??= _configOptions.CurrentValue.CheckDownloadHash ?? true;
+        return _checkDownloadHash ??= _configOptions.CheckDownloadHash ?? true;
     }
 
     public bool EncryptSqs()
     {
-        return _encryptSqs ??= _configOptions.CurrentValue.EncryptSqs ?? true;
+        return _encryptSqs ??= _configOptions.EncryptSqs ?? true;
     }
 
     public bool UseS3Accelerate()
     {
-        return _useS3Accelerate ??= _configOptions.CurrentValue.UseS3Accelerate ?? false;
-    }
-
-    // Key generation methods
-    public async Task<byte[]> AesFileEncryptionKey(CancellationToken cancellationToken)
-    {
-        var encryptFiles = _encryptFiles ??= _configOptions.CurrentValue.EncryptFiles ?? true;
-        if (!encryptFiles) return [];
-
-        if (_fileEncryptionKey is not null && _fileEncryptionKey.Length > 0)
-            return _fileEncryptionKey;
-
-        // Implementation would retrieve or generate encryption key
-        // This could involve calling SSM Parameter Store or generating a key
-        using var ssmClient = await _ssmClientFactory(cancellationToken);
-        // Retrieve from SSM Parameter Store
-        // Implementation depends on your key management strategy
-        // Example:
-        var response = await ssmClient.GetParameterAsync(new GetParameterRequest
-        {
-            Name = $"{_globalConfigOptions.KmsBasePath}{_clientId}/aes-file-encryption-key",
-            WithDecryption = true
-        }, cancellationToken);
-
-        _fileEncryptionKey = Convert.FromBase64String(response.Parameter.Value);
-
-        return _fileEncryptionKey;
-    }
-
-    public async Task<byte[]> SqsEncryptionKey(CancellationToken cancellationToken)
-    {
-        if (EncryptSqs() && _sqsEncryptionKey is not null && _sqsEncryptionKey.Length > 0)
-            return _sqsEncryptionKey;
-
-        using var ssmClient = await _ssmClientFactory(cancellationToken);
-        var response = await ssmClient.GetParameterAsync(new GetParameterRequest
-        {
-            Name = $"{_globalConfigOptions.KmsBasePath}{_clientId}/aes-sqs-encryption-key",
-            WithDecryption = true
-        }, cancellationToken);
-
-        _sqsEncryptionKey = Convert.FromBase64String(response.Parameter.Value);
-
-        return _sqsEncryptionKey;
+        return _useS3Accelerate ??= _configOptions.UseS3Accelerate ?? false;
     }
 
     // ID generation methods
@@ -461,11 +394,6 @@ public sealed class ContextResolver : IContextResolver
         return DateTimeOffset.UtcNow.AddSeconds(delaySeconds);
     }
 
-    public void SetSsmClientFactory(Func<CancellationToken, Task<IAmazonSimpleSystemsManagement>> ssmFactory)
-    {
-        _ssmClientFactory = ssmFactory;
-    }
-
     public string CurrentRestoreBucketKey()
     {
         return $"{_clientId}/restores.json.gz";
@@ -488,52 +416,27 @@ public sealed class ContextResolver : IContextResolver
 
     public bool NotifyOnArchiveComplete()
     {
-        return _configOptions.CurrentValue.NotifyOnArchiveComplete ?? false;
+        return _configOptions.NotifyOnArchiveComplete ?? false;
     }
 
     public bool NotifyOnArchiveCompleteErrors()
     {
-        return _configOptions.CurrentValue.NotifyOnArchiveCompleteErrors ?? false;
+        return _configOptions.NotifyOnArchiveCompleteErrors ?? false;
     }
 
     public bool NotifyOnRestoreComplete()
     {
-        return _configOptions.CurrentValue.NotifyOnRestoreComplete ?? false;
+        return _configOptions.NotifyOnRestoreComplete ?? false;
     }
 
     public bool NotifyOnRestoreCompleteErrors()
     {
-        return _configOptions.CurrentValue.NotifyOnRestoreCompleteErrors ?? false;
+        return _configOptions.NotifyOnRestoreCompleteErrors ?? false;
     }
 
     public bool NotifyOnException()
     {
-        return _configOptions.CurrentValue.NotifyOnException ?? false;
-    }
-
-    public string ArchiveCompleteSnsArn()
-    {
-        return $"{_globalConfigOptions.SnsBaseArn}{_clientId}-archive-complete";
-    }
-
-    public string RestoreCompleteSnsArn()
-    {
-        return $"{_globalConfigOptions.SnsBaseArn}{_clientId}-restore-complete";
-    }
-
-    public string ArchiveCompleteErrorSnsArn()
-    {
-        return $"{_globalConfigOptions.SnsBaseArn}{_clientId}-archive-complete-errors";
-    }
-
-    public string RestoreCompleteErrorSnsArn()
-    {
-        return $"{_globalConfigOptions.SnsBaseArn}{_clientId}-restore-complete-errors";
-    }
-
-    public string ExceptionSnsArn()
-    {
-        return $"{_globalConfigOptions.SnsBaseArn}{_clientId}-exception";
+        return _configOptions.NotifyOnException ?? false;
     }
 
     public string RunIdBucketKey(string runId)
@@ -548,7 +451,7 @@ public sealed class ContextResolver : IContextResolver
 
     public int DaysToKeepRestoredCopy()
     {
-        return _configOptions.CurrentValue.DaysToKeepRestoredCopy ?? 7;
+        return _configOptions.DaysToKeepRestoredCopy ?? 7;
     }
 
     public string S3DataPrefix()
@@ -556,67 +459,41 @@ public sealed class ContextResolver : IContextResolver
         return $"{_clientId}/data";
     }
 
-    public string LogPath()
-    {
-        if (!string.IsNullOrWhiteSpace(_logPath)) return _logPath;
-        _logPath = _configOptions.CurrentValue.LogFolder ?? Path.Combine(AppContext.BaseDirectory, "logs");
-        return _logPath;
-    }
-
     public string S3LogFolder()
     {
         return $"{_clientId}/logs";
     }
 
-    public LogEventLevel LogLevel()
-    {
-        if (_logLevel is not null) return _logLevel.Value;
-
-        var logLevel = _configOptions.CurrentValue.LogLevel;
-        if (string.IsNullOrWhiteSpace(logLevel) || !Enum.TryParse<LogEventLevel>(logLevel, true, out var level))
-            level = LogEventLevel.Warning; // Default log level
-
-        _logLevel = level;
-        return level;
-    }
-
     public int StoragePageDelayMilliseconds()
     {
-        return _configOptions.CurrentValue.StoragePageDelayMilliseconds ?? 5;
+        return _configOptions.StoragePageDelayMilliseconds ?? 5;
     }
 
-    private void ClearCache()
+    public string PathsToArchive()
     {
-        _awsRegion = null;
-        _coldStorageClass = null;
-        _hotStorageClass = null;
-        _serverSideEncryptionMethod = null;
-        _awsRetryMode = null;
-        _localCacheFolder = null;
-        _localRestoreFolder = null;
-        _logLevel = null;
+        return _configOptions.PathsToArchive;
+    }
 
-        // Clear primitive caches
-        _readBufferSize = null;
-        _s3PartSize = null;
-        _noOfConcurrentDownloadsPerFile = null;
-        _noOfS3FilesToDownloadConcurrently = null;
-        _noOfS3FilesToUploadConcurrently = null;
-        _shutdownTimeoutSeconds = null;
-        _retryCheckIntervalMs = null;
-        _storageCheckDelaySeconds = null;
-        _delayBetweenUploadsSeconds = null;
-        _downloadAttemptLimit = null;
-        _uploadAttemptLimit = null;
-        _generalRetryLimit = null;
-        _keepTimeStamps = null;
-        _keepOwnerGroup = null;
-        _keepAclEntries = null;
-        _checkDownloadHash = null;
-        _encryptSqs = null;
-        _useS3Accelerate = null;
-        _encryptFiles = null;
-        _logPath = null;
+    public string ClientId()
+    {
+        return _clientId;
+    }
+
+    public string SettingsPath()
+    {
+        return _settingsPath;
+    }
+
+    public void UpdateConfiguration(Configuration configOptions)
+    {
+        _configOptions = configOptions;
+    }
+
+    public string LogPath()
+    {
+        if (!string.IsNullOrWhiteSpace(_logPath)) return _logPath;
+        _logPath = _configOptions.LogFolder ?? Path.Combine(AppContext.BaseDirectory, "logs");
+        return _logPath;
     }
 
     private static S3StorageClass ResolveStorageClass(string? storageClassName, S3StorageClass defaultStorageClass)

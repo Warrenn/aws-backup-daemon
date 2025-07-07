@@ -418,7 +418,6 @@ public sealed class ArchiveService(
             ), ct);
         else
             await snsMed.PublishMessage(new ArchiveCompleteMessage(
-                runId,
                 $"Archive run {runId} completed successfully",
                 "All files processed.",
                 run

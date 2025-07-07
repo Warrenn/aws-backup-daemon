@@ -23,14 +23,15 @@ public interface IHotStorageService
 
 public sealed class HotStorageService(
     IAwsClientFactory awsClientFactory,
-    IContextResolver contextResolver) : IHotStorageService
+    IContextResolver contextResolver,
+    AwsConfiguration awsConfiguration) : IHotStorageService
 {
     public async Task UploadAsync<T>(string key, T obj, CancellationToken cancellationToken)
     {
         // 1) Create the pipe
         var pipe = new Pipe();
         var s3 = await awsClientFactory.CreateS3Client(cancellationToken);
-        var bucketName = contextResolver.S3BucketId();
+        var bucketName = awsConfiguration.BucketName;
         var partSizeBytes = contextResolver.S3PartSize();
         var storageClass = contextResolver.HotStorage();
 
@@ -67,7 +68,7 @@ public sealed class HotStorageService(
     public async Task<T?> DownloadAsync<T>(string key, CancellationToken cancellationToken)
     {
         var s3 = await awsClientFactory.CreateS3Client(cancellationToken);
-        var bucketName = contextResolver.S3BucketId();
+        var bucketName = awsConfiguration.BucketName;
 
         if (!await S3ObjectExistsAsync(s3, bucketName, key, cancellationToken)) return default;
 

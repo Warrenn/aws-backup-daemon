@@ -26,12 +26,13 @@ public interface IS3Service
 public sealed class S3Service(
     IAwsClientFactory awsClientFactory,
     IContextResolver contextResolver,
-    IHotStorageService hotStorageService
+    IHotStorageService hotStorageService,
+    AwsConfiguration awsConfiguration
 ) : IS3Service
 {
     public async Task<bool> RunExists(string runId, CancellationToken cancellationToken)
     {
-        var bucketId = contextResolver.S3BucketId();
+        var bucketId = awsConfiguration.BucketName;
         var key = contextResolver.RunIdBucketKey(runId);
         var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
         return await hotStorageService.S3ObjectExistsAsync(s3Client, bucketId, key, cancellationToken);
@@ -45,7 +46,7 @@ public sealed class S3Service(
 
     public async Task<bool> RestoreExists(string restoreId, CancellationToken cancellationToken)
     {
-        var bucketId = contextResolver.S3BucketId();
+        var bucketId = awsConfiguration.BucketName;
         var key = contextResolver.RestoreIdBucketKey(restoreId);
         var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
         return await hotStorageService.S3ObjectExistsAsync(s3Client, bucketId, key, cancellationToken);
@@ -61,7 +62,7 @@ public sealed class S3Service(
         CancellationToken cancellationToken)
     {
         var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
-        var bucketName = contextResolver.S3BucketId();
+        var bucketName = awsConfiguration.BucketName;
 
         var (storageClass, restoreInProgress) =
             await GetStorageClass(s3Client, bucketName, chunkS3Key, cancellationToken);
@@ -85,7 +86,7 @@ public sealed class S3Service(
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
-        var bucketName = contextResolver.S3BucketId();
+        var bucketName = awsConfiguration.BucketName;
         var prefix = contextResolver.S3DataPrefix();
         var request = new ListObjectsV2Request
         {

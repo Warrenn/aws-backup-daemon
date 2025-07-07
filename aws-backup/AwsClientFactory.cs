@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Amazon.IdentityManagement;
 using Amazon.Runtime;
 using Amazon.Runtime.CredentialManagement;
 using Amazon.S3;
@@ -14,33 +15,22 @@ namespace aws_backup;
 public interface IAwsClientFactory : IDisposable
 {
     Task<IAmazonS3> CreateS3Client(CancellationToken cancellationToken);
-    Task<IAmazonSimpleSystemsManagement> CreateSsmClient(CancellationToken cancellationToken);
+    Task<IAmazonSimpleSystemsManagement> CreateSsmClient(CancellationToken cancellationToken = default);
     Task<IAmazonSQS> CreateSqsClient(CancellationToken cancellationToken);
     Task<IAmazonSimpleNotificationService> CreateSnsClient(CancellationToken cancellationToken);
+
+    Task<AmazonIdentityManagementServiceClient> CreateIamClient(CancellationToken cancellationToken = default);
 }
 
-public sealed class AwsClientFactory : IAwsClientFactory
+public sealed class AwsClientFactory(
+    IContextResolver resolver,
+    ILogger<AwsClientFactory> logger,
+    ITemporaryCredentialsServer temporaryCredentialsServer)
+    : IAwsClientFactory
 {
     private readonly ConcurrentDictionary<Type, object> _clientCache = new();
-    private readonly ILogger<AwsClientFactory> _logger;
-    private readonly ISnsMessageMediator _messageMediator;
-    private readonly IContextResolver _resolver;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
-    private readonly ITemporaryCredentialsServer _temporaryCredentialsServer;
     private AWSCredentials? _cachedCredentials;
-
-    public AwsClientFactory(
-        IContextResolver resolver,
-        ILogger<AwsClientFactory> logger,
-        ITemporaryCredentialsServer temporaryCredentialsServer,
-        ISnsMessageMediator messageMediator)
-    {
-        _resolver = resolver;
-        resolver.SetSsmClientFactory(CreateSsmClient);
-        _logger = logger;
-        _temporaryCredentialsServer = temporaryCredentialsServer;
-        _messageMediator = messageMediator;
-    }
 
     public async Task<IAmazonS3> CreateS3Client(CancellationToken cancellationToken)
     {
@@ -94,6 +84,26 @@ public sealed class AwsClientFactory : IAwsClientFactory
         }, cancellationToken);
     }
 
+    public async Task<AmazonIdentityManagementServiceClient> CreateIamClient(CancellationToken cancellationToken)
+
+    {
+        return await GetOrCreateClient(async () =>
+        {
+            var config = new AmazonIdentityManagementServiceConfig
+            {
+                MaxErrorRetry = resolver.GeneralRetryLimit(),
+                RetryMode = resolver.GetAwsRetryMode(),
+                Timeout = TimeSpan.FromSeconds(resolver.ShutdownTimeoutSeconds()),
+                RegionEndpoint = resolver.GetAwsRegion()
+            };
+
+            var credentials = await GetCredentialsAsync(cancellationToken);
+            return credentials != null
+                ? new AmazonIdentityManagementServiceClient(credentials, config)
+                : new AmazonIdentityManagementServiceClient(config);
+        }, cancellationToken);
+    }
+
     public void Dispose()
     {
         foreach (var client in _clientCache.Values.OfType<IDisposable>())
@@ -103,7 +113,7 @@ public sealed class AwsClientFactory : IAwsClientFactory
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Error disposing AWS client");
+                logger.LogWarning(ex, "Error disposing AWS client");
             }
 
         _clientCache.Clear();
@@ -121,7 +131,7 @@ public sealed class AwsClientFactory : IAwsClientFactory
             // Double-check locking pattern
             if (_clientCache.TryGetValue(typeof(T), out cachedClient)) return (T)cachedClient;
 
-            _logger.LogDebug("Creating new AWS client of type {ClientType}", typeof(T).Name);
+            logger.LogDebug("Creating new AWS client of type {ClientType}", typeof(T).Name);
             var client = await factory();
             _clientCache.TryAdd(typeof(T), client);
             return client;
@@ -142,22 +152,19 @@ public sealed class AwsClientFactory : IAwsClientFactory
             var response = await stsClient.GetCallerIdentityAsync(new GetCallerIdentityRequest(), cancellationToken);
             if (response != null && !string.IsNullOrWhiteSpace(response.UserId)) return true;
 
-            _logger.LogWarning("Invalid AWS credentials: GetCallerIdentity returned null or empty UserId");
+            logger.LogWarning("Invalid AWS credentials: GetCallerIdentity returned null or empty UserId");
             return false;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to validate AWS credentials");
-            await _messageMediator.PublishMessage(
-                new SnsMessage("Failed to validate AWS credentials", ex.ToString()),
-                cancellationToken);
+            logger.LogError(ex, "Failed to validate AWS credentials");
             return false;
         }
     }
 
     private async Task<AWSCredentials?> GetCredentialsAsync(CancellationToken cancellationToken)
     {
-        var credentialsValid = _cachedCredentials != null &&
+        var credentialsValid = _cachedCredentials is not null &&
                                await ValidateCredentialsAsync(_cachedCredentials, cancellationToken);
         if (credentialsValid) return _cachedCredentials;
 
@@ -173,38 +180,35 @@ public sealed class AwsClientFactory : IAwsClientFactory
         foreach (var (name, factory) in credentialSources)
             try
             {
-                _logger.LogDebug("Attempting to resolve AWS credentials using {CredentialSource}", name);
+                logger.LogDebug("Attempting to resolve AWS credentials using {CredentialSource}", name);
                 var credentials = await factory(cancellationToken);
 
                 if (credentials == null) continue;
                 // Test credentials by attempting to get caller identity
                 if (!await ValidateCredentialsAsync(credentials, cancellationToken)) continue;
 
-                _logger.LogInformation("Successfully resolved AWS credentials using {CredentialSource}", name);
+                logger.LogInformation("Successfully resolved AWS credentials using {CredentialSource}", name);
                 _cachedCredentials = credentials; // Cache the valid credentials
                 return credentials;
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to resolve AWS credentials using {CredentialSource}", name);
-                await _messageMediator.PublishMessage(
-                    new SnsMessage($"Failed to resolve AWS credentials using {name}", ex.ToString()),
-                    cancellationToken);
+                logger.LogWarning(ex, "Failed to resolve AWS credentials using {CredentialSource}", name);
             }
 
-        _logger.LogWarning("No valid AWS credentials found, falling back to default credential chain");
+        logger.LogWarning("No valid AWS credentials found, falling back to default credential chain");
         return null; // Let AWS SDK handle default credential chain
     }
 
     private async Task<AWSCredentials?> TryGetRolesAnyWhereCredentials(CancellationToken cancellationToken)
     {
         //if all the variables needed for temporary credentials are set, use them
-        var profileArn = _resolver.RolesAnyWhereProfileArn();
-        var roleArn = _resolver.RolesAnyWhereRoleArn();
-        var trustAnchorArn = _resolver.RolesAnyWhereTrustAnchorArn();
-        var certificateFileName = _resolver.RolesAnyWhereCertificateFileName();
-        var privateKeyFileName = _resolver.RolesAnyWherePrivateKeyFileName();
-        var region = _resolver.GetAwsRegion();
+        var profileArn = resolver.RolesAnyWhereProfileArn();
+        var roleArn = resolver.RolesAnyWhereRoleArn();
+        var trustAnchorArn = resolver.RolesAnyWhereTrustAnchorArn();
+        var certificateFileName = resolver.RolesAnyWhereCertificateFileName();
+        var privateKeyFileName = resolver.RolesAnyWherePrivateKeyFileName();
+        var region = resolver.GetAwsRegion();
 
         if (string.IsNullOrWhiteSpace(profileArn)) return null;
         if (string.IsNullOrWhiteSpace(roleArn)) return null;
@@ -212,7 +216,7 @@ public sealed class AwsClientFactory : IAwsClientFactory
         if (!File.Exists(certificateFileName)) return null;
         if (!File.Exists(privateKeyFileName)) return null;
 
-        var (accessKey, secretKey, sessionToken) = await _temporaryCredentialsServer.GetCredentials(
+        var (accessKey, secretKey, sessionToken) = await temporaryCredentialsServer.GetCredentials(
             profileArn,
             roleArn,
             trustAnchorArn,
@@ -304,12 +308,12 @@ public sealed class AwsClientFactory : IAwsClientFactory
     {
         var config = new AmazonS3Config
         {
-            MaxErrorRetry = _resolver.GeneralRetryLimit(),
-            RetryMode = _resolver.GetAwsRetryMode(),
-            Timeout = TimeSpan.FromSeconds(_resolver.ShutdownTimeoutSeconds()),
-            RegionEndpoint = _resolver.GetAwsRegion(),
-            BufferSize = _resolver.ReadBufferSize(),
-            UseAccelerateEndpoint = _resolver.UseS3Accelerate(),
+            MaxErrorRetry = resolver.GeneralRetryLimit(),
+            RetryMode = resolver.GetAwsRetryMode(),
+            Timeout = TimeSpan.FromSeconds(resolver.ShutdownTimeoutSeconds()),
+            RegionEndpoint = resolver.GetAwsRegion(),
+            BufferSize = resolver.ReadBufferSize(),
+            UseAccelerateEndpoint = resolver.UseS3Accelerate(),
             UseHttp = false, // Always use HTTPS
             ForcePathStyle = false // Use virtual-hosted-style requests by default
         };
@@ -321,10 +325,10 @@ public sealed class AwsClientFactory : IAwsClientFactory
     {
         var config = new AmazonSimpleSystemsManagementConfig
         {
-            MaxErrorRetry = _resolver.GeneralRetryLimit(),
-            RetryMode = _resolver.GetAwsRetryMode(),
-            Timeout = TimeSpan.FromSeconds(_resolver.ShutdownTimeoutSeconds()),
-            RegionEndpoint = _resolver.GetAwsRegion()
+            MaxErrorRetry = resolver.GeneralRetryLimit(),
+            RetryMode = resolver.GetAwsRetryMode(),
+            Timeout = TimeSpan.FromSeconds(resolver.ShutdownTimeoutSeconds()),
+            RegionEndpoint = resolver.GetAwsRegion()
         };
         return config;
     }
@@ -333,10 +337,10 @@ public sealed class AwsClientFactory : IAwsClientFactory
     {
         var config = new AmazonSQSConfig
         {
-            MaxErrorRetry = _resolver.GeneralRetryLimit(),
-            RetryMode = _resolver.GetAwsRetryMode(),
-            Timeout = TimeSpan.FromSeconds(_resolver.ShutdownTimeoutSeconds()),
-            RegionEndpoint = _resolver.GetAwsRegion()
+            MaxErrorRetry = resolver.GeneralRetryLimit(),
+            RetryMode = resolver.GetAwsRetryMode(),
+            Timeout = TimeSpan.FromSeconds(resolver.ShutdownTimeoutSeconds()),
+            RegionEndpoint = resolver.GetAwsRegion()
         };
         return config;
     }
@@ -345,10 +349,10 @@ public sealed class AwsClientFactory : IAwsClientFactory
     {
         var config = new AmazonSimpleNotificationServiceConfig
         {
-            MaxErrorRetry = _resolver.GeneralRetryLimit(),
-            RetryMode = _resolver.GetAwsRetryMode(),
-            Timeout = TimeSpan.FromSeconds(_resolver.ShutdownTimeoutSeconds()),
-            RegionEndpoint = _resolver.GetAwsRegion()
+            MaxErrorRetry = resolver.GeneralRetryLimit(),
+            RetryMode = resolver.GetAwsRetryMode(),
+            Timeout = TimeSpan.FromSeconds(resolver.ShutdownTimeoutSeconds()),
+            RegionEndpoint = resolver.GetAwsRegion()
         };
         return config;
     }

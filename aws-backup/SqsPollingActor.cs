@@ -11,19 +11,21 @@ public sealed class SqsPollingActor(
     ILogger<SqsPollingActor> logger,
     IRestoreRequestsMediator mediator,
     IContextResolver contextResolver,
-    ISnsMessageMediator snsMessageMediator
+    ISnsMessageMediator snsMessageMediator,
+    AwsConfiguration awsConfiguration,
+    IAesContextResolver aesContextResolver
 ) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         var sqs = await clientFactory.CreateSqsClient(cancellationToken);
 
-        var queueUrl = contextResolver.SqsQueueUrl();
+        var queueUrl = awsConfiguration.SqsInboxQueueUrl;
         var waitTimeSeconds = contextResolver.SqsWaitTimeSeconds();
         var maxNumberOfMessages = contextResolver.SqsMaxNumberOfMessages();
         var visibilityTimeout = contextResolver.SqsVisibilityTimeout();
         var retryDelay = contextResolver.SqsRetryDelaySeconds();
-        var sqsDecryptionKey = await contextResolver.SqsEncryptionKey(cancellationToken);
+        var sqsDecryptionKey = await aesContextResolver.SqsEncryptionKey(cancellationToken);
 
         logger.LogInformation("Starting SQS polling on {Url}", queueUrl);
 

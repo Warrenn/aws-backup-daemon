@@ -16,7 +16,8 @@ public interface IS3ChunkedFileReconstructor
 
 public sealed class S3ChunkedFileReconstructor(
     IContextResolver contextResolver,
-    IAwsClientFactory awsClientFactory
+    IAwsClientFactory awsClientFactory,
+    IAesContextResolver aesContextResolver
 ) : IS3ChunkedFileReconstructor
 {
     public async Task<string> ReconstructAsync(
@@ -29,7 +30,7 @@ public sealed class S3ChunkedFileReconstructor(
         var bufferSize = contextResolver.ReadBufferSize();
         var maxDownloadConcurrency = contextResolver.NoOfConcurrentDownloadsPerFile();
         var originalFileSize = request.Size;
-        var aesKey = await contextResolver.AesFileEncryptionKey(cancellationToken);
+        var aesKey = await aesContextResolver.FileEncryptionKey(cancellationToken);
 
         // Ensure output file exists and is sized (optional)
         await using (var pre = new FileStream(

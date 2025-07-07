@@ -1,7 +1,6 @@
 using Cronos;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace aws_backup;
 
@@ -37,51 +36,51 @@ public class CronScheduler(string cron) : ICronScheduler
 }
 
 public sealed class CronJobActor(
-    IOptionsMonitor<Configuration> configurationMonitor,
+    Configuration configuration,
     IRunRequestMediator mediator,
     IContextResolver contextResolver,
     ICronSchedulerFactory cronSchedulerFactory,
     ILogger<CronJobActor> logger,
     TimeProvider timeProvider,
-    ISnsMessageMediator snsMessageMediator)
+    ISnsMessageMediator snsMessageMediator,
+    ISignalHub<string> signalHub)
     : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        CancellationTokenSource scheduleCts = new();
-        var scheduler = cronSchedulerFactory.Create(configurationMonitor.CurrentValue.CronSchedule);
-
-        configurationMonitor.OnChange((config, _) =>
-        {
-            scheduler = cronSchedulerFactory.Create(config.CronSchedule);
-            scheduleCts.Cancel();
-            scheduleCts = new CancellationTokenSource();
-        });
+        var cronSchedule = configuration.CronSchedule;
+        var scheduler = cronSchedulerFactory.Create(cronSchedule);
 
         logger.LogInformation("CronJobService started with schedule '{Schedule}' in zone '{Zone}'",
-            configurationMonitor.CurrentValue.CronSchedule, TimeZoneInfo.Utc.Id);
+            cronSchedule, TimeZoneInfo.Utc.Id);
 
         while (!cancellationToken.IsCancellationRequested)
-        {
-            var now = timeProvider.GetUtcNow();
-            var next = scheduler.GetNext(now);
-            if (next == null) break;
-
-            var delay = next.Value - now;
-            if (delay.TotalMilliseconds <= 0)
-                // If we're already past it (due to drift), skip ahead
-                continue;
-
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(
-                cancellationToken, scheduleCts.Token);
             try
             {
-                // 2) Wait until it's time (or until shutdown)
-                await Task.Delay(delay, linked.Token);
+                var now = timeProvider.GetUtcNow();
+                var next = scheduler.GetNext(now);
+                if (next == null) break;
+
+                var delayTime = next.Value - now;
+                if (delayTime.TotalMilliseconds <= 0)
+                    continue;
+
+                var waitForSignal = signalHub.WaitAsync(cancellationToken);
+                var delay = Task.Delay(delayTime, cancellationToken);
+
+                // Whichever completes first…
+                var finished = await Task.WhenAny(waitForSignal, delay);
+
+                if (finished == waitForSignal)
+                {
+                    logger.LogInformation("Cron schedule changed {cronSchedule}.", cronSchedule); // Signal arrived
+                    cronSchedule = await waitForSignal;
+                    scheduler = cronSchedulerFactory.Create(cronSchedule);
+                    continue;
+                }
 
                 var runId = contextResolver.ArchiveRunId(timeProvider.GetUtcNow());
-                var cronSchedule = configurationMonitor.CurrentValue.CronSchedule;
-                var pathsToArchive = configurationMonitor.CurrentValue.PathsToArchive;
+                var pathsToArchive = contextResolver.PathsToArchive();
                 var runRequest = new RunRequest(runId, pathsToArchive, cronSchedule);
 
                 logger.LogInformation("Starting backup {runId} for {pathsToArchive} at {Now}", runId, pathsToArchive,
@@ -95,18 +94,11 @@ public sealed class CronJobActor(
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 await snsMessageMediator.PublishMessage(
-                    new SnsMessage($"Error running cron job {configurationMonitor.CurrentValue.CronSchedule}",
+                    new SnsMessage($"Error running cron job {cronSchedule}",
                         ex.ToString()),
                     cancellationToken);
 
-                logger.LogError(ex, "Error running cron job {schedule}",
-                    configurationMonitor.CurrentValue.CronSchedule);
+                logger.LogError(ex, "Error running cron job {schedule}", cronSchedule);
             }
-
-
-            // loop for the next occurrence...
-        }
-
-        logger.LogInformation("CronJobService is stopping.");
     }
 }

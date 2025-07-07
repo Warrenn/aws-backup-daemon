@@ -388,7 +388,6 @@ public sealed class RestoreService(
         else
             await snsMed.PublishMessage(
                 new RestoreCompleteMessage(
-                    run.RestoreId,
                     $"Run {run.RestoreId} completed successfully",
                     "All files restored", run),
                 ct);

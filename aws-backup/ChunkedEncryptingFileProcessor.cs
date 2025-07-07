@@ -17,6 +17,8 @@ public interface IChunkedEncryptingFileProcessor
 
 public sealed class ChunkedEncryptingFileProcessor(
     IContextResolver contextResolver,
+    AwsConfiguration awsConfiguration,
+    IAesContextResolver aesContextResolver,
     IUploadChunksMediator mediator) : IChunkedEncryptingFileProcessor
 {
     public async Task<FileProcessResult> ProcessFileAsync(string runId, string inputPath,
@@ -26,9 +28,9 @@ public sealed class ChunkedEncryptingFileProcessor(
         using var fullHasher = SHA256.Create();
         var chunks = new List<DataChunkDetails>();
         var bufferSize = contextResolver.ReadBufferSize();
-        var chunkSize = contextResolver.ChunkSizeBytes();
+        var chunkSize = awsConfiguration.ChunkSizeBytes;
         var cacheFolder = contextResolver.LocalCacheFolder();
-        var aesKey = await contextResolver.AesFileEncryptionKey(cancellationToken);
+        var aesKey = await aesContextResolver.FileEncryptionKey(cancellationToken);
 
         // open for read, disallow writers
         await using var fs = new FileStream(

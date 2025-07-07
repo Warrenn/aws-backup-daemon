@@ -35,28 +35,25 @@ public sealed class Mediator(
             });
 
     private readonly Channel<CurrentArchiveRunRequests> _currentArchiveRunRequestsChannel =
-        Channel.CreateBounded<CurrentArchiveRunRequests>(
-            new BoundedChannelOptions(1)
+        Channel.CreateUnbounded<CurrentArchiveRunRequests>(
+            new UnboundedChannelOptions
             {
-                FullMode = BoundedChannelFullMode.DropOldest,
                 SingleReader = true,
                 SingleWriter = false
             });
 
     private readonly Channel<CurrentRestoreRequests> _currentRestoreRequestsChannel =
-        Channel.CreateBounded<CurrentRestoreRequests>(
-            new BoundedChannelOptions(1)
+        Channel.CreateUnbounded<CurrentRestoreRequests>(
+            new UnboundedChannelOptions
             {
-                FullMode = BoundedChannelFullMode.DropOldest,
                 SingleReader = true,
                 SingleWriter = false
             });
 
     private readonly Channel<DataChunkManifest> _dataChunksManifestChannel =
-        Channel.CreateBounded<DataChunkManifest>(
-            new BoundedChannelOptions(1)
+        Channel.CreateUnbounded<DataChunkManifest>(
+            new UnboundedChannelOptions
             {
-                FullMode = BoundedChannelFullMode.DropOldest,
                 SingleReader = true,
                 SingleWriter = false
             });
@@ -70,10 +67,9 @@ public sealed class Mediator(
             });
 
     private readonly Channel<string> _loggingFile =
-        Channel.CreateBounded<string>(
-            new BoundedChannelOptions(1)
+        Channel.CreateUnbounded<string>(
+            new UnboundedChannelOptions
             {
-                FullMode = BoundedChannelFullMode.DropOldest,
                 AllowSynchronousContinuations = false,
                 SingleReader = true,
                 SingleWriter = true

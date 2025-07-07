@@ -1,4 +1,4 @@
-AWSTemplateFormatVersion: '2010-09-09'
+AWSTemplateFormatVersion: "2010-09-09"
 Description: Provision AWS IAM Roles Anywhere setup, client-scoped S3, SQS, SNS, SSM, and role access
 
 Parameters:
@@ -30,8 +30,12 @@ Parameters:
     Default: "/backup-application"
     Description: Base path for SSM parameter names
 
-Resources:
+  ChunkSize:
+    Type: Number
+    Default: 524288000
+    Description: Chunk size for file chunks in bytes (default 500 MB)
 
+Resources:
   TrustAnchor:
     Type: AWS::RolesAnywhere::TrustAnchor
     Properties:
@@ -62,15 +66,42 @@ Resources:
           - Effect: Allow
             Principal:
               Service: rolesanywhere.amazonaws.com
-            Action: 
-             - sts:AssumeRole
-             - sts:SetSourceIdentity
-             - sts:TagSession
+            Action:
+              - sts:AssumeRole
+              - sts:SetSourceIdentity
+              - sts:TagSession
             Condition:
               StringEquals:
                 aws:SourceArn: !Sub "arn:${AWS::Partition}:rolesanywhere:${AWS::Region}:${AWS::AccountId}:trust-anchor/${TrustAnchor}"
       MaxSessionDuration: !Ref MaxSessionDuration
       Path: "/"
+      Tags:
+        - Key: chunk-size-bytes
+          Value: !Ref ChunkSize
+        - Key: client-id
+          Value: !Ref ClientId
+        - Key: bucket-name
+          Value: !ImportValue aws-backup-initial-bucket-name
+        - Key: bucket-region
+          Value: !Ref AWS::Region
+        - Key: aes-sqs-encryption-path
+          Value: !Sub "${ParamBasePath}/${ClientId}/aes-sqs-encryption"
+        - Key: aes-file-encryption-path
+          Value: !Sub "${ParamBasePath}/${ClientId}/aes-file-encryption"
+        - Key: sqs-inbox-queue-url
+          Value: !Ref ClientQueueInbox
+        - Key: sqs-outbox-queue-url
+          Value: !Ref ClientQueueOutbox
+        - Key: archive-complete-topic-arn
+          Value: !Ref ArchiveCompleteTopic
+        - Key: restore-complete-topic-arn
+          Value: !Ref RestoreCompleteTopic
+        - Key: archive-complete-errors-topic-arn
+          Value: !Ref ArchiveCompleteErrorsTopic
+        - Key: restore-complete-errors-topic-arn
+          Value: !Ref RestoreCompleteErrorsTopic
+        - Key: exception-topic-arn
+          Value: !Ref ExceptionTopic
       Policies:
         - PolicyName: !Sub "${ClientId}-AccessPolicy"
           PolicyDocument:
@@ -78,10 +109,13 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
+                  - iam:ListRoleTags
+                Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ClientId}"
+              - Effect: Allow
+                Action:
                   - sts:GetCallerIdentity
                   - sts:SetSourceIdentity
                   - sts:TagSession
-                  - sts:GetSourceIdentity
                 Resource: "*"
 
               - Effect: Allow
@@ -90,10 +124,12 @@ Resources:
                   - sqs:DeleteMessage
                   - sqs:SendMessage
                   - sqs:GetQueueAttributes
-                Resource: !GetAtt ClientQueue.Arn
+                Resource:
+                  - !GetAtt ClientQueueOutbox.Arn
+                  - !GetAtt ClientQueueInbox.Arn
 
               - Effect: Allow
-                Action: 
+                Action:
                   - sns:Publish
                   - sns:ListSubscriptionsByTopic
                   - sns:GetTopicAttributes
@@ -126,7 +162,7 @@ Resources:
                   - !Sub
                     - "${BucketArn}/${ClientId}/*"
                     - BucketArn: !ImportValue aws-backup-initial-bucket-arn
-                      
+
               - Effect: Allow
                 Action:
                   - s3:GetObjectTagging
@@ -137,12 +173,24 @@ Resources:
                     - "${BucketArn}/${ClientId}/*"
                     - BucketArn: !ImportValue aws-backup-initial-bucket-arn
 
-  ClientQueue:
+  ClientQueueInbox:
     Type: AWS::SQS::Queue
     DeletionPolicy: Delete
     UpdateReplacePolicy: Delete
     Properties:
-      QueueName: !Sub "${ClientId}-queue"
+      QueueName: !Sub "${ClientId}-inbox"
+      VisibilityTimeout: !Ref VisibilityTimeout
+      MessageRetentionPeriod: !Ref MessageRetentionPeriod
+      Tags:
+        - Key: client-id
+          Value: !Ref ClientId
+
+  ClientQueueOutbox:
+    Type: AWS::SQS::Queue
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      QueueName: !Sub "${ClientId}-outbox"
       VisibilityTimeout: !Ref VisibilityTimeout
       MessageRetentionPeriod: !Ref MessageRetentionPeriod
       Tags:
@@ -153,7 +201,8 @@ Resources:
     Type: AWS::SQS::QueuePolicy
     Properties:
       Queues:
-        - !Ref ClientQueue
+        - !Ref ClientQueueInbox
+        - !Ref ClientQueueOutbox
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -164,7 +213,10 @@ Resources:
               - sqs:ReceiveMessage
               - sqs:DeleteMessage
               - sqs:GetQueueAttributes
-            Resource: !GetAtt ClientQueue.Arn
+              - sqs:SendMessage
+            Resource:
+              - !GetAtt ClientQueueInbox.Arn
+              - !GetAtt ClientQueueOutbox.Arn
 
   ArchiveCompleteTopic:
     Type: AWS::SNS::Topic
@@ -173,7 +225,7 @@ Resources:
       Tags:
         - Key: client-id
           Value: !Ref ClientId
-          
+
   RestoreCompleteTopic:
     Type: AWS::SNS::Topic
     Properties:
@@ -181,7 +233,7 @@ Resources:
       Tags:
         - Key: client-id
           Value: !Ref ClientId
-          
+
   ArchiveCompleteErrorsTopic:
     Type: AWS::SNS::Topic
     Properties:
@@ -189,7 +241,7 @@ Resources:
       Tags:
         - Key: client-id
           Value: !Ref ClientId
-          
+
   RestoreCompleteErrorsTopic:
     Type: AWS::SNS::Topic
     Properties:
@@ -197,7 +249,7 @@ Resources:
       Tags:
         - Key: client-id
           Value: !Ref ClientId
-          
+
   ExceptionTopic:
     Type: AWS::SNS::Topic
     Properties:
@@ -207,13 +259,21 @@ Resources:
           Value: !Ref ClientId
 
 Outputs:
-  QueueUrl:
-    Description: Client-specific SQS Queue URL
-    Value: !Ref ClientQueue
+  InboxQueueUrl:
+    Description: Client-specific Inbox SQS Queue URL
+    Value: !Ref ClientQueueInbox
 
-  QueueArn:
-    Description: Client-specific SQS Queue ARN
-    Value: !GetAtt ClientQueue.Arn
+  OutboxQueueUrl:
+    Description: Client-specific Outbox SQS Queue URL
+    Value: !Ref ClientQueueOutbox
+
+  InboxQueueArn:
+    Description: Client-specific Inbox  SQS Queue ARN
+    Value: !GetAtt ClientQueueInbox.Arn
+
+  OutboxQueueArn:
+    Description: Client-specific Outbox SQS Queue ARN
+    Value: !GetAtt ClientQueueOutbox.Arn
 
   TrustAnchorArn:
     Description: ARN of the Roles Anywhere Trust Anchor
@@ -238,10 +298,10 @@ Outputs:
   ExceptionTopicArn:
     Value: !Ref ExceptionTopic
 
-  AesFileEncryptionKeyName:
-    Description: Name of the SSM parameter for file encryption
-    Value: !Ref AesFileEncryptionKeyParam
-
-  AesSqsEncryptionKeyName:
-    Description: Name of the SSM parameter for SQS encryption
-    Value: !Ref AesSqsEncryptionKeyParam
+  ParamBasePath:
+    Description: Base path for SSM parameters
+    Value: !Ref ParamBasePath
+  
+  ChunkSize:
+    Description: Chunk size for file chunks in bytes
+    Value: !Ref ChunkSize

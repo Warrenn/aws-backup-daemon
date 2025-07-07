@@ -17,7 +17,6 @@ public record SnsMessage(
     string Message);
 
 public sealed record ArchiveCompleteMessage(
-    string RunId,
     string Subject,
     string Message,
     ArchiveRun ArchiveRun) : SnsMessage(Subject, Message);
@@ -29,7 +28,6 @@ public sealed record ArchiveCompleteErrorMessage(
     ArchiveRun ArchiveRun) : SnsMessage(Subject, Message);
 
 public sealed record RestoreCompleteMessage(
-    string RestoreId,
     string Subject,
     string Message,
     RestoreRun RestoreRun) : SnsMessage(Subject, Message);
@@ -48,24 +46,25 @@ public sealed class SnsActor(
     ISnsMessageMediator snsMessageMediator,
     ILogger<SnsActor> logger,
     IContextResolver contextResolver,
-    IAwsClientFactory clientFactory) : BackgroundService
+    IAwsClientFactory clientFactory,
+    AwsConfiguration awsConfiguration) : BackgroundService
 {
     private readonly ConcurrentDictionary<Type, (bool notify, string arn, Func<SnsMessage, string> getMessage)>
         _messageTypeToSnsArn = new()
         {
             [typeof(ArchiveCompleteMessage)] =
-                (contextResolver.NotifyOnArchiveComplete(), contextResolver.ArchiveCompleteSnsArn(),
+                (contextResolver.NotifyOnArchiveComplete(), awsConfiguration.ArchiveCompleteTopicArn,
                     m => GetArchiveCompleteMessage(m, am => ((ArchiveCompleteMessage)am).ArchiveRun)),
             [typeof(ArchiveCompleteErrorMessage)] = (contextResolver.NotifyOnArchiveCompleteErrors(),
-                contextResolver.ArchiveCompleteErrorSnsArn(),
+                awsConfiguration.ArchiveCompleteErrorsTopicArn,
                 m => GetArchiveCompleteMessage(m, am => ((ArchiveCompleteErrorMessage)am).ArchiveRun)),
             [typeof(RestoreCompleteMessage)] =
-                (contextResolver.NotifyOnRestoreComplete(), contextResolver.RestoreCompleteSnsArn(),
+                (contextResolver.NotifyOnRestoreComplete(), awsConfiguration.RestoreCompleteTopicArn,
                     m => GetRestoreCompleteMessage(m, rm => ((RestoreCompleteMessage)rm).RestoreRun)),
             [typeof(RestoreCompleteErrorMessage)] = (contextResolver.NotifyOnRestoreCompleteErrors(),
-                contextResolver.RestoreCompleteErrorSnsArn(), m => GetRestoreCompleteMessage(m,
+                awsConfiguration.RestoreCompleteErrorsTopicArn, m => GetRestoreCompleteMessage(m,
                     rm => ((RestoreCompleteErrorMessage)rm).RestoreRun)),
-            [typeof(ExceptionMessage)] = (contextResolver.NotifyOnException(), contextResolver.ExceptionSnsArn(),
+            [typeof(ExceptionMessage)] = (contextResolver.NotifyOnException(), awsConfiguration.ExceptionTopicArn,
                 GetExceptionMessage)
         };
 

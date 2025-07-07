@@ -21,16 +21,18 @@ public class UploadToS3Hooks(IRollingFileMediator rollingFileMediator) : FileLif
         var uploadPath = $"{path}.gz";
         if (File.Exists(uploadPath))
             File.Delete(uploadPath);
-        File.Copy(path, uploadPath);
+        File.Move(path, uploadPath);
+        File.WriteAllText(path,"");
         rollingFileMediator.Writer.TryWrite(uploadPath);
     }
 }
 
-public class RollingFileActor(
+public sealed class RollingFileActor(
     IRollingFileMediator rollingFileMediator,
     IContextResolver contextResolver,
     IAwsClientFactory factory,
-    ILogger<RollingFileActor> logger) : BackgroundService
+    ILogger<RollingFileActor> logger,
+    AwsConfiguration awsConfiguration) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
@@ -44,9 +46,9 @@ public class RollingFileActor(
                 var logFolder = contextResolver.S3LogFolder();
                 var fileName = Path.GetFileName(filePath);
                 var key = $"{logFolder}/{fileName}";
-                var bucketName = contextResolver.S3BucketId();
+                var bucketName = awsConfiguration.BucketName;
                 var partSizeBytes = contextResolver.S3PartSize();
-                var storageClass = contextResolver.HotStorage();
+                var storageClass = contextResolver.LowCostStorage();
 
                 // Kick off the upload: reads from pipe.Reader.AsStream()
                 var uploadTask = Task.Run(async () =>

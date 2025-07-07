@@ -24,7 +24,8 @@ public sealed class UploadChunkDataActor(
     IContextResolver contextResolver,
     IDataChunkService dataChunkService,
     IArchiveService archiveService,
-    IRetryMediator retryMediator)
+    IRetryMediator retryMediator,
+    AwsConfiguration awsConfiguration)
     : BackgroundService
 {
     private Task[] _workers = [];
@@ -68,7 +69,7 @@ public sealed class UploadChunkDataActor(
             try
             {
                 var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
-                var bucketName = contextResolver.S3BucketId();
+                var bucketName = awsConfiguration.BucketName;
                 var storageClass = contextResolver.ColdStorage();
                 var serverSideEncryptionMethod = contextResolver.ServerSideEncryption();
                 var s3PartSize = contextResolver.S3PartSize();

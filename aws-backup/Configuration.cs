@@ -2,13 +2,20 @@ using System.ComponentModel.DataAnnotations;
 
 namespace aws_backup;
 
-//settings for everyone
-public sealed record GlobalConfiguration(
+//settings that client should not change
+public sealed record AwsConfiguration(
     long ChunkSizeBytes,
-    string KmsBasePath,
-    string BucketId,
-    string SqsQueueBaseName,
-    string SnsBaseArn);
+    string AesSqsEncryptionPath,
+    string AesFileEncryptionPath,
+    string BucketName,
+    string BucketRegion,
+    string SqsInboxQueueUrl,
+    string SqsOutboxQueueUrl,
+    string ArchiveCompleteTopicArn,
+    string ArchiveCompleteErrorsTopicArn,
+    string RestoreCompleteTopicArn,
+    string RestoreCompleteErrorsTopicArn,
+    string ExceptionTopicArn);
 
 //settings that can change
 public sealed record Configuration(
@@ -17,6 +24,7 @@ public sealed record Configuration(
     [property: Required] string PathsToArchive,
     string? ColdStorage = null,
     string? HotStorage = null,
+    string? LowCostStorage = null,
     string? AwsRegion = null,
     string? ServerSideEncryption = null,
     string? LocalCacheFolder = null,
@@ -51,7 +59,6 @@ public sealed record Configuration(
     bool? CheckDownloadHash = null,
     bool? EncryptSqs = null,
     bool? UseS3Accelerate = null,
-    bool? EncryptFiles = null,
     bool? NotifyOnArchiveComplete = null,
     bool? NotifyOnArchiveCompleteErrors = null,
     bool? NotifyOnRestoreComplete = null,
