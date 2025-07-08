@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using Amazon.S3;
 using Amazon.SQS;
 using Amazon.SQS.Model;
 using aws_backup;
@@ -16,6 +17,15 @@ public class SqsPollingActorTests
     private readonly TestLoggerClass<SqsPollingActor> _logger = new();
     private readonly Mock<IRestoreRequestsMediator> _mediator = new();
     private readonly Mock<IAmazonSQS> _sqs = new();
+    private readonly Mock<IAesContextResolver> _aes = new();
+    private readonly AwsConfiguration _config = new(
+        16,
+        "sqs-enc", "file-enc",
+        "bucket-name", "region",
+        "https://queue", "queue-out",
+        "arn:aws:sns:us-east-1:123456789012:archive-complete", "arn:aws:sns:us-east-1:123456789012:archive-error",
+        "arn:aws:sns:us-east-1:123456789012:restore-complete", "arn:aws:sns:us-east-1:123456789012:restore-error", "arn:aws:sns:us-east-1:123456789012:exception");
+
 
     private SqsPollingActor CreateOrch()
     {
@@ -24,13 +34,12 @@ public class SqsPollingActorTests
             .ReturnsAsync(_sqs.Object);
 
         // common context stubs
-        _ctx.Setup(c => c.SqsQueueUrl()).Returns("https://queue");
         _ctx.Setup(c => c.SqsWaitTimeSeconds()).Returns(1);
         _ctx.Setup(c => c.SqsMaxNumberOfMessages()).Returns(1);
         _ctx.Setup(c => c.SqsVisibilityTimeout()).Returns(10);
         _ctx.Setup(c => c.SqsRetryDelaySeconds()).Returns(0);
         _ctx.Setup(c => c.EncryptSqs()).Returns(false);
-        _ctx.Setup(c => c.SqsEncryptionKey(It.IsAny<CancellationToken>()))
+        _aes.Setup(c => c.SqsEncryptionKey(It.IsAny<CancellationToken>()))
             .ReturnsAsync(_aesKey); // no encryption key
 
         return new SqsPollingActor(
@@ -38,7 +47,9 @@ public class SqsPollingActorTests
             _logger,
             _mediator.Object,
             _ctx.Object,
-            Mock.Of<ISnsMessageMediator>()
+            Mock.Of<ISnsMessageMediator>(),
+            _config,
+            _aes.Object
         );
     }
 

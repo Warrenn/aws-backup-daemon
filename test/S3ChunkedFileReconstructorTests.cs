@@ -6,7 +6,7 @@ namespace test;
 
 public class HotStorageServiceIntegrationTests
 {
-    private const string Bucket = "hotstorage-test-bucket";
+    private const string _bucket = "hotstorage-test-bucket";
     private readonly string _key;
     private readonly ArchiveRun _original;
     private readonly HotStorageService _service;
@@ -24,44 +24,54 @@ public class HotStorageServiceIntegrationTests
             PathsToArchive = "/tmp/foo",
             CronSchedule = "*/5 * * * *",
             Status = ArchiveRunStatus.Processing,
-            CreatedAt = TimeProvider.System.GetUtcNow()
-        };
-        _original.CompletedAt = TimeProvider.System.GetUtcNow().AddMinutes(1);
-        _original.OriginalSize = 123_456;
-        _original.CompressedSize = 78_901;
-        _original.TotalFiles = 2;
-        _original.TotalSkippedFiles = 1;
-        // two file entries
-        _original.Files["/tmp/foo/a.txt"] = new FileMetaData("/tmp/foo/a.txt")
-        {
-            Status = FileStatus.Added,
-            Chunks = [new DataChunkDetails("a.chunk0", 0, 3000, [9, 10, 11], 2000)],
-            LastModified = TimeProvider.System.GetUtcNow(),
-            Created = TimeProvider.System.GetUtcNow().AddDays(-1),
-            CompressedSize = 1000,
-            OriginalSize = 1000,
-            AclEntries = [new AclEntry("alice", "rwx", "Allow")],
-            Owner = "alice",
-            Group = "staff",
-            HashKey = [1, 2, 3, 4]
-        };
-        _original.Files["/tmp/foo/b.txt"] = new FileMetaData("/tmp/foo/b.txt")
-        {
-            CompressedSize = 1500,
-            OriginalSize = 3000,
-            LastModified = TimeProvider.System.GetUtcNow(),
-            Created = TimeProvider.System.GetUtcNow().AddDays(-2),
-            AclEntries = [new AclEntry("bob", "rw-", "Allow")],
-            Owner = "bob",
-            Group = "users",
-            Status = FileStatus.Processed,
-            HashKey = [5, 6, 7, 8],
-            Chunks = [new DataChunkDetails("b.chunk0", 0, 3000, [8, 9, 10], 3000)]
+            CreatedAt = TimeProvider.System.GetUtcNow(),
+            CompletedAt = TimeProvider.System.GetUtcNow().AddMinutes(1),
+            OriginalSize = 123_456,
+            CompressedSize = 78_901,
+            TotalFiles = 2,
+            TotalSkippedFiles = 1,
+            Files =
+            {
+                // two file entries
+                ["/tmp/foo/a.txt"] = new FileMetaData("/tmp/foo/a.txt")
+                {
+                    Status = FileStatus.Added,
+                    Chunks = [new DataChunkDetails("a.chunk0", 0, 3000, [9, 10, 11], 2000)],
+                    LastModified = TimeProvider.System.GetUtcNow(),
+                    Created = TimeProvider.System.GetUtcNow().AddDays(-1),
+                    CompressedSize = 1000,
+                    OriginalSize = 1000,
+                    AclEntries = [new AclEntry("alice", "rwx", "Allow")],
+                    Owner = "alice",
+                    Group = "staff",
+                    HashKey = [1, 2, 3, 4]
+                },
+                ["/tmp/foo/b.txt"] = new FileMetaData("/tmp/foo/b.txt")
+                {
+                    CompressedSize = 1500,
+                    OriginalSize = 3000,
+                    LastModified = TimeProvider.System.GetUtcNow(),
+                    Created = TimeProvider.System.GetUtcNow().AddDays(-2),
+                    AclEntries = [new AclEntry("bob", "rw-", "Allow")],
+                    Owner = "bob",
+                    Group = "users",
+                    Status = FileStatus.Processed,
+                    HashKey = [5, 6, 7, 8],
+                    Chunks = [new DataChunkDetails("b.chunk0", 0, 3000, [8, 9, 10], 3000)]
+                }
+            }
         };
 
         // Mock IContextResolver
         var ctx = new Mock<IContextResolver>();
-        ctx.Setup(c => c.S3BucketId()).Returns(Bucket);
+        var awsConfig = new AwsConfiguration(
+            16,
+            "sqs-enc", "file-enc",
+            _bucket, "region",
+            "queue-in", "queue-out",
+            "complete", "complete-errors",
+            "restore", "restore-errors", "exception");
+
         ctx.Setup(c => c.S3PartSize()).Returns(5 * 1024 * 1024);
         ctx.Setup(c => c.HotStorage()).Returns(S3StorageClass.Standard);
         // other methods not used by HotStorageService.Upload/Download
@@ -70,7 +80,7 @@ public class HotStorageServiceIntegrationTests
         var factory = new Mock<IAwsClientFactory>();
         factory.Setup(f => f.CreateS3Client(It.IsAny<CancellationToken>()))
             .ReturnsAsync(s3Mock.GetObject());
-        _service = new HotStorageService(factory.Object, ctx.Object);
+        _service = new HotStorageService(factory.Object, ctx.Object, awsConfig);
     }
 
     [Fact]

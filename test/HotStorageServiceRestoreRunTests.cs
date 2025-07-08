@@ -5,7 +5,7 @@ namespace test;
 
 public class HotStorageServiceRestoreRunTests
 {
-    private const string Bucket = "hotstorage-test-bucket";
+    private const string _bucket = "hotstorage-test-bucket";
     private readonly string _key;
     private readonly RestoreRun _original;
     private readonly HotStorageService _service;
@@ -23,9 +23,9 @@ public class HotStorageServiceRestoreRunTests
             RestorePaths = "/tmp/data",
             ArchiveRunId = "archive-123",
             Status = RestoreRunStatus.Processing,
-            RequestedAt = DateTimeOffset.UtcNow
+            RequestedAt = DateTimeOffset.UtcNow,
+            CompletedAt = DateTimeOffset.UtcNow.AddHours(2)
         };
-        _original.CompletedAt = DateTimeOffset.UtcNow.AddHours(2);
 
         // Populate RequestedFiles
         var rnd = new Random();
@@ -63,7 +63,13 @@ public class HotStorageServiceRestoreRunTests
 
         // Mocks
         var ctxMock = new Mock<IContextResolver>();
-        ctxMock.Setup(c => c.S3BucketId()).Returns(Bucket);
+        var awsConfig = new AwsConfiguration(
+            16,
+            "sqs-enc", "file-enc",
+            _bucket, "region",
+            "queue-in", "queue-out",
+            "complete", "complete-errors",
+            "restore", "restore-errors", "exception");
         ctxMock.Setup(c => c.S3PartSize()).Returns(5 * 1024 * 1024);
         ctxMock.Setup(c => c.HotStorage()).Returns("STANDARD");
 
@@ -71,7 +77,7 @@ public class HotStorageServiceRestoreRunTests
         factoryMock.Setup(f => f.CreateS3Client(It.IsAny<CancellationToken>()))
             .ReturnsAsync(s3Mock.GetObject());
 
-        _service = new HotStorageService(factoryMock.Object, ctxMock.Object);
+        _service = new HotStorageService(factoryMock.Object, ctxMock.Object, awsConfig);
     }
 
     [Fact]

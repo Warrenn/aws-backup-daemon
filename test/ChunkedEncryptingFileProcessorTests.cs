@@ -35,11 +35,21 @@ public class ChunkedEncryptingFileProcessorTests : IDisposable
         // Mock context resolver
         var ctxMock = new Mock<IContextResolver>();
         ctxMock.Setup(c => c.ReadBufferSize()).Returns(4); // small buffer
-        ctxMock.Setup(c => c.ChunkSizeBytes()).Returns(16); // chunk size bigger than content
         ctxMock.Setup(c => c.LocalCacheFolder()).Returns(_cacheDir);
         var aesKey = Convert.FromBase64String("rShkO4lOEPhNlNJ/LRokw2h4G0HDpe4rMnvG4WGFqwA=");
-        ctxMock.Setup(c => c.AesFileEncryptionKey(It.IsAny<CancellationToken>())).ReturnsAsync(aesKey);
 
+        var awsConfig = new AwsConfiguration(
+            16,
+            "sqs-enc", "file-enc",
+            "test-bucket", "region",
+            "queue-in", "queue-out",
+            "complete", "complete-errors",
+            "restore", "restore-errors", "exception");
+        
+        var aesMock = new Mock<IAesContextResolver>();
+        aesMock.Setup(a => a.FileEncryptionKey(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(aesKey);
+        
         // Mock mediator
         var mediatorMock = new Mock<IUploadChunksMediator>();
         mediatorMock
@@ -47,7 +57,11 @@ public class ChunkedEncryptingFileProcessorTests : IDisposable
             .Returns(Task.CompletedTask)
             .Verifiable();
 
-        var processor = new ChunkedEncryptingFileProcessor(ctxMock.Object, mediatorMock.Object);
+        var processor = new ChunkedEncryptingFileProcessor(
+            ctxMock.Object,
+            awsConfig,
+            aesMock.Object,
+            mediatorMock.Object);
 
         // Act
         var result = await processor.ProcessFileAsync("run1", _tempFile, CancellationToken.None);
@@ -80,13 +94,23 @@ public class ChunkedEncryptingFileProcessorTests : IDisposable
         var data = Enumerable.Range(0, 24).Select(i => (byte)i).ToArray();
         await File.WriteAllBytesAsync(_tempFile, data);
 
+        var awsConfig = new AwsConfiguration(
+            8,
+            "sqs-enc", "file-enc",
+            "test-bucket", "region",
+            "queue-in", "queue-out",
+            "complete", "complete-errors",
+            "restore", "restore-errors", "exception");
+
         // Mock context resolver
         var ctxMock = new Mock<IContextResolver>();
         ctxMock.Setup(c => c.ReadBufferSize()).Returns(8);
-        ctxMock.Setup(c => c.ChunkSizeBytes()).Returns(8);
         ctxMock.Setup(c => c.LocalCacheFolder()).Returns(_cacheDir);
         var aesKey = Convert.FromBase64String("rShkO4lOEPhNlNJ/LRokw2h4G0HDpe4rMnvG4WGFqwA=");
-        ctxMock.Setup(c => c.AesFileEncryptionKey(It.IsAny<CancellationToken>())).ReturnsAsync(aesKey);
+        
+        var aesMock = new Mock<IAesContextResolver>();
+        aesMock.Setup(a => a.FileEncryptionKey(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(aesKey);
 
         // Mock mediator
         var mediatorMock = new Mock<IUploadChunksMediator>();
@@ -95,7 +119,11 @@ public class ChunkedEncryptingFileProcessorTests : IDisposable
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var processor = new ChunkedEncryptingFileProcessor(ctxMock.Object, mediatorMock.Object);
+        var processor = new ChunkedEncryptingFileProcessor(
+            ctxMock.Object,
+            awsConfig,
+            aesMock.Object,
+            mediatorMock.Object);
 
         // Act
         var result = await processor.ProcessFileAsync("run2", _tempFile, CancellationToken.None);

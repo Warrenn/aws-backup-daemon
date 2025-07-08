@@ -5,7 +5,7 @@ namespace test;
 
 public class HotStorageServiceManifestTests
 {
-    private const string Bucket = "hotstorage-test-bucket";
+    private const string _bucket = "hotstorage-test-bucket";
     private readonly string _key;
     private readonly DataChunkManifest _manifest;
     private readonly HotStorageService _service;
@@ -27,7 +27,7 @@ public class HotStorageServiceManifestTests
             var baKey = new ByteArrayKey(hash);
             var details = new CloudChunkDetails(
                 $"chunk-{i}.gz",
-                Bucket,
+                _bucket,
                 3000,
                 hash
             );
@@ -36,7 +36,13 @@ public class HotStorageServiceManifestTests
 
         // Mock IContextResolver
         var ctxMock = new Mock<IContextResolver>();
-        ctxMock.Setup(c => c.S3BucketId()).Returns(Bucket);
+        var awsConfig = new AwsConfiguration(
+            16,
+            "sqs-enc", "file-enc",
+            _bucket, "region",
+            "queue-in", "queue-out",
+            "complete", "complete-errors",
+            "restore", "restore-errors", "exception");
         ctxMock.Setup(c => c.S3PartSize()).Returns(5 * 1024 * 1024);
         ctxMock.Setup(c => c.HotStorage()).Returns("STANDARD");
 
@@ -45,7 +51,7 @@ public class HotStorageServiceManifestTests
         factoryMock.Setup(f => f.CreateS3Client(It.IsAny<CancellationToken>()))
             .ReturnsAsync(s3Mock.GetObject());
 
-        _service = new HotStorageService(factoryMock.Object, ctxMock.Object);
+        _service = new HotStorageService(factoryMock.Object, ctxMock.Object, awsConfig);
     }
 
 
@@ -90,7 +96,13 @@ public class HotStorageServiceManifestTests
         }
 
         var ctx = new Mock<IContextResolver>();
-        ctx.Setup(c => c.S3BucketId()).Returns(Bucket);
+        var awsConfig = new AwsConfiguration(
+            16,
+            "sqs-enc", "file-enc",
+            _bucket, "region",
+            "queue-in", "queue-out",
+            "complete", "complete-errors",
+            "restore", "restore-errors", "exception");
         ctx.Setup(c => c.S3PartSize()).Returns(5 * 1024 * 1024);
         ctx.Setup(c => c.HotStorage()).Returns("STANDARD");
 
@@ -98,7 +110,7 @@ public class HotStorageServiceManifestTests
         factory.Setup(f => f.CreateS3Client(It.IsAny<CancellationToken>()))
             .ReturnsAsync(s3Mock.GetObject());
 
-        var service = new HotStorageService(factory.Object, ctx.Object);
+        var service = new HotStorageService(factory.Object, ctx.Object, awsConfig);
         var key = $"test/restoremanifest/{Guid.NewGuid():N}.json.gz";
 
         // Act

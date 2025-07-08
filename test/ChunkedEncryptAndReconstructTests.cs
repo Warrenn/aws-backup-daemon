@@ -21,11 +21,12 @@ public class ChunkedEncryptAndReconstructTests
 
         var ctxProc = new Mock<IContextResolver>();
         ctxProc.Setup(c => c.ReadBufferSize()).Returns(4096);
-        ctxProc.Setup(c => c.ChunkSizeBytes()).Returns(3000);
         ctxProc.Setup(c => c.LocalCacheFolder()).Returns(cacheDir);
+
         var aesKey = new byte[32];
         RandomNumberGenerator.Fill(aesKey);
-        ctxProc.Setup(c => c.AesFileEncryptionKey(It.IsAny<CancellationToken>()))
+        var aesMock = new Mock<IAesContextResolver>();
+        aesMock.Setup(a => a.FileEncryptionKey(It.IsAny<CancellationToken>()))
             .ReturnsAsync(aesKey);
 
         // A no‐op mediator is fine; we’ll upload manually in the test
@@ -34,7 +35,19 @@ public class ChunkedEncryptAndReconstructTests
             .Setup(m => m.ProcessChunk(It.IsAny<UploadChunkRequest>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var processor = new ChunkedEncryptingFileProcessor(ctxProc.Object, mediatorMock.Object);
+        var awsConfig = new AwsConfiguration(
+            3_000L,
+            "sqs-enc", "file-enc",
+            "test-bucket", "region",
+            "queue-in", "queue-out",
+            "complete", "complete-errors",
+            "restore", "restore-errors", "exception");
+
+        var processor = new ChunkedEncryptingFileProcessor(
+            ctxProc.Object,
+            awsConfig,
+            aesMock.Object,
+            mediatorMock.Object);
 
         // 3) Process into chunks
         var result = await processor.ProcessFileAsync("run", tempFile, CancellationToken.None);
@@ -61,16 +74,16 @@ public class ChunkedEncryptAndReconstructTests
         ctxRec.Setup(c => c.LocalRestoreFolder(It.IsAny<string>()))
             .Returns(Path.GetTempPath());
         ctxRec.Setup(c => c.ReadBufferSize()).Returns(4096);
-        ctxRec.Setup(c => c.ChunkSizeBytes()).Returns(3000);
         ctxRec.Setup(c => c.NoOfConcurrentDownloadsPerFile()).Returns(2);
-        ctxRec.Setup(c => c.AesFileEncryptionKey(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(aesKey);
 
         var factory = new Mock<IAwsClientFactory>();
         factory.Setup(f => f.CreateS3Client(It.IsAny<CancellationToken>()))
             .ReturnsAsync(s3);
 
-        var reconstructor = new S3ChunkedFileReconstructor(ctxRec.Object, factory.Object);
+        var reconstructor = new S3ChunkedFileReconstructor(
+            ctxRec.Object,
+            factory.Object,
+            aesMock.Object);
 
         // 6) Build the DownloadFileFromS3Request
         var cloudDetails = result.Chunks.Select(ch => new CloudChunkDetails(
@@ -118,11 +131,12 @@ public class ChunkedEncryptAndReconstructTests
 
         var ctxProc = new Mock<IContextResolver>();
         ctxProc.Setup(c => c.ReadBufferSize()).Returns(1096);
-        ctxProc.Setup(c => c.ChunkSizeBytes()).Returns(3000);
         ctxProc.Setup(c => c.LocalCacheFolder()).Returns(cacheDir);
+
         var aesKey = new byte[32];
         RandomNumberGenerator.Fill(aesKey);
-        ctxProc.Setup(c => c.AesFileEncryptionKey(It.IsAny<CancellationToken>()))
+        var aesMock = new Mock<IAesContextResolver>();
+        aesMock.Setup(a => a.FileEncryptionKey(It.IsAny<CancellationToken>()))
             .ReturnsAsync(aesKey);
 
         // A no‐op mediator is fine; we’ll upload manually in the test
@@ -131,7 +145,19 @@ public class ChunkedEncryptAndReconstructTests
             .Setup(m => m.ProcessChunk(It.IsAny<UploadChunkRequest>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var processor = new ChunkedEncryptingFileProcessor(ctxProc.Object, mediatorMock.Object);
+        var awsConfig = new AwsConfiguration(
+            3_000L,
+            "sqs-enc", "file-enc",
+            "test-bucket", "region",
+            "queue-in", "queue-out",
+            "complete", "complete-errors",
+            "restore", "restore-errors", "exception");
+
+        var processor = new ChunkedEncryptingFileProcessor(
+            ctxProc.Object,
+            awsConfig,
+            aesMock.Object,
+            mediatorMock.Object);
 
         // 3) Process into chunks
         var result = await processor.ProcessFileAsync("run", tempFile, CancellationToken.None);
@@ -158,16 +184,16 @@ public class ChunkedEncryptAndReconstructTests
         ctxRec.Setup(c => c.LocalRestoreFolder(It.IsAny<string>()))
             .Returns(Path.GetTempPath());
         ctxRec.Setup(c => c.ReadBufferSize()).Returns(596);
-        ctxRec.Setup(c => c.ChunkSizeBytes()).Returns(3000);
         ctxRec.Setup(c => c.NoOfConcurrentDownloadsPerFile()).Returns(2);
-        ctxRec.Setup(c => c.AesFileEncryptionKey(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(aesKey);
 
         var factory = new Mock<IAwsClientFactory>();
         factory.Setup(f => f.CreateS3Client(It.IsAny<CancellationToken>()))
             .ReturnsAsync(s3);
 
-        var reconstructor = new S3ChunkedFileReconstructor(ctxRec.Object, factory.Object);
+        var reconstructor = new S3ChunkedFileReconstructor(
+            ctxRec.Object, 
+            factory.Object,
+            aesMock.Object);
 
         // 6) Build the DownloadFileFromS3Request
         var cloudDetails = result.Chunks.Select(ch => new CloudChunkDetails(

@@ -10,10 +10,17 @@ namespace test;
 
 public class SnsActorTests
 {
+    private readonly SnsActor _actor;
     private readonly Mock<IAwsClientFactory> _clientFactory;
+    private readonly AwsConfiguration _config = new(
+        16,
+        "sqs-enc", "file-enc",
+    "bucket-name", "region",
+    "queue-in", "queue-out",
+    "arn:aws:sns:us-east-1:123456789012:archive-complete", "arn:aws:sns:us-east-1:123456789012:archive-error",
+    "arn:aws:sns:us-east-1:123456789012:restore-complete", "arn:aws:sns:us-east-1:123456789012:restore-error", "arn:aws:sns:us-east-1:123456789012:exception");
     private readonly Mock<IContextResolver> _contextResolver;
     private readonly TestLoggerClass<SnsActor> _logger;
-    private readonly SnsActor _actor;
     private readonly Mock<IAmazonSimpleNotificationService> _snsClient;
     private readonly Mock<ISnsMessageMediator> _snsOrchestrationMediator;
 
@@ -35,7 +42,8 @@ public class SnsActorTests
             _snsOrchestrationMediator.Object,
             _logger,
             _contextResolver.Object,
-            _clientFactory.Object);
+            _clientFactory.Object,
+            _config);
     }
 
     [Fact]
@@ -44,7 +52,6 @@ public class SnsActorTests
         // Arrange
         var archiveRun = CreateTestRun("test-run");
         var message = new ArchiveCompleteMessage(
-            "run-123",
             "Archive Complete",
             "Archive operation completed successfully",
             archiveRun);
@@ -111,9 +118,8 @@ public class SnsActorTests
         // Arrange
         var restoreRun = CreateRestoreRun("restore-123");
         var message = new RestoreCompleteMessage(
-            "restore-789",
             "Restore Complete",
-            "Restore operation completed successfully",
+            "Restore Complete",
             restoreRun);
 
         var messages = CreateAsyncEnumerable([message]);
@@ -176,7 +182,6 @@ public class SnsActorTests
         var message = new ArchiveCompleteMessage(
             "run-123",
             "Archive Complete",
-            "Archive operation completed successfully",
             archiveRun);
 
         var messages = CreateAsyncEnumerable([message]);
@@ -188,7 +193,8 @@ public class SnsActorTests
             _snsOrchestrationMediator.Object,
             _logger,
             _contextResolver.Object,
-            _clientFactory.Object);
+            _clientFactory.Object,
+            _config);
         await orchestration.StartAsync(CancellationToken.None);
         await (orchestration.ExecuteTask ?? Task.CompletedTask);
         await orchestration.StopAsync(CancellationToken.None);
@@ -232,8 +238,8 @@ public class SnsActorTests
         var testException = new AmazonSimpleNotificationServiceException("SNS publish failed");
 
         var archiveRun = CreateTestRun("test-run");
-        var message1 = new ArchiveCompleteMessage("run-1", "Archive 1", "Message 1", archiveRun);
-        var message2 = new ArchiveCompleteMessage("run-2", "Archive 2", "Message 2", archiveRun);
+        var message1 = new ArchiveCompleteMessage("run-1", "Archive 1", archiveRun);
+        var message2 = new ArchiveCompleteMessage("run-2", "Archive 2", archiveRun);
 
         var messages = CreateAsyncEnumerable([message1, message2]);
         _snsOrchestrationMediator.Setup(x => x.GetMessages(It.IsAny<CancellationToken>()))
@@ -298,9 +304,9 @@ public class SnsActorTests
         var restoreRun = CreateRestoreRun("restore-run");
 
         var messages = CreateAsyncEnumerable([
-            new ArchiveCompleteMessage("run-1", "Archive 1", "Message 1", archiveRun),
+            new ArchiveCompleteMessage("run-1", "Archive 1",  archiveRun),
             new ExceptionMessage("Exception", "System error"),
-            new RestoreCompleteMessage("restore-1", "Restore 1", "Restore message", restoreRun)
+            new RestoreCompleteMessage("restore-1", "Restore 1",  restoreRun)
         ]);
 
         _snsOrchestrationMediator.Setup(x => x.GetMessages(It.IsAny<CancellationToken>()))
@@ -334,24 +340,10 @@ public class SnsActorTests
     private void SetupDefaultContextResolver()
     {
         _contextResolver.Setup(x => x.NotifyOnArchiveComplete()).Returns(true);
-        _contextResolver.Setup(x => x.ArchiveCompleteSnsArn())
-            .Returns("arn:aws:sns:us-east-1:123456789012:archive-complete");
-
         _contextResolver.Setup(x => x.NotifyOnArchiveCompleteErrors()).Returns(true);
-        _contextResolver.Setup(x => x.ArchiveCompleteErrorSnsArn())
-            .Returns("arn:aws:sns:us-east-1:123456789012:archive-error");
-
         _contextResolver.Setup(x => x.NotifyOnRestoreComplete()).Returns(true);
-        _contextResolver.Setup(x => x.RestoreCompleteSnsArn())
-            .Returns("arn:aws:sns:us-east-1:123456789012:restore-complete");
-
         _contextResolver.Setup(x => x.NotifyOnRestoreCompleteErrors()).Returns(true);
-        _contextResolver.Setup(x => x.RestoreCompleteErrorSnsArn())
-            .Returns("arn:aws:sns:us-east-1:123456789012:restore-error");
-
         _contextResolver.Setup(x => x.NotifyOnException()).Returns(true);
-        _contextResolver.Setup(x => x.ExceptionSnsArn())
-            .Returns("arn:aws:sns:us-east-1:123456789012:exception");
     }
 
     private static async IAsyncEnumerable<SnsMessage> CreateAsyncEnumerable(IEnumerable<SnsMessage> messages)
@@ -370,7 +362,7 @@ public class SnsActorTests
         while (!cancellationToken.IsCancellationRequested && count < 100)
         {
             var archiveRun = CreateTestRun($"run-{count}");
-            yield return new ArchiveCompleteMessage($"run-{count}", $"Archive {count}", $"Message {count}", archiveRun);
+            yield return new ArchiveCompleteMessage($"Archive {count}", $"Message {count}", archiveRun);
             count++;
             await Task.Delay(50, cancellationToken);
         }

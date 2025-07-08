@@ -3,6 +3,7 @@
 using System.CommandLine;
 using aws_backup;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -56,7 +57,14 @@ async Task<int> Main(string[] args, CancellationToken cancellationToken)
                         .AddDebug()
                         .AddSerilog(); // Use Serilog for structured logging
                 })
-                .AddSingleton<IContextResolver, ContextResolver>()
+                .AddSingleton<IContextResolver>(sp =>
+                {
+                    var file = ((IConfigurationRoot)ctx.Configuration).Providers.OfType<JsonConfigurationProvider>()
+                        .Select(p => p.Source.Path).First();
+                    return new ContextResolver(
+                        file!,
+                        sp.GetService<Configuration>()!);
+                })
                 .AddSingleton<ITemporaryCredentialsServer, RolesAnywhere>()
                 .AddSingleton<IAwsClientFactory, AwsClientFactory>();
         });

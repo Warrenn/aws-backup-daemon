@@ -18,6 +18,14 @@ public class UploadChunkDataActorTests
     private readonly Mock<ILogger<UploadChunkDataActor>> _logger = new();
     private readonly Mock<IUploadChunksMediator> _mediator = new();
     private readonly Mock<IRetryMediator> _retryMed = new();
+    private readonly AwsConfiguration _config = new(
+        16,
+        "sqs-enc", "file-enc",
+        "bucket", "region",
+        "https://queue", "queue-out",
+        "arn:aws:sns:us-east-1:123456789012:archive-complete", "arn:aws:sns:us-east-1:123456789012:archive-error",
+        "arn:aws:sns:us-east-1:123456789012:restore-complete", "arn:aws:sns:us-east-1:123456789012:restore-error", "arn:aws:sns:us-east-1:123456789012:exception");
+
 
     // weave together an orchestration whose WorkerLoopAsync we can call
     private UploadChunkDataActor CreateOrch(Channel<UploadChunkRequest> chan)
@@ -37,7 +45,8 @@ public class UploadChunkDataActorTests
             _ctx.Object,
             _chunkSvc.Object,
             _archiveSvc.Object,
-            _retryMed.Object
+            _retryMed.Object,
+            _config
         );
     }
 
@@ -106,7 +115,6 @@ public class UploadChunkDataActorTests
             .ReturnsAsync(s3.GetObject());
 
         // context
-        _ctx.Setup(c => c.S3BucketId()).Returns("bucket");
         _ctx.Setup(c => c.ColdStorage()).Returns("REDUCED_REDUNDANCY");
         _ctx.Setup(c => c.ServerSideEncryption()).Returns(ServerSideEncryptionMethod.AES256);
         _ctx.Setup(c => c.S3PartSize()).Returns(5);
@@ -155,7 +163,6 @@ public class UploadChunkDataActorTests
             .ReturnsAsync(s3.Object);
 
         // context
-        _ctx.Setup(c => c.S3BucketId()).Returns("bucket");
         _ctx.Setup(c => c.ColdStorage()).Returns("CLASS");
         _ctx.Setup(c => c.ServerSideEncryption()).Returns(ServerSideEncryptionMethod.AES256);
         _ctx.Setup(c => c.S3PartSize()).Returns(5);
@@ -211,7 +218,6 @@ public class UploadChunkDataActorTests
         _awsFactory.Setup(f => f.CreateS3Client(It.IsAny<CancellationToken>()))
             .ReturnsAsync(s3.Object);
 
-        _ctx.Setup(c => c.S3BucketId()).Returns("bucket");
         // on instantiation of TransferUtility, UploadAsync will throw
         // easiest: give s3Client.PutObjectAsync throw when called by TransferUtility
         s3.Setup(s => s.PutObjectAsync(It.IsAny<PutObjectRequest>(), It.IsAny<CancellationToken>()))
