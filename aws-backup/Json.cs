@@ -30,7 +30,8 @@ public static class Json
     public static readonly JsonSerializerOptions Options = new()
     {
         PropertyNameCaseInsensitive = true,
-        WriteIndented = true
+        WriteIndented = true,
+        TypeInfoResolver = SourceGenerationContext.Default
     };
 }
 

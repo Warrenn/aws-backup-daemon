@@ -157,5 +157,21 @@ public class S3Mock
                     ResponseStream = new MemoryStream(data)
                 });
             });
+        
+        _s3Mock
+            .Setup(s => s.PutObjectTaggingAsync(It.IsAny<PutObjectTaggingRequest>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PutObjectTaggingResponse());
+        
+        _s3Mock
+            .Setup(s3 => s3.GetObjectTaggingAsync(It.IsAny<GetObjectTaggingRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GetObjectTaggingResponse
+            {
+                Tagging =
+                [
+                    new Tag { Key = "Environment", Value = "Test" },
+                    new Tag { Key = "Owner", Value = "Alice" }
+                ]
+            });
     }
 }

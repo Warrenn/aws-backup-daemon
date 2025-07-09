@@ -6,13 +6,7 @@ namespace aws_backup;
 
 public interface IContextResolver
 {
-    string ChunkS3Key(
-        string localFilePath,
-        int chunkIndex,
-        long chunkSize,
-        byte[] hashKey,
-        long size
-    );
+    string ChunkS3Key(byte[] hashKey);
 
     string RestoreId(
         string archiveRunId,
@@ -78,51 +72,33 @@ public interface IContextResolver
     string PathsToArchive();
     string ClientId();
     string SettingsPath();
-    void UpdateConfiguration(Configuration configOptions);
+    Task UpdateConfiguration(Configuration configOptions);
 }
 
 public sealed class ContextResolver : IContextResolver
 {
     private readonly string _clientId;
-    private readonly string _settingsPath;
+    private readonly ISignalHub<string> _signalHub;
     private RegionEndpoint? _awsRegion;
 
     // Cached values
     private RequestRetryMode? _awsRetryMode;
-    private bool? _checkDownloadHash;
     private S3StorageClass? _coldStorageClass;
     private Configuration _configOptions;
-    private int? _delayBetweenUploadsSeconds;
-    private int? _downloadAttemptLimit;
-    private bool? _encryptSqs;
-    private int? _generalRetryLimit;
     private S3StorageClass? _hotStorageClass;
     private string? _ignoreFile;
-    private bool? _keepAclEntries;
-    private bool? _keepOwnerGroup;
-    private bool? _keepTimeStamps;
     private string? _localCacheFolder;
     private string? _localRestoreFolder;
     private string? _logPath;
     private S3StorageClass? _lowCostStorage;
-    private int? _noOfConcurrentDownloadsPerFile;
-    private int? _noOfS3FilesToDownloadConcurrently;
-    private int? _noOfS3FilesToUploadConcurrently;
-    private int? _readBufferSize;
-    private int? _retryCheckIntervalMs;
-    private long? _s3PartSize;
     private ServerSideEncryptionMethod? _serverSideEncryptionMethod;
-    private int? _shutdownTimeoutSeconds;
-    private int? _storageCheckDelaySeconds;
-    private int? _uploadAttemptLimit;
-    private bool? _useS3Accelerate;
 
     public ContextResolver(
-        string settingsPath,
-        Configuration configOptions)
+        Configuration configOptions,
+        ISignalHub<string> signalHub)
     {
-        _settingsPath = settingsPath;
         _configOptions = configOptions;
+        _signalHub = signalHub;
         _clientId = ScrubClientId(_configOptions.ClientId);
     }
 
@@ -187,8 +163,11 @@ public sealed class ContextResolver : IContextResolver
             return _localCacheFolder;
 
         _localCacheFolder = _configOptions.LocalCacheFolder;
-        if (string.IsNullOrWhiteSpace(_localCacheFolder) || !Path.IsPathRooted(_localCacheFolder))
+        if (string.IsNullOrWhiteSpace(_localCacheFolder) || !IsValidPath(_localCacheFolder))
             _localCacheFolder = Path.GetTempPath();
+
+        if (!Path.IsPathRooted(_localCacheFolder))
+            _localCacheFolder = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, _localCacheFolder));
 
         Directory.CreateDirectory(_localCacheFolder);
 
@@ -205,11 +184,14 @@ public sealed class ContextResolver : IContextResolver
 
     public string LocalRestoreFolder(string requestRestoreId)
     {
-        if (string.IsNullOrWhiteSpace(_localRestoreFolder) || !Directory.Exists(_localCacheFolder))
+        if (string.IsNullOrWhiteSpace(_localRestoreFolder) || !Directory.Exists(_localRestoreFolder))
             _localRestoreFolder = _configOptions.LocalRestoreFolderBase;
 
-        if (string.IsNullOrWhiteSpace(_localRestoreFolder) || !Path.IsPathRooted(_localRestoreFolder))
-            _localRestoreFolder = AppContext.BaseDirectory;
+        if (string.IsNullOrWhiteSpace(_localRestoreFolder) || !IsValidPath(_localRestoreFolder))
+            _localRestoreFolder = Path.Combine(AppContext.BaseDirectory, "restores");
+
+        if (!Path.IsPathRooted(_localRestoreFolder))
+            _localRestoreFolder = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, _localRestoreFolder));
 
         if (!Directory.Exists(_localRestoreFolder))
             Directory.CreateDirectory(_localRestoreFolder);
@@ -254,59 +236,58 @@ public sealed class ContextResolver : IContextResolver
     // Integer configuration methods with defaults
     public int ReadBufferSize()
     {
-        return _readBufferSize ??= _configOptions.ReadBufferSize ?? 65536;
+        return _configOptions.ReadBufferSize ?? 65536;
         // 64KB default
     }
 
     public int NoOfConcurrentDownloadsPerFile()
     {
-        return _noOfConcurrentDownloadsPerFile ??= _configOptions.NoOfConcurrentDownloadsPerFile ?? 4;
+        return _configOptions.NoOfConcurrentDownloadsPerFile ?? 4;
     }
 
     public int NoOfS3FilesToDownloadConcurrently()
     {
-        return _noOfS3FilesToDownloadConcurrently ??=
-            _configOptions.NoOfS3FilesToDownloadConcurrently ?? 10;
+        return _configOptions.NoOfS3FilesToDownloadConcurrently ?? 10;
     }
 
     public int NoOfS3FilesToUploadConcurrently()
     {
-        return _noOfS3FilesToUploadConcurrently ??= _configOptions.NoOfS3FilesToUploadConcurrently ?? 10;
+        return _configOptions.NoOfS3FilesToUploadConcurrently ?? 10;
     }
 
     public int ShutdownTimeoutSeconds()
     {
-        return _shutdownTimeoutSeconds ??= _configOptions.ShutdownTimeoutSeconds ?? 30;
+        return _configOptions.ShutdownTimeoutSeconds ?? 30;
     }
 
     public int RetryCheckIntervalMs()
     {
-        return _retryCheckIntervalMs ??= _configOptions.RetryCheckIntervalMs ?? 5000;
+        return _configOptions.RetryCheckIntervalMs ?? 5000;
     }
 
     public int StorageCheckDelaySeconds()
     {
-        return _storageCheckDelaySeconds ??= _configOptions.StorageCheckDelaySeconds ?? 300;
+        return _configOptions.StorageCheckDelaySeconds ?? 300;
     }
 
     public int DelayBetweenUploadsSeconds()
     {
-        return _delayBetweenUploadsSeconds ??= _configOptions.DelayBetweenUploadsSeconds ?? 1;
+        return _configOptions.DelayBetweenUploadsSeconds ?? 1;
     }
 
     public int DownloadAttemptLimit()
     {
-        return _downloadAttemptLimit ??= _configOptions.DownloadAttemptLimit ?? 3;
+        return _configOptions.DownloadAttemptLimit ?? 3;
     }
 
     public int UploadAttemptLimit()
     {
-        return _uploadAttemptLimit ??= _configOptions.UploadAttemptLimit ?? 3;
+        return _configOptions.UploadAttemptLimit ?? 3;
     }
 
     public int GeneralRetryLimit()
     {
-        return _generalRetryLimit ??= _configOptions.GeneralRetryLimit ?? 3;
+        return _configOptions.GeneralRetryLimit ?? 3;
     }
 
     public int? SqsWaitTimeSeconds()
@@ -326,7 +307,7 @@ public sealed class ContextResolver : IContextResolver
 
     public long S3PartSize()
     {
-        return _s3PartSize ??= _configOptions.S3PartSize ?? 5242880L;
+        return _configOptions.S3PartSize ?? 5242880L;
         // 5MB default
     }
 
@@ -338,36 +319,36 @@ public sealed class ContextResolver : IContextResolver
     // Boolean configuration methods with defaults
     public bool KeepTimeStamps()
     {
-        return _keepTimeStamps ??= _configOptions.KeepTimeStamps ?? false;
+        return _configOptions.KeepTimeStamps ?? false;
     }
 
     public bool KeepOwnerGroup()
     {
-        return _keepOwnerGroup ??= _configOptions.KeepOwnerGroup ?? false;
+        return _configOptions.KeepOwnerGroup ?? false;
     }
 
     public bool KeepAclEntries()
     {
-        return _keepAclEntries ??= _configOptions.KeepAclEntries ?? false;
+        return _configOptions.KeepAclEntries ?? false;
     }
 
     public bool CheckDownloadHash()
     {
-        return _checkDownloadHash ??= _configOptions.CheckDownloadHash ?? true;
+        return _configOptions.CheckDownloadHash ?? true;
     }
 
     public bool EncryptSqs()
     {
-        return _encryptSqs ??= _configOptions.EncryptSqs ?? true;
+        return _configOptions.EncryptSqs ?? true;
     }
 
     public bool UseS3Accelerate()
     {
-        return _useS3Accelerate ??= _configOptions.UseS3Accelerate ?? false;
+        return _configOptions.UseS3Accelerate ?? false;
     }
 
     // ID generation methods
-    public string ChunkS3Key(string localFilePath, int chunkIndex, long chunkSize, byte[] hashKey, long size)
+    public string ChunkS3Key( byte[] hashKey)
     {
         var hash = Base64Url.Encode(hashKey); // Use first 8 chars of hash
         var prefix = S3DataPrefix();
@@ -481,12 +462,28 @@ public sealed class ContextResolver : IContextResolver
 
     public string SettingsPath()
     {
-        return _settingsPath;
+        return _configOptions.AppSettingsPath;
     }
 
-    public void UpdateConfiguration(Configuration configOptions)
+    public async Task UpdateConfiguration(Configuration configOptions)
     {
         _configOptions = configOptions;
+        ResetCache();
+        await _signalHub.SignalAsync(_configOptions.CronSchedule);
+    }
+
+    private void ResetCache()
+    {
+        _awsRegion = null; // Reset cached region
+        _awsRetryMode = null; // Reset cached retry mode
+        _coldStorageClass = null; // Reset cached storage classes)
+        _hotStorageClass = null;
+        _lowCostStorage = null;
+        _serverSideEncryptionMethod = null; // Reset encryption method
+        _localCacheFolder = null; // Reset local cache folder
+        _ignoreFile = null; // Reset ignore file
+        _localRestoreFolder = null; // Reset restore folder
+        _logPath = null; // Reset log path
     }
 
     public string LogPath()
@@ -517,5 +514,18 @@ public sealed class ContextResolver : IContextResolver
     {
         // Simple hash for generating IDs - use a proper hash function in production
         return Math.Abs(input.GetHashCode()).ToString("X8");
+    }
+
+    private static bool IsValidPath(string path)
+    {
+        try
+        {
+            Path.GetFullPath(path);
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 }

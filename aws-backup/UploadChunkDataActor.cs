@@ -25,7 +25,8 @@ public sealed class UploadChunkDataActor(
     IDataChunkService dataChunkService,
     IArchiveService archiveService,
     IRetryMediator retryMediator,
-    AwsConfiguration awsConfiguration)
+    AwsConfiguration awsConfiguration,
+    IS3Service s3Service)
     : BackgroundService
 {
     private Task[] _workers = [];
@@ -73,12 +74,7 @@ public sealed class UploadChunkDataActor(
                 var storageClass = contextResolver.ColdStorage();
                 var serverSideEncryptionMethod = contextResolver.ServerSideEncryption();
                 var s3PartSize = contextResolver.S3PartSize();
-                var key = contextResolver.ChunkS3Key(
-                    chunk.LocalFilePath,
-                    chunk.ChunkIndex,
-                    chunk.ChunkSize,
-                    chunk.HashKey,
-                    chunk.ChunkSize);
+                var key = contextResolver.ChunkS3Key(chunk.HashKey);
 
                 // upload the chunk file to S3
                 var transferUtil = new TransferUtility(s3Client);
@@ -111,6 +107,17 @@ public sealed class UploadChunkDataActor(
                         $"Checksum mismatch for chunk {chunk.ChunkIndex} for file {chunk.LocalFilePath}.S3: {s3CheckSum}, Local: {localCheckSum}");
                     await retryMediator.RetryAttempt(request, cancellationToken);
                 }
+
+                await s3Service.AppendTags(s3Client, bucketName, key, new Dictionary<string, string>
+                {
+                    { "storage-class", "cold" },
+                    { "archive-run-id", request.ArchiveRunId },
+                    { "parent-file", parentFile },
+                    { "chunk-index", chunk.ChunkIndex.ToString() },
+                    { "hash-key", Base64Url.Encode(chunk.HashKey) },
+                    { "local-sha256", localCheckSum },
+                    { "chunk-size-bytes", awsConfiguration.ChunkSizeBytes.ToString() }
+                }, cancellationToken);
 
                 await dataChunkService.MarkChunkAsUploaded(chunk, key, bucketName, cancellationToken);
                 if (File.Exists(chunk.LocalFilePath)) File.Delete(chunk.LocalFilePath);

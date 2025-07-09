@@ -11,17 +11,17 @@ public class UploadActorTests
 {
     private readonly Mock<IChunkManifestMediator> _chunkManifestMediator;
     private readonly Mock<IContextResolver> _contextResolver;
-    private readonly Mock<IHotStorageService> _hotStorageService;
+    private readonly Mock<IS3Service> _hotStorageService;
     private readonly Mock<IRestoreManifestMediator> _restoreManifestMediator;
     private readonly Mock<IRestoreRequestsMediator> _restoreRequestsMediator;
     private readonly Mock<IRestoreRunMediator> _restoreRunMediator;
     private readonly Mock<IArchiveRunMediator> _runMediator;
-    private TestLoggerClass<UploadActor> _logger;
     private UploadActor _actor;
+    private TestLoggerClass<UploadActor> _logger;
 
     public UploadActorTests()
     {
-        _hotStorageService = new Mock<IHotStorageService>();
+        _hotStorageService = new Mock<IS3Service>();
         _runMediator = new Mock<IArchiveRunMediator>();
         _chunkManifestMediator = new Mock<IChunkManifestMediator>();
         _restoreManifestMediator = new Mock<IRestoreManifestMediator>();
@@ -120,20 +120,22 @@ public class UploadActorTests
         await _actor.StopAsync(cancellationToken);
 
         // Assert
-        _hotStorageService.Verify(x => x.UploadAsync("archive1", It.IsAny<object>(), It.IsAny<CancellationToken>()),
+        _hotStorageService.Verify(
+            x => x.UploadCompressedObject("archive1", It.IsAny<object>(), It.IsAny<StorageTemperature>(),
+                It.IsAny<CancellationToken>()),
             Times.Once);
-        _hotStorageService.Verify(x => x.UploadAsync("archive2", It.IsAny<object>(), It.IsAny<CancellationToken>()),
+        _hotStorageService.Verify(x => x.UploadCompressedObject("archive2", It.IsAny<object>(), It.IsAny<StorageTemperature>(), It.IsAny<CancellationToken>()),
             Times.Once);
-        _hotStorageService.Verify(x => x.UploadAsync("chunk1", It.IsAny<object>(), It.IsAny<CancellationToken>()),
+        _hotStorageService.Verify(x => x.UploadCompressedObject("chunk1", It.IsAny<object>(), It.IsAny<StorageTemperature>(), It.IsAny<CancellationToken>()),
             Times.Once);
-        _hotStorageService.Verify(x => x.UploadAsync("restore1", It.IsAny<object>(), It.IsAny<CancellationToken>()),
+        _hotStorageService.Verify(x => x.UploadCompressedObject("restore1", It.IsAny<object>(), It.IsAny<StorageTemperature>(), It.IsAny<CancellationToken>()),
             Times.Once);
-        _hotStorageService.Verify(x => x.UploadAsync("run1", It.IsAny<object>(), It.IsAny<CancellationToken>()),
+        _hotStorageService.Verify(x => x.UploadCompressedObject("run1", It.IsAny<object>(), It.IsAny<StorageTemperature>(), It.IsAny<CancellationToken>()),
             Times.Once);
-        _hotStorageService.Verify(x => x.UploadAsync("current1", It.IsAny<object>(), It.IsAny<CancellationToken>()),
+        _hotStorageService.Verify(x => x.UploadCompressedObject("current1", It.IsAny<object>(), It.IsAny<StorageTemperature>(), It.IsAny<CancellationToken>()),
             Times.Once);
         _hotStorageService.Verify(
-            x => x.UploadAsync("currentarchive1", It.IsAny<object>(), It.IsAny<CancellationToken>()),
+            x => x.UploadCompressedObject("currentarchive1", It.IsAny<object>(), It.IsAny<StorageTemperature>(), It.IsAny<CancellationToken>()),
             Times.Once);
 
         Assert.Empty(_logger.LogRecords.Where(x => x.LogLevel == LogLevel.Error));
@@ -183,9 +185,9 @@ public class UploadActorTests
         _restoreRequestsMediator.Setup(x => x.GetRunningRequests(It.IsAny<CancellationToken>()))
             .Returns(() => CreateAsyncEnumerable<CurrentRestoreRequests>([]));
 
-        _hotStorageService.Setup(x => x.UploadAsync("failing-key", It.IsAny<object>(), It.IsAny<CancellationToken>()))
+        _hotStorageService.Setup(x => x.UploadCompressedObject("failing-key", It.IsAny<object>(), It.IsAny<StorageTemperature>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(testException);
-        _hotStorageService.Setup(x => x.UploadAsync("success-key", It.IsAny<object>(), It.IsAny<CancellationToken>()))
+        _hotStorageService.Setup(x => x.UploadCompressedObject("success-key", It.IsAny<object>(), It.IsAny<StorageTemperature>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         // Act
@@ -212,7 +214,7 @@ public class UploadActorTests
         Assert.Contains("Error processing upload failing-key", errorLogs[0].Message);
         Assert.Equal(testException, errorLogs[0].Exception);
 
-        _hotStorageService.Verify(x => x.UploadAsync("success-key", It.IsAny<object>(), It.IsAny<CancellationToken>()),
+        _hotStorageService.Verify(x => x.UploadCompressedObject("success-key", It.IsAny<object>(), It.IsAny<StorageTemperature>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -269,7 +271,7 @@ public class UploadActorTests
         _restoreRequestsMediator.Setup(x => x.GetRunningRequests(It.IsAny<CancellationToken>()))
             .Returns(() => CreateAsyncEnumerable<CurrentRestoreRequests>([]));
         _hotStorageService.Setup(x =>
-                x.UploadAsync(It.IsAny<string>(), It.IsAny<object>(), It.IsAny<CancellationToken>()))
+                x.UploadCompressedObject(It.IsAny<string>(), It.IsAny<object>(), It.IsAny<StorageTemperature>(), It.IsAny<CancellationToken>()))
             .Returns(async () => { await Task.Delay(100, cts.Token); });
 
         // Act
@@ -312,7 +314,7 @@ public class UploadActorTests
 
         // Assert
         _hotStorageService.Verify(
-            x => x.UploadAsync(It.IsAny<string>(), It.IsAny<object>(), It.IsAny<CancellationToken>()),
+            x => x.UploadCompressedObject(It.IsAny<string>(), It.IsAny<object>(), It.IsAny<StorageTemperature>(), It.IsAny<CancellationToken>()),
             Times.Never);
         Assert.Empty(_logger.LogRecords);
     }
@@ -372,9 +374,9 @@ public class UploadActorTests
 
         // Assert
         Assert.True(stopwatch.ElapsedMilliseconds >= 500, "Should respect delay between uploads");
-        _hotStorageService.Verify(x => x.UploadAsync("key1", It.IsAny<ArchiveRun>(), It.IsAny<CancellationToken>()),
+        _hotStorageService.Verify(x => x.UploadCompressedObject("key1", It.IsAny<ArchiveRun>(), It.IsAny<StorageTemperature>(), It.IsAny<CancellationToken>()),
             Times.Once);
-        _hotStorageService.Verify(x => x.UploadAsync("key2", It.IsAny<ArchiveRun>(), It.IsAny<CancellationToken>()),
+        _hotStorageService.Verify(x => x.UploadCompressedObject("key2", It.IsAny<ArchiveRun>(), It.IsAny<StorageTemperature>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -419,10 +421,10 @@ public class UploadActorTests
             .Returns(() => CreateAsyncEnumerable<CurrentRestoreRequests>([]));
 
         _hotStorageService.Setup(x =>
-                x.UploadAsync("archive-key", It.IsAny<ArchiveRun>(), It.IsAny<CancellationToken>()))
+                x.UploadCompressedObject("archive-key", It.IsAny<ArchiveRun>(), It.IsAny<StorageTemperature>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(archiveException);
         _hotStorageService.Setup(x =>
-                x.UploadAsync("chunk-key", It.IsAny<DataChunkManifest>(), It.IsAny<CancellationToken>()))
+                x.UploadCompressedObject("chunk-key", It.IsAny<DataChunkManifest>(), It.IsAny<StorageTemperature>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(chunkException);
 
         // Act

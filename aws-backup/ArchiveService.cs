@@ -151,7 +151,6 @@ public sealed class ArchiveService(
 
     public async Task<ArchiveRun> StartNewArchiveRun(RunRequest request, CancellationToken ct)
     {
-        
         var runId = request.RunId;
         var run = new ArchiveRun
         {
@@ -428,7 +427,7 @@ public sealed class ArchiveService(
 
         // remove from in‐memory caches
         currentRuns.TryRemove(runId, out _);
-        currentRequests.TryRemove(runId, out _);
+        // currentRequests.TryRemove(runId, out _);
         logger.LogInformation("Run {RunId} removed from in‐memory cache", runId);
     }
 }

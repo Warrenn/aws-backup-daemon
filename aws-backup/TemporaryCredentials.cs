@@ -1,3 +1,4 @@
+using System.Numerics;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -38,58 +39,46 @@ public sealed class RolesAnywhere : ITemporaryCredentialsServer
         var endpoint = new Uri($"https://rolesanywhere.{region}.amazonaws.com");
         var url = new Uri(endpoint, "/sessions");
 
-        // 1) Load CA cert and key
-        var certPem = await File.ReadAllTextAsync(certificateFileName, cancellation);
-        var cert = X509Certificate2.CreateFromPem(certPem);
-        cert = cert.CopyWithPrivateKey(null!); // ensure public-only
-        var serial = cert.SerialNumber; // hex string
-        var derPub = cert.Export(X509ContentType.Cert);
-        var x509Header = Convert.ToBase64String(derPub);
-
-        // 2) Load private key
         var keyPem = await File.ReadAllTextAsync(privateKeyFileName, cancellation);
         using var rsa = RSA.Create();
         rsa.ImportFromPem(keyPem.ToCharArray());
 
-        // 4) Dates
-        var now = DateTime.UtcNow;
+        var certPem = await File.ReadAllTextAsync(certificateFileName, cancellation);
+        var cert = X509Certificate2.CreateFromPem(certPem);
+        var serialHex = cert.SerialNumber; // hex string
+        var derPub = cert.Export(X509ContentType.Cert);
+        var x509Header = Convert.ToBase64String(derPub);
+        
+        var serialBytes = Enumerable.Range(0, serialHex.Length / 2)
+            .Select(i => Convert.ToByte(serialHex.Substring(i * 2, 2), 16))
+            .Reverse() // reverse to get DER order
+            .ToArray();
+
+        var serialBigInt = new BigInteger(serialBytes.Concat(new byte[] { 0 }).ToArray()); // add 0 to ensure non-negative
+        var serial = serialBigInt.ToString();
+
+        var now = DateTime.UtcNow; // example date, replace with DateTime.UtcNow for real use
         var amzDate = now.ToString("yyyyMMdd'T'HHmmss'Z'");
         var dateStamp = now.ToString("yyyyMMdd");
 
-        // 5) Payload
-        var payload = $$"""
-                        {
-                            ""durationSeconds"": {{sessionDuration}},
-                            ""profileArn"" : ""{{profileArn}}"",
-                            ""roleArn"" : ""{{roleArn}}"",
-                            ""trustAnchorArn"" : ""{{trustAnchorArn}}""
-                        }
-                        """;
+        var payload =
+            $"{{\"durationSeconds\":{sessionDuration},\"profileArn\":\"{profileArn}\",\"roleArn\":\"{roleArn}\",\"trustAnchorArn\":\"{trustAnchorArn}\"}}";
         var payloadHash = ToHex(HashSha256(Encoding.UTF8.GetBytes(payload)));
 
-        // 6) Headers
         var headers = new SortedDictionary<string, string>(StringComparer.Ordinal)
         {
-            ["content-type"] = "application/json",
-            ["host"] = url.Host,
-            ["x-amz-date"] = amzDate,
-            ["x-amz-x509"] = x509Header
+            ["Content-Type"] = "application/json",
+            ["Host"] = url.Host,
+            ["X-Amz-Date"] = amzDate,
+            ["X-Amz-X509"] = x509Header
         };
 
-        // 7) Canonical request
-        var signedHeaders = string.Join(";", headers.Keys);
-        var canonicalHeaders = string.Join("\n", headers.Select(kv => $"{kv.Key}:{kv.Value}")) + "\n";
-        var canonicalRequest = new StringBuilder()
-            .AppendLine("POST")
-            .AppendLine(url.AbsolutePath)
-            .AppendLine("") // no query
-            .AppendLine(canonicalHeaders)
-            .AppendLine(signedHeaders)
-            .Append(payloadHash)
-            .ToString();
+        var signedHeaders = string.Join(";", headers.Keys.Select(k => k.ToLowerInvariant().Trim()));
+        var canonicalHeaders =
+            string.Join('\n', headers.Select(kv => $"{kv.Key.ToLowerInvariant().Trim()}:{kv.Value.Trim()}")) + '\n';
+        var canonicalRequest =string.Join('\n', "POST", url.AbsolutePath, "", canonicalHeaders, signedHeaders, payloadHash); 
         var canonicalRequestHash = ToHex(HashSha256(Encoding.UTF8.GetBytes(canonicalRequest)));
 
-        // 8) String to sign
         const string algorithm = "AWS4-X509-RSA-SHA256";
         var credentialScope = $"{dateStamp}/{region}/rolesanywhere/aws4_request";
         var stringToSign = new StringBuilder()
@@ -109,7 +98,7 @@ public sealed class RolesAnywhere : ITemporaryCredentialsServer
         // 10) Authorization header
         var credential = $"{serial}/{credentialScope}";
         var auth = $"{algorithm} Credential={credential}, SignedHeaders={signedHeaders}, Signature={signature}";
-        headers["authorization"] = auth;
+        headers["Authorization"] = auth;
 
         // 11) Send
         using var client = new HttpClient();
@@ -117,6 +106,8 @@ public sealed class RolesAnywhere : ITemporaryCredentialsServer
         {
             Content = new StringContent(payload, Encoding.UTF8, "application/json")
         };
+        req.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+        
         foreach (var kv in headers)
             req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
 

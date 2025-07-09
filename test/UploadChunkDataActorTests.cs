@@ -46,7 +46,8 @@ public class UploadChunkDataActorTests
             _chunkSvc.Object,
             _archiveSvc.Object,
             _retryMed.Object,
-            _config
+            _config,
+            Mock.Of<IS3Service>()
         );
     }
 
@@ -118,7 +119,7 @@ public class UploadChunkDataActorTests
         _ctx.Setup(c => c.ColdStorage()).Returns("REDUCED_REDUNDANCY");
         _ctx.Setup(c => c.ServerSideEncryption()).Returns(ServerSideEncryptionMethod.AES256);
         _ctx.Setup(c => c.S3PartSize()).Returns(5);
-        _ctx.Setup(c => c.ChunkS3Key(It.IsAny<string>(), 0, 10, It.IsAny<byte[]>(), 10))
+        _ctx.Setup(c => c.ChunkS3Key(It.IsAny<byte[]>()))
             .Returns("the-key");
 
         var orch = CreateOrch(chan);
@@ -166,7 +167,7 @@ public class UploadChunkDataActorTests
         _ctx.Setup(c => c.ColdStorage()).Returns("CLASS");
         _ctx.Setup(c => c.ServerSideEncryption()).Returns(ServerSideEncryptionMethod.AES256);
         _ctx.Setup(c => c.S3PartSize()).Returns(5);
-        _ctx.Setup(c => c.ChunkS3Key(It.IsAny<string>(), 1, 10, It.IsAny<byte[]>(), 10))
+        _ctx.Setup(c => c.ChunkS3Key( It.IsAny<byte[]>()))
             .Returns("k3");
 
         bool retryCalled = false, limitExceededCalled = false;

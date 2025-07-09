@@ -8,7 +8,7 @@ public class HotStorageServiceManifestTests
     private const string _bucket = "hotstorage-test-bucket";
     private readonly string _key;
     private readonly DataChunkManifest _manifest;
-    private readonly HotStorageService _service;
+    private readonly S3Service _service;
 
     public HotStorageServiceManifestTests()
     {
@@ -51,7 +51,7 @@ public class HotStorageServiceManifestTests
         factoryMock.Setup(f => f.CreateS3Client(It.IsAny<CancellationToken>()))
             .ReturnsAsync(s3Mock.GetObject());
 
-        _service = new HotStorageService(factoryMock.Object, ctxMock.Object, awsConfig);
+        _service = new S3Service(factoryMock.Object, ctxMock.Object, awsConfig);
     }
 
 
@@ -59,8 +59,8 @@ public class HotStorageServiceManifestTests
     public async Task UploadAndDownload_Manifest_RoundTripsSuccessfully()
     {
         // Act: upload and download
-        await _service.UploadAsync(_key, _manifest, CancellationToken.None);
-        var downloaded = await _service.DownloadAsync<DataChunkManifest>(_key, CancellationToken.None);
+        await _service.UploadCompressedObject(_key, _manifest, StorageTemperature.Hot, CancellationToken.None);
+        var downloaded = await _service.DownloadCompressedObject<DataChunkManifest>(_key, CancellationToken.None);
 
         // Assert count
         Assert.Equal(_manifest.Count, downloaded.Count);
@@ -110,12 +110,12 @@ public class HotStorageServiceManifestTests
         factory.Setup(f => f.CreateS3Client(It.IsAny<CancellationToken>()))
             .ReturnsAsync(s3Mock.GetObject());
 
-        var service = new HotStorageService(factory.Object, ctx.Object, awsConfig);
+        var service = new S3Service(factory.Object, ctx.Object, awsConfig);
         var key = $"test/restoremanifest/{Guid.NewGuid():N}.json.gz";
 
         // Act
-        await service.UploadAsync(key, manifest, CancellationToken.None);
-        var downloaded = await service.DownloadAsync<S3RestoreChunkManifest>(key, CancellationToken.None);
+        await service.UploadCompressedObject(key, manifest, StorageTemperature.Hot, CancellationToken.None);
+        var downloaded = await service.DownloadCompressedObject<S3RestoreChunkManifest>(key, CancellationToken.None);
 
         // Assert
         Assert.Equal(manifest.Count, downloaded.Count);

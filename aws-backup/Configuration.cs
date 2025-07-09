@@ -67,4 +67,7 @@ public sealed record Configuration(
     int? DaysToKeepRestoredCopy = null,
     string? LogFolder = null,
     string? LogLevel = null
-);
+)
+{
+    public string AppSettingsPath { get; set; } = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+};

@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 namespace aws_backup;
 
 public sealed class UploadActor(
-    IHotStorageService hotStorageService,
+    IS3Service s3Service,
     IArchiveRunMediator runMediator,
     IChunkManifestMediator chunkManifestMediator,
     IRestoreManifestMediator restoreManifestMediator,
@@ -40,7 +40,7 @@ public sealed class UploadActor(
                 try
                 {
                     var delayBetweenUploads = contextResolver.DelayBetweenUploadsSeconds();
-                    await hotStorageService.UploadAsync(bucketKey, data, cancellationToken);
+                    await s3Service.UploadCompressedObject(bucketKey, data, StorageTemperature.Hot, cancellationToken);
                     await Task.Delay(delayBetweenUploads, cancellationToken);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

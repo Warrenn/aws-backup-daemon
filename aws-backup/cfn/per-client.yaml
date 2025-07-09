@@ -126,6 +126,14 @@ Resources:
                   - sqs:GetQueueAttributes
                 Resource:
                   - !GetAtt ClientQueueOutbox.Arn
+
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:SendMessage
+                  - sqs:GetQueueAttributes
+                Resource:
                   - !GetAtt ClientQueueInbox.Arn
 
               - Effect: Allow
@@ -140,7 +148,7 @@ Resources:
                   - ssm:DescribeParameters
                   - ssm:GetParameters
                   - ssm:GetParameter
-                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:${ParamBasePath}/${ClientId}/*"
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${ParamBasePath}/${ClientId}/*"
 
               - Effect: Allow
                 Action:
@@ -216,6 +224,15 @@ Resources:
               - sqs:SendMessage
             Resource:
               - !GetAtt ClientQueueInbox.Arn
+          - Effect: Allow
+            Principal:
+              AWS: !GetAtt RolesAnywhereAssumableRole.Arn
+            Action:
+              - sqs:ReceiveMessage
+              - sqs:DeleteMessage
+              - sqs:GetQueueAttributes
+              - sqs:SendMessage
+            Resource:
               - !GetAtt ClientQueueOutbox.Arn
 
   ArchiveCompleteTopic:

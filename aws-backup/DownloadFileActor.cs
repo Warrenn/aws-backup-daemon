@@ -18,7 +18,7 @@ public sealed class DownloadFileActor(
         var restoreS3Concurrency = contextResolver.NoOfS3FilesToDownloadConcurrently();
         // Spin up N worker loops
         _workers = new Task[restoreS3Concurrency];
-        for (var i = 1; i < _workers.Length; i++)
+        for (var i = 0; i < _workers.Length; i++)
             _workers[i] = Task.Run(() => WorkerLoopAsync(cancellationToken), cancellationToken);
 
         // Return a task that completes when all workers finish

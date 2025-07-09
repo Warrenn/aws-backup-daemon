@@ -9,7 +9,7 @@ public class HotStorageServiceIntegrationTests
     private const string _bucket = "hotstorage-test-bucket";
     private readonly string _key;
     private readonly ArchiveRun _original;
-    private readonly HotStorageService _service;
+    private readonly S3Service _service;
 
     public HotStorageServiceIntegrationTests()
     {
@@ -80,15 +80,15 @@ public class HotStorageServiceIntegrationTests
         var factory = new Mock<IAwsClientFactory>();
         factory.Setup(f => f.CreateS3Client(It.IsAny<CancellationToken>()))
             .ReturnsAsync(s3Mock.GetObject());
-        _service = new HotStorageService(factory.Object, ctx.Object, awsConfig);
+        _service = new S3Service(factory.Object, ctx.Object, awsConfig);
     }
 
     [Fact]
     public async Task UploadAndDownload_ArchiveRun_RoundTrips()
     {
         // Act
-        await _service.UploadAsync(_key, _original, CancellationToken.None);
-        var downloaded = await _service.DownloadAsync<ArchiveRun>(_key, CancellationToken.None);
+        await _service.UploadCompressedObject(_key, _original, StorageTemperature.Hot, CancellationToken.None);
+        var downloaded = await _service.DownloadCompressedObject<ArchiveRun>(_key, CancellationToken.None);
 
         // Assert top-level props
         Assert.Equal(_original.RunId, downloaded.RunId);

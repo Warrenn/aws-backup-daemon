@@ -34,6 +34,9 @@ Resources:
               DaysAfterInitiation: 7
           - Id: TransitionToDeepArchive
             Status: Enabled
+            TagFilters:
+              - Key: storage-class
+                Value: cold
             Transitions:
               - StorageClass: DEEP_ARCHIVE
                 TransitionInDays: !Ref ArchiveTransitionDays

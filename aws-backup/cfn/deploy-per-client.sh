@@ -115,3 +115,5 @@ else
   echo "❌ Stack $STACK_NAME failed: $FINAL_STATUS"
   exit 1
 fi
+
+./gererate-aes-ssm-key.sh "aes-key-${CLIENT_ID}" "$REGION"

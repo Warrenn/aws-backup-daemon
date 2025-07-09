@@ -3,7 +3,6 @@
 using System.CommandLine;
 using aws_backup;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -11,157 +10,159 @@ using Serilog;
 using Serilog.Events;
 using Serilog.Sinks.File;
 
-async Task<int> Main(string[] args, CancellationToken cancellationToken)
+var appConfigOpt = new Option<string?>("--app-settings", "-a")
 {
-    var appConfigOpt = new Option<string?>("--app-settings", "-a")
-    {
-        Description = "Path to the application settings file (appsettings.json).",
-        Required = false
-    };
+    Description = "Path to the application settings file (appsettings.json).",
+    Required = false
+};
 
-    var rootCommand = new RootCommand("AWS Backup Tool - Archive and restore files to/from AWS S3")
-    {
-        appConfigOpt
-    };
+var rootCommand = new RootCommand("AWS Backup Tool - Archive and restore files to/from AWS S3")
+{
+    appConfigOpt
+};
 
-    var parsedArgs = rootCommand.Parse(args);
-    var exit = await parsedArgs.InvokeAsync(cancellationToken);
-    if (exit != 0) return exit;
+var cancellationToken = new CancellationTokenSource().Token;
+var parsedArgs = rootCommand.Parse(args);
+var exit = await parsedArgs.InvokeAsync(cancellationToken);
+if (exit != 0) return exit;
 
-    var appSettingsPath = parsedArgs.GetValue(appConfigOpt) ?? "appsettings.json";
-    if (!File.Exists(appSettingsPath))
-    {
-        await Console.Error.WriteLineAsync($"Application settings file not found: {appSettingsPath}");
-        return -1;
-    }
-
-    var builder = Host.CreateDefaultBuilder(args)
-        .UseWindowsService() // ← this enables service integration
-        .UseSystemd() // ← this enables systemd integration
-        .ConfigureAppConfiguration(config =>
-        {
-            // Load configuration from appsettings.json, environment variables, etc.
-            config
-                .AddJsonFile(appSettingsPath, false, true)
-                .AddEnvironmentVariables();
-        })
-        .ConfigureServices((ctx, services) =>
-        {
-            services
-                .AddSingleton<Configuration>(_ => ctx.Configuration.Get<Configuration>()!)
-                .AddLogging(builder =>
-                {
-                    builder
-                        .ClearProviders() // Clear default logging providers
-                        .AddConsole()
-                        .AddDebug()
-                        .AddSerilog(); // Use Serilog for structured logging
-                })
-                .AddSingleton<IContextResolver>(sp =>
-                {
-                    var file = ((IConfigurationRoot)ctx.Configuration).Providers.OfType<JsonConfigurationProvider>()
-                        .Select(p => p.Source.Path).First();
-                    return new ContextResolver(
-                        file!,
-                        sp.GetService<Configuration>()!);
-                })
-                .AddSingleton<ITemporaryCredentialsServer, RolesAnywhere>()
-                .AddSingleton<IAwsClientFactory, AwsClientFactory>();
-        });
-
-    var provider = builder.Build().Services;
-
-    var archiveRunRequests =
-        await GetS3File<CurrentArchiveRunRequests>(provider, ctx => ctx.CurrentArchiveRunsBucketKey()) ??
-        new CurrentArchiveRunRequests();
-
-    var dataChunkManifest =
-        await GetS3File<DataChunkManifest>(provider, ctx => ctx.ChunkManifestBucketKey()) ??
-        new DataChunkManifest();
-
-    var currentRestoreRequests =
-        await GetS3File<CurrentRestoreRequests>(provider, ctx => ctx.CurrentRestoreBucketKey()) ??
-        new CurrentRestoreRequests();
-
-    var chunkManifest =
-        await GetS3File<S3RestoreChunkManifest>(provider, ctx => ctx.RestoreManifestBucketKey()) ??
-        new S3RestoreChunkManifest();
-
-    var resolver = provider.GetRequiredService<IContextResolver>();
-    var iamClient = await provider.GetRequiredService<IAwsClientFactory>().CreateIamClient(cancellationToken);
-    var clientId = resolver.ClientId();
-    var awsConfiguration = await iamClient.GetAwsConfigurationAsync(clientId, cancellationToken);
-
-    builder
-        .ConfigureServices(services =>
-        {
-            services
-                .AddSingleton<Mediator>()
-                .AddSingleton(awsConfiguration)
-                .AddSingleton(archiveRunRequests)
-                .AddSingleton(dataChunkManifest)
-                .AddSingleton(currentRestoreRequests)
-                .AddSingleton(chunkManifest)
-                .AddSingleton<ISnsMessageMediator>(sp => sp.GetRequiredService<Mediator>())
-                .AddSingleton<IArchiveFileMediator>(sp => sp.GetRequiredService<Mediator>())
-                .AddSingleton<IRunRequestMediator>(sp => sp.GetRequiredService<Mediator>())
-                .AddSingleton<IArchiveRunMediator>(sp => sp.GetRequiredService<Mediator>())
-                .AddSingleton<IChunkManifestMediator>(sp => sp.GetRequiredService<Mediator>())
-                .AddSingleton<IDownloadFileMediator>(sp => sp.GetRequiredService<Mediator>())
-                .AddSingleton<IRetryMediator>(sp => sp.GetRequiredService<Mediator>())
-                .AddSingleton<IRestoreRequestsMediator>(sp => sp.GetRequiredService<Mediator>())
-                .AddSingleton<IRestoreManifestMediator>(sp => sp.GetRequiredService<Mediator>())
-                .AddSingleton<IRestoreRunMediator>(sp => sp.GetRequiredService<Mediator>())
-                .AddSingleton<IUploadChunksMediator>(sp => sp.GetRequiredService<Mediator>())
-                .AddSingleton<IRollingFileMediator>(sp => sp.GetRequiredService<Mediator>())
-                .AddSingleton<IAwsClientFactory, AwsClientFactory>()
-                .AddSingleton<IArchiveService, ArchiveService>()
-                .AddSingleton<IChunkedEncryptingFileProcessor, ChunkedEncryptingFileProcessor>()
-                .AddSingleton<IContextResolver, ContextResolver>()
-                .AddSingleton<ICronScheduler, CronScheduler>()
-                .AddSingleton<ICronSchedulerFactory, CronSchedulerFactory>()
-                .AddSingleton<IDataChunkService, DataChunkService>()
-                .AddSingleton<IFileLister, FileLister>()
-                .AddSingleton<IRestoreService, RestoreService>()
-                .AddSingleton<IS3ChunkedFileReconstructor, S3ChunkedFileReconstructor>()
-                .AddSingleton<IS3Service, S3Service>()
-                .AddSingleton<FileLifecycleHooks, UploadToS3Hooks>()
-                .AddSingleton<TimeProvider>(_ => TimeProvider.System)
-                .AddHostedService<CronJobActor>()
-                .AddHostedService<ArchiveFilesActor>()
-                .AddHostedService<ArchiveRunActor>()
-                .AddHostedService<DownloadFileActor>()
-                .AddHostedService<RestoreRunActor>()
-                .AddHostedService<RetryActor>()
-                .AddHostedService<S3StorageClassActor>()
-                .AddHostedService<SqsPollingActor>()
-                .AddHostedService<UploadChunkDataActor>()
-                .AddHostedService<UploadActor>()
-                .AddHostedService<SnsActor>()
-                .AddHostedService<RollingFileActor>()
-                .AddOptions<Configuration>()
-                .ValidateOnStart();
-        });
-    var host = builder.Build();
-    provider = host.Services;
-    var configuration = provider.GetRequiredService<Configuration>();
-
-    ConfigureSeriLogging(configuration, provider);
-
-    await host.RunAsync(cancellationToken);
-    return 0;
+var appSettingsPath = parsedArgs.GetValue(appConfigOpt) ??
+                      Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+if (!File.Exists(appSettingsPath))
+{
+    await Console.Error.WriteLineAsync($"Application settings file not found: {appSettingsPath}");
+    return -1;
 }
 
-static async Task<T?> GetS3File<T>(IServiceProvider sp, Func<IContextResolver, string> getKey)
-    where T : notnull
-{
-    var resolver = sp.GetService<IContextResolver>();
-    var service = sp.GetService<IHotStorageService>();
-    var key = getKey(resolver!);
+if (!Path.IsPathRooted(appSettingsPath))
+    appSettingsPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, appSettingsPath));
 
-    var data = await service!.DownloadAsync<T>(key, CancellationToken.None);
-    return data;
+var configBuilder = new ConfigurationBuilder();
+configBuilder
+    .SetBasePath(AppContext.BaseDirectory)
+    .AddJsonFile(appSettingsPath, false, true)
+    .AddEnvironmentVariables();
+
+var rootConfig = configBuilder.Build();
+var configuration = rootConfig.Get<Configuration>();
+
+if (configuration is null)
+{
+    await Console.Error.WriteLineAsync("No configuration found in appsettings.json");
+    return -1;
 }
+
+configuration.AppSettingsPath = appSettingsPath;
+
+var serviceCollection = new ServiceCollection();
+serviceCollection
+    .AddLogging(builder =>
+    {
+        builder
+            .ClearProviders() // Clear default logging providers
+            .AddConsole()
+            .AddDebug()
+            .AddSerilog(); // Use Serilog for structured logging
+    })
+    .AddSingleton(configuration)
+    .AddSingleton<ISignalHub<string>, SignalHub<string>>()
+    .AddSingleton<IContextResolver, ContextResolver>()
+    .AddSingleton<ITemporaryCredentialsServer, RolesAnywhere>()
+    .AddSingleton<IAwsClientFactory, AwsClientFactory>();
+
+IServiceProvider provider = serviceCollection.BuildServiceProvider();
+var resolver = provider.GetRequiredService<IContextResolver>();
+var factory = provider.GetRequiredService<IAwsClientFactory>();
+var iamClient = await factory.CreateIamClient(cancellationToken);
+var clientId = resolver.ClientId();
+var awsConfiguration = await iamClient.GetAwsConfigurationAsync(clientId, cancellationToken);
+
+serviceCollection
+    .AddSingleton(awsConfiguration)
+    .AddSingleton<IS3Service, S3Service>();
+
+provider = serviceCollection.BuildServiceProvider();
+var hotStorageService = provider.GetRequiredService<IS3Service>();
+
+var archiveRunRequests =
+    await hotStorageService.DownloadCompressedObject<CurrentArchiveRunRequests>(resolver.CurrentArchiveRunsBucketKey(),
+        CancellationToken.None) ?? new CurrentArchiveRunRequests();
+
+var dataChunkManifest =
+    await hotStorageService.DownloadCompressedObject<DataChunkManifest>(resolver.ChunkManifestBucketKey(),
+        CancellationToken.None) ?? new DataChunkManifest();
+
+var currentRestoreRequests =
+    await hotStorageService.DownloadCompressedObject<CurrentRestoreRequests>(resolver.CurrentRestoreBucketKey(),
+        CancellationToken.None) ?? new CurrentRestoreRequests();
+
+var chunkManifest =
+    await hotStorageService.DownloadCompressedObject<S3RestoreChunkManifest>(resolver.RestoreManifestBucketKey(),
+        CancellationToken.None) ?? new S3RestoreChunkManifest();
+
+var builder = Host.CreateDefaultBuilder(args)
+    .UseWindowsService() // ← this enables service integration
+    .UseSystemd() // ← this enables systemd integration
+    .ConfigureAppConfiguration(builder =>
+    {
+        foreach (var source in configBuilder.Sources) builder.Add(source);
+    })
+    .ConfigureServices(services =>
+    {
+        foreach (var descriptor in serviceCollection) services.Add(descriptor);
+        services
+            .AddSingleton<Mediator>()
+            .AddSingleton(awsConfiguration)
+            .AddSingleton(archiveRunRequests)
+            .AddSingleton(dataChunkManifest)
+            .AddSingleton(currentRestoreRequests)
+            .AddSingleton(chunkManifest)
+            .AddSingleton<ISnsMessageMediator>(sp => sp.GetRequiredService<Mediator>())
+            .AddSingleton<IArchiveFileMediator>(sp => sp.GetRequiredService<Mediator>())
+            .AddSingleton<IRunRequestMediator>(sp => sp.GetRequiredService<Mediator>())
+            .AddSingleton<IArchiveRunMediator>(sp => sp.GetRequiredService<Mediator>())
+            .AddSingleton<IChunkManifestMediator>(sp => sp.GetRequiredService<Mediator>())
+            .AddSingleton<IDownloadFileMediator>(sp => sp.GetRequiredService<Mediator>())
+            .AddSingleton<IRetryMediator>(sp => sp.GetRequiredService<Mediator>())
+            .AddSingleton<IRestoreRequestsMediator>(sp => sp.GetRequiredService<Mediator>())
+            .AddSingleton<IRestoreManifestMediator>(sp => sp.GetRequiredService<Mediator>())
+            .AddSingleton<IRestoreRunMediator>(sp => sp.GetRequiredService<Mediator>())
+            .AddSingleton<IUploadChunksMediator>(sp => sp.GetRequiredService<Mediator>())
+            .AddSingleton<IRollingFileMediator>(sp => sp.GetRequiredService<Mediator>())
+            .AddSingleton<IAesContextResolver, AesContextResolver>()
+            .AddSingleton<IAwsClientFactory, AwsClientFactory>()
+            .AddSingleton<IArchiveService, ArchiveService>()
+            .AddSingleton<IChunkedEncryptingFileProcessor, ChunkedEncryptingFileProcessor>()
+            .AddSingleton<ICronScheduler, CronScheduler>()
+            .AddSingleton<ICronSchedulerFactory, CronSchedulerFactory>()
+            .AddSingleton<IDataChunkService, DataChunkService>()
+            .AddSingleton<IFileLister, FileLister>()
+            .AddSingleton<IRestoreService, RestoreService>()
+            .AddSingleton<IS3ChunkedFileReconstructor, S3ChunkedFileReconstructor>()
+            .AddSingleton<IS3Service, S3Service>()
+            .AddSingleton<FileLifecycleHooks, UploadToS3Hooks>()
+            .AddSingleton<TimeProvider>(_ => TimeProvider.System)
+            .AddSingleton<CurrentArchiveRuns>()
+            .AddHostedService<CronJobActor>()
+            .AddHostedService<ArchiveFilesActor>()
+            .AddHostedService<ArchiveRunActor>()
+            .AddHostedService<DownloadFileActor>()
+            .AddHostedService<RestoreRunActor>()
+            .AddHostedService<RetryActor>()
+            .AddHostedService<S3StorageClassActor>()
+            .AddHostedService<SqsPollingActor>()
+            .AddHostedService<UploadChunkDataActor>()
+            .AddHostedService<UploadActor>()
+            .AddHostedService<SnsActor>()
+            .AddHostedService<RollingFileActor>();
+    });
+var host = builder.Build();
+provider = host.Services;
+
+ConfigureSeriLogging(configuration, provider);
+
+await host.RunAsync();
+return 0;
 
 static void ConfigureSeriLogging(Configuration logConfig, IServiceProvider logProvider)
 {
@@ -172,7 +173,7 @@ static void ConfigureSeriLogging(Configuration logConfig, IServiceProvider logPr
     if (string.IsNullOrWhiteSpace(logFolder))
         logFolder = Path.Combine(AppContext.BaseDirectory, "logs");
     else if (!Path.IsPathRooted(logFolder))
-        logFolder = Path.Combine(AppContext.BaseDirectory, logFolder);
+        logFolder = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, logFolder));
 
     if (!Directory.Exists(logFolder))
         Directory.CreateDirectory(logFolder);
