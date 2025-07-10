@@ -116,4 +116,11 @@ else
   exit 1
 fi
 
-./gererate-aes-ssm-key.sh "aes-key-${CLIENT_ID}" "$REGION"
+param_base_path=$(aws cloudformation describe-stacks \
+  --stack-name "$STACK_NAME" \
+  --region "$REGION" \
+  --query "Stacks[0].Outputs[?OutputKey=='ParamBasePath'].OutputValue" \
+  --output text)
+
+./generate-aes-ssm-key.sh "${param_base_path}/${CLIENT_ID}/aes-sqs-encryption"
+./generate-aes-ssm-key.sh "${param_base_path}/${CLIENT_ID}/aes-file-encryption"

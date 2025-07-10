@@ -5,8 +5,10 @@
     <TargetFramework>net9.0</TargetFramework>
     <RootNamespace>aws_backup</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
+    <TrimMode>full</TrimMode>
     <PublishAot>true</PublishAot>
     <Nullable>enable</Nullable>
+    <PublishTrimmed>true</PublishTrimmed>
     <InvariantGlobalization>true</InvariantGlobalization>
     <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
     <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
@@ -38,7 +40,9 @@
     <PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="9.0.6" />
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.6" />
     <PackageReference Include="Serilog" Version="4.3.0" />
+    <PackageReference Include="Serilog.Extensions.Hosting" Version="9.0.0" />
     <PackageReference Include="Serilog.Extensions.Logging" Version="9.0.2" />
+    <PackageReference Include="Serilog.Settings.Configuration" Version="9.0.0" />
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageReference Include="System.CommandLine" Version="2.0.0-beta5.25306.1" />
   </ItemGroup>

@@ -32,16 +32,14 @@ public class CronJobActorTests
         var timeProvider = new FakeTimeProvider(startTime);
         var channel = Channel.CreateUnbounded<string>();
 
-        var cfgMon = new Configuration(
-            PathsToArchive: "",
-            ClientId: "test-client",
-            CronSchedule: "* * * * *");
-
         var scheduler = new StubScheduler();
         var resolverMock = new Mock<IContextResolver>();
         resolverMock
             .Setup(r => r.ArchiveRunId(It.IsAny<DateTimeOffset>()))
             .Returns("resolved-context");
+        resolverMock
+            .Setup(r => r.CronSchedule())
+            .Returns("* * * * *");
 
         var mediatorMock = new Mock<IRunRequestMediator>();
         mediatorMock
@@ -71,7 +69,6 @@ public class CronJobActorTests
         scheduler.Enqueue(() => null);
 
         var orchestrator = new CronJobActor(
-            cfgMon,
             mediatorMock.Object,
             resolverMock.Object,
             mockFactory.Object,
@@ -110,13 +107,10 @@ public class CronJobActorTests
         signalHubMock
             .Setup(h => h.WaitAsync(It.IsAny<CancellationToken>()))
             .Returns(() => channel.Reader.ReadAsync().AsTask());
-
-        var cfgMon = new Configuration(
-            PathsToArchive: "",
-            ClientId: "test-client",
-            CronSchedule: "* * * * *");
-
+        
         var resolverMock = new Mock<IContextResolver>();
+        resolverMock.Setup(r=>r.CronSchedule())
+            .Returns("* * * * *");
 
         var mediatorMock = new Mock<IRunRequestMediator>();
         mediatorMock
@@ -136,7 +130,6 @@ public class CronJobActorTests
         var cts = new CancellationTokenSource();
 
         var orchestrator = new CronJobActor(
-            cfgMon,
             mediatorMock.Object,
             resolverMock.Object,
             mockFactory.Object,
@@ -173,10 +166,12 @@ public class CronJobActorTests
     public async Task StopsWhenNoFutureOccurrences()
     {
         // Arrange
-        var cfgMon = new Configuration(
-            PathsToArchive: "",
-            ClientId: "test-client",
-            CronSchedule: "* * * * *");
+        var cfgMon = new Configuration
+        {
+            PathsToArchive = "",
+            ClientId = "test-client",
+            CronSchedule = "* * * * *"
+        };
 
         var clock = new FakeTimeProvider();
         var sched = new StubScheduler();
@@ -190,16 +185,16 @@ public class CronJobActorTests
         resolverMock
             .Setup(r => r.ArchiveRunId(It.IsAny<DateTimeOffset>()))
             .Returns("resolved-context");
+        resolverMock
+            .Setup(r => r.CronSchedule())
+            .Returns("* * * * *");
 
         var mediatorMock = new Mock<IRunRequestMediator>();
         mediatorMock
             .Setup(m => m.ScheduleRunRequest(It.IsAny<RunRequest>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var jobCalled = false;
-
         var orchestrator = new CronJobActor(
-            cfgMon,
             mediatorMock.Object,
             resolverMock.Object,
             mockFactory.Object,

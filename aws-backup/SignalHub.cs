@@ -13,11 +13,12 @@ public interface ISignalHub<T>
     ///     Signal a value, unblocking exactly one waiter (or queue it for the next waiter).
     /// </summary>
     Task SignalAsync(T value, CancellationToken cancellationToken = default);
+
+    bool Signal(T value);
 }
 
 public sealed class SignalHub<T> : ISignalHub<T>
 {
-    // unbounded so producers never block, and we can signal more times
     private readonly Channel<T> _channel =
         Channel.CreateBounded<T>(
             new BoundedChannelOptions(1)
@@ -35,5 +36,10 @@ public sealed class SignalHub<T> : ISignalHub<T>
     public Task SignalAsync(T value, CancellationToken cancellationToken = default)
     {
         return _channel.Writer.WriteAsync(value, cancellationToken).AsTask();
+    }
+
+    public bool Signal(T value)
+    {
+        return _channel.Writer.TryWrite(value);
     }
 }

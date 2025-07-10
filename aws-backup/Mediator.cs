@@ -15,8 +15,7 @@ public sealed class Mediator(
     IRestoreManifestMediator,
     IRestoreRunMediator,
     IUploadChunksMediator,
-    ISnsMessageMediator,
-    IRollingFileMediator
+    ISnsMessageMediator
 {
     private readonly Channel<ArchiveFileRequest> _archiveFileRequestChannel =
         Channel.CreateUnbounded<ArchiveFileRequest>(
@@ -64,15 +63,6 @@ public sealed class Mediator(
             {
                 SingleReader = false,
                 SingleWriter = false
-            });
-
-    private readonly Channel<string> _loggingFile =
-        Channel.CreateUnbounded<string>(
-            new UnboundedChannelOptions
-            {
-                AllowSynchronousContinuations = false,
-                SingleReader = true,
-                SingleWriter = true
             });
 
     private readonly Channel<S3RestoreChunkManifest> _restoreManifestChannel =
@@ -262,13 +252,6 @@ public sealed class Mediator(
     {
         await _retryStateChannel.Writer.WriteAsync(attempt, cancellationToken);
     }
-
-    public IAsyncEnumerable<string> GetNextLoggingFile(CancellationToken cancellationToken)
-    {
-        return _loggingFile.Reader.ReadAllAsync(cancellationToken);
-    }
-
-    public ChannelWriter<string> Writer => _loggingFile.Writer;
 
     IAsyncEnumerable<RunRequest> IRunRequestMediator.GetRunRequests(CancellationToken cancellationToken)
     {

@@ -36,7 +36,6 @@ public class CronScheduler(string cron) : ICronScheduler
 }
 
 public sealed class CronJobActor(
-    Configuration configuration,
     IRunRequestMediator mediator,
     IContextResolver contextResolver,
     ICronSchedulerFactory cronSchedulerFactory,
@@ -48,11 +47,11 @@ public sealed class CronJobActor(
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        var cronSchedule = configuration.CronSchedule;
+        var cronSchedule = contextResolver.CronSchedule();
         var scheduler = cronSchedulerFactory.Create(cronSchedule);
 
-        logger.LogInformation("CronJobService started with schedule '{Schedule}' in zone '{Zone}'",
-            cronSchedule, TimeZoneInfo.Utc.Id);
+        logger.LogInformation("CronJobService started with schedule '{Schedule}' in zone '{Zone}' {threadId}",
+            cronSchedule, TimeZoneInfo.Utc.Id, Environment.CurrentManagedThreadId);
 
         while (!cancellationToken.IsCancellationRequested)
             try

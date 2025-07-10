@@ -9,4 +9,7 @@ public sealed partial class RegexHelper
     
     [GeneratedRegex( @"([^\w\d_-])")]
     public static partial Regex NonAlphanumericRegex();
+    
+    [GeneratedRegex(@"(\d{4})-(\d{2})-(\d{2})")]
+    public static partial Regex DateRegex();
 }

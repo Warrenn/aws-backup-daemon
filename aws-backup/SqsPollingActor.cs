@@ -54,7 +54,7 @@ public sealed class SqsPollingActor(
                 continue;
             }
 
-            if (resp.Messages.Count == 0)
+            if ((resp.Messages?.Count ?? 0) <= 0)
                 continue; // no messages this cycle, long-poll will loop
 
             foreach (var msg in resp.Messages)

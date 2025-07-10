@@ -1,6 +1,10 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Amazon;
 using Amazon.Runtime;
 using Amazon.S3;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace aws_backup;
 
@@ -71,13 +75,16 @@ public interface IContextResolver
     int StoragePageDelayMilliseconds();
     string PathsToArchive();
     string ClientId();
-    string SettingsPath();
-    Task UpdateConfiguration(Configuration configOptions);
+    string RollingLogFolder();
+    Task UpdateConfiguration(Configuration configOptions, CancellationToken cancellationToken);
+    string CronSchedule();
 }
 
 public sealed class ContextResolver : IContextResolver
 {
+    private readonly string _appSettingsPath;
     private readonly string _clientId;
+    private readonly ILogger<ContextResolver> _logger;
     private readonly ISignalHub<string> _signalHub;
     private RegionEndpoint? _awsRegion;
 
@@ -89,15 +96,27 @@ public sealed class ContextResolver : IContextResolver
     private string? _ignoreFile;
     private string? _localCacheFolder;
     private string? _localRestoreFolder;
-    private string? _logPath;
     private S3StorageClass? _lowCostStorage;
     private ServerSideEncryptionMethod? _serverSideEncryptionMethod;
 
     public ContextResolver(
-        Configuration configOptions,
-        ISignalHub<string> signalHub)
+        string appSettingsPath,
+        IOptionsMonitor<Configuration> configOptions,
+        ISignalHub<string> signalHub,
+        ILogger<ContextResolver> logger)
     {
-        _configOptions = configOptions;
+        _appSettingsPath = appSettingsPath;
+        _logger = logger;
+        _configOptions = configOptions.CurrentValue;
+        configOptions.OnChange((newConfig, _) =>
+        {
+            logger.LogInformation("Configuration changed, updating ContextResolver.");
+            logger.LogInformation("new config {config}", newConfig);
+            _configOptions = newConfig;
+            ResetCache();
+            logger.LogInformation("Configuration updated in ContextResolver.");
+            signalHub.Signal(_configOptions.CronSchedule);
+        });
         _signalHub = signalHub;
         _clientId = ScrubClientId(_configOptions.ClientId);
     }
@@ -348,7 +367,7 @@ public sealed class ContextResolver : IContextResolver
     }
 
     // ID generation methods
-    public string ChunkS3Key( byte[] hashKey)
+    public string ChunkS3Key(byte[] hashKey)
     {
         var hash = Base64Url.Encode(hashKey); // Use first 8 chars of hash
         var prefix = S3DataPrefix();
@@ -460,16 +479,33 @@ public sealed class ContextResolver : IContextResolver
         return _clientId;
     }
 
-    public string SettingsPath()
+    public string RollingLogFolder()
     {
-        return _configOptions.AppSettingsPath;
+        return _configOptions.RollingLogFolder ?? "";
     }
 
-    public async Task UpdateConfiguration(Configuration configOptions)
+    public async Task UpdateConfiguration(Configuration configOptions, CancellationToken cancellationToken)
     {
-        _configOptions = configOptions;
-        ResetCache();
-        await _signalHub.SignalAsync(_configOptions.CronSchedule);
+        _logger.LogInformation("Updating configuration in ContextResolver from UpdateConfiguration.");
+        if (!IsValidPath(_appSettingsPath)) return;
+        var configString = await File.ReadAllTextAsync(_appSettingsPath, cancellationToken);
+        var root = JsonNode.Parse(configString);
+        if (root is null)
+        {
+            _logger.LogError("the existing configuration file {appSettingsPath} is not valid JSON, skipping update",
+                _appSettingsPath);
+            return;
+        }
+
+        root["Configuration"] = JsonSerializer.SerializeToNode(configOptions, Json.Options);
+
+        _logger.LogInformation("Writing updated configuration to {appSettingsPath}", _appSettingsPath);
+        await File.WriteAllTextAsync(_appSettingsPath, root.ToJsonString(Json.Options), cancellationToken);
+    }
+
+    public string CronSchedule()
+    {
+        return _configOptions.CronSchedule;
     }
 
     private void ResetCache()
@@ -483,14 +519,6 @@ public sealed class ContextResolver : IContextResolver
         _localCacheFolder = null; // Reset local cache folder
         _ignoreFile = null; // Reset ignore file
         _localRestoreFolder = null; // Reset restore folder
-        _logPath = null; // Reset log path
-    }
-
-    public string LogPath()
-    {
-        if (!string.IsNullOrWhiteSpace(_logPath)) return _logPath;
-        _logPath = _configOptions.LogFolder ?? Path.Combine(AppContext.BaseDirectory, "logs");
-        return _logPath;
     }
 
     private static S3StorageClass ResolveStorageClass(string? storageClassName, S3StorageClass defaultStorageClass)
