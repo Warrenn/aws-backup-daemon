@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Numerics;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -9,7 +10,8 @@ namespace aws_backup;
 public sealed record AwsTemporaryCredentials(
     string? AccessKeyId,
     string? SecretAccessKey,
-    string? SessionToken);
+    string? SessionToken,
+    string? Expiration);
 
 public interface ITemporaryCredentialsServer
 {
@@ -48,13 +50,14 @@ public sealed class RolesAnywhere : ITemporaryCredentialsServer
         var serialHex = cert.SerialNumber; // hex string
         var derPub = cert.Export(X509ContentType.Cert);
         var x509Header = Convert.ToBase64String(derPub);
-        
+
         var serialBytes = Enumerable.Range(0, serialHex.Length / 2)
             .Select(i => Convert.ToByte(serialHex.Substring(i * 2, 2), 16))
             .Reverse() // reverse to get DER order
             .ToArray();
 
-        var serialBigInt = new BigInteger(serialBytes.Concat(new byte[] { 0 }).ToArray()); // add 0 to ensure non-negative
+        var serialBigInt =
+            new BigInteger(serialBytes.Concat(new byte[] { 0 }).ToArray()); // add 0 to ensure non-negative
         var serial = serialBigInt.ToString();
 
         var now = DateTime.UtcNow; // example date, replace with DateTime.UtcNow for real use
@@ -76,7 +79,8 @@ public sealed class RolesAnywhere : ITemporaryCredentialsServer
         var signedHeaders = string.Join(";", headers.Keys.Select(k => k.ToLowerInvariant().Trim()));
         var canonicalHeaders =
             string.Join('\n', headers.Select(kv => $"{kv.Key.ToLowerInvariant().Trim()}:{kv.Value.Trim()}")) + '\n';
-        var canonicalRequest =string.Join('\n', "POST", url.AbsolutePath, "", canonicalHeaders, signedHeaders, payloadHash); 
+        var canonicalRequest =
+            string.Join('\n', "POST", url.AbsolutePath, "", canonicalHeaders, signedHeaders, payloadHash);
         var canonicalRequestHash = ToHex(HashSha256(Encoding.UTF8.GetBytes(canonicalRequest)));
 
         const string algorithm = "AWS4-X509-RSA-SHA256";
@@ -88,26 +92,23 @@ public sealed class RolesAnywhere : ITemporaryCredentialsServer
             .Append(canonicalRequestHash)
             .ToString();
 
-        // 9) Signature
         var sig = rsa.SignData(
             Encoding.UTF8.GetBytes(stringToSign),
             HashAlgorithmName.SHA256,
             RSASignaturePadding.Pkcs1);
         var signature = ToHex(sig);
 
-        // 10) Authorization header
         var credential = $"{serial}/{credentialScope}";
         var auth = $"{algorithm} Credential={credential}, SignedHeaders={signedHeaders}, Signature={signature}";
         headers["Authorization"] = auth;
 
-        // 11) Send
         using var client = new HttpClient();
         var req = new HttpRequestMessage(HttpMethod.Post, url)
         {
             Content = new StringContent(payload, Encoding.UTF8, "application/json")
         };
-        req.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
-        
+        req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+
         foreach (var kv in headers)
             req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
 
@@ -121,7 +122,6 @@ public sealed class RolesAnywhere : ITemporaryCredentialsServer
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
 
-        // navigate to credentialSet[0].credentials
         if (!root.TryGetProperty("credentialSet", out var set) || set.GetArrayLength() == 0)
             throw new FormatException("credentialSet array not found or empty");
 
@@ -131,8 +131,9 @@ public sealed class RolesAnywhere : ITemporaryCredentialsServer
         var accessKeyId = credentialsElem.GetProperty("accessKeyId").GetString();
         var secretAccessKey = credentialsElem.GetProperty("secretAccessKey").GetString();
         var sessionToken = credentialsElem.GetProperty("sessionToken").GetString();
+        var expiration = credentialsElem.GetProperty("expiration").GetString();
 
-        return new AwsTemporaryCredentials(accessKeyId, secretAccessKey, sessionToken);
+        return new AwsTemporaryCredentials(accessKeyId, secretAccessKey, sessionToken, expiration);
     }
 
     private static byte[] HashSha256(byte[] data)

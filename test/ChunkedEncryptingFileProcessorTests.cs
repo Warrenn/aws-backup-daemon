@@ -45,11 +45,11 @@ public class ChunkedEncryptingFileProcessorTests : IDisposable
             "queue-in", "queue-out",
             "complete", "complete-errors",
             "restore", "restore-errors", "exception");
-        
+
         var aesMock = new Mock<IAesContextResolver>();
         aesMock.Setup(a => a.FileEncryptionKey(It.IsAny<CancellationToken>()))
             .ReturnsAsync(aesKey);
-        
+
         // Mock mediator
         var mediatorMock = new Mock<IUploadChunksMediator>();
         mediatorMock
@@ -61,7 +61,8 @@ public class ChunkedEncryptingFileProcessorTests : IDisposable
             ctxMock.Object,
             awsConfig,
             aesMock.Object,
-            mediatorMock.Object);
+            mediatorMock.Object,
+            Mock.Of<IArchiveService>());
 
         // Act
         var result = await processor.ProcessFileAsync("run1", _tempFile, CancellationToken.None);
@@ -107,7 +108,7 @@ public class ChunkedEncryptingFileProcessorTests : IDisposable
         ctxMock.Setup(c => c.ReadBufferSize()).Returns(8);
         ctxMock.Setup(c => c.LocalCacheFolder()).Returns(_cacheDir);
         var aesKey = Convert.FromBase64String("rShkO4lOEPhNlNJ/LRokw2h4G0HDpe4rMnvG4WGFqwA=");
-        
+
         var aesMock = new Mock<IAesContextResolver>();
         aesMock.Setup(a => a.FileEncryptionKey(It.IsAny<CancellationToken>()))
             .ReturnsAsync(aesKey);
@@ -123,7 +124,8 @@ public class ChunkedEncryptingFileProcessorTests : IDisposable
             ctxMock.Object,
             awsConfig,
             aesMock.Object,
-            mediatorMock.Object);
+            mediatorMock.Object,
+            Mock.Of<IArchiveService>());
 
         // Act
         var result = await processor.ProcessFileAsync("run2", _tempFile, CancellationToken.None);

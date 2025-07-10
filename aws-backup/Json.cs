@@ -4,7 +4,11 @@ using System.Text.Json.Serialization;
 
 namespace aws_backup;
 
-[JsonSourceGenerationOptions(WriteIndented = true)]
+[JsonSourceGenerationOptions(
+    WriteIndented = true,
+    Converters = [typeof(JsonStringEnumConverter)],
+    PropertyNameCaseInsensitive = true
+)]
 [JsonSerializable(typeof(RestoreRequest))]
 [JsonSerializable(typeof(ArchiveRun))]
 [JsonSerializable(typeof(FileMetaData))]
@@ -20,19 +24,13 @@ namespace aws_backup;
 [JsonSerializable(typeof(AwsConfiguration))]
 [JsonSerializable(typeof(CurrentRestoreRequests))]
 [JsonSerializable(typeof(CurrentArchiveRuns))]
+[JsonSerializable(typeof(CurrentArchiveRunRequests))]
 [JsonSerializable(typeof(Configuration))]
+[JsonSerializable(typeof(ArchiveRunStatus))]
+[JsonSerializable(typeof(FileStatus))]
+[JsonSerializable(typeof(ChunkStatus))]
 internal partial class SourceGenerationContext : JsonSerializerContext
 {
-}
-
-public static class Json
-{
-    public static readonly JsonSerializerOptions Options = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        WriteIndented = true,
-        TypeInfoResolver = SourceGenerationContext.Default
-    };
 }
 
 public sealed class JsonDictionaryConverter<T> : JsonConverter<ConcurrentDictionary<string, T>>

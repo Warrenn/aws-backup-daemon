@@ -63,7 +63,7 @@ builder
     {
         var resolver = sp.GetRequiredService<IContextResolver>();
         var factory = sp.GetRequiredService<IAwsClientFactory>();
-        var iamClient = factory.CreateIamClient(cancellationToken).GetAwaiter().GetResult();
+        using var iamClient = factory.CreateIamClient(cancellationToken).GetAwaiter().GetResult();
         var clientId = resolver.ClientId();
         var awsConfig = iamClient.GetAwsConfigurationAsync(clientId).GetAwaiter().GetResult();
         return awsConfig;

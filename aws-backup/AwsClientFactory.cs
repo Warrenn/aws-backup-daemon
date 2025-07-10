@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Amazon.IdentityManagement;
 using Amazon.Runtime;
 using Amazon.Runtime.CredentialManagement;
@@ -12,7 +11,7 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
-public interface IAwsClientFactory : IDisposable
+public interface IAwsClientFactory
 {
     Task<IAmazonS3> CreateS3Client(CancellationToken cancellationToken);
     Task<IAmazonSimpleSystemsManagement> CreateSsmClient(CancellationToken cancellationToken = default);
@@ -25,121 +24,66 @@ public interface IAwsClientFactory : IDisposable
 public sealed class AwsClientFactory(
     IContextResolver resolver,
     ILogger<AwsClientFactory> logger,
-    ITemporaryCredentialsServer temporaryCredentialsServer)
+    ITemporaryCredentialsServer temporaryCredentialsServer,
+    TimeProvider timeProvider)
     : IAwsClientFactory
 {
-    private readonly ConcurrentDictionary<Type, object> _clientCache = new();
-    private readonly SemaphoreSlim _semaphore = new(1, 1);
     private AWSCredentials? _cachedCredentials;
 
     public async Task<IAmazonS3> CreateS3Client(CancellationToken cancellationToken)
     {
-        return await GetOrCreateClient<IAmazonS3>(async () =>
-        {
-            var config = CreateS3Config();
-            var credentials = await GetCredentialsAsync(cancellationToken);
+        var config = CreateS3Config();
+        var credentials = await GetCredentialsAsync(cancellationToken);
 
-            return credentials != null
-                ? new AmazonS3Client(credentials, config)
-                : new AmazonS3Client(config);
-        }, cancellationToken);
+        return credentials != null
+            ? new AmazonS3Client(credentials, config)
+            : new AmazonS3Client(config);
     }
 
     public async Task<IAmazonSimpleSystemsManagement> CreateSsmClient(CancellationToken cancellationToken)
     {
-        return await GetOrCreateClient<IAmazonSimpleSystemsManagement>(async () =>
-        {
-            var config = CreateSsmConfig();
-            var credentials = await GetCredentialsAsync(cancellationToken);
+        var config = CreateSsmConfig();
+        var credentials = await GetCredentialsAsync(cancellationToken);
 
-            return credentials != null
-                ? new AmazonSimpleSystemsManagementClient(credentials, config)
-                : new AmazonSimpleSystemsManagementClient(config);
-        }, cancellationToken);
+        return credentials != null
+            ? new AmazonSimpleSystemsManagementClient(credentials, config)
+            : new AmazonSimpleSystemsManagementClient(config);
     }
 
     public async Task<IAmazonSQS> CreateSqsClient(CancellationToken cancellationToken)
     {
-        return await GetOrCreateClient<IAmazonSQS>(async () =>
-        {
-            var config = CreateSqsConfig();
-            var credentials = await GetCredentialsAsync(cancellationToken);
+        var config = CreateSqsConfig();
+        var credentials = await GetCredentialsAsync(cancellationToken);
 
-            return credentials != null
-                ? new AmazonSQSClient(credentials, config)
-                : new AmazonSQSClient(config);
-        }, cancellationToken);
+        return credentials != null
+            ? new AmazonSQSClient(credentials, config)
+            : new AmazonSQSClient(config);
     }
 
     public async Task<IAmazonSimpleNotificationService> CreateSnsClient(CancellationToken cancellationToken)
     {
-        return await GetOrCreateClient<IAmazonSimpleNotificationService>(async () =>
-        {
-            var config = CreateSnsConfig();
-            var credentials = await GetCredentialsAsync(cancellationToken);
+        var config = CreateSnsConfig();
+        var credentials = await GetCredentialsAsync(cancellationToken);
 
-            return credentials != null
-                ? new AmazonSimpleNotificationServiceClient(credentials, config)
-                : new AmazonSimpleNotificationServiceClient(config);
-        }, cancellationToken);
+        return credentials != null
+            ? new AmazonSimpleNotificationServiceClient(credentials, config)
+            : new AmazonSimpleNotificationServiceClient(config);
     }
 
     public async Task<AmazonIdentityManagementServiceClient> CreateIamClient(CancellationToken cancellationToken)
-
     {
-        return await GetOrCreateClient(async () =>
+        var config = new AmazonIdentityManagementServiceConfig
         {
-            var config = new AmazonIdentityManagementServiceConfig
-            {
-                MaxErrorRetry = resolver.GeneralRetryLimit(),
-                RetryMode = resolver.GetAwsRetryMode(),
-                Timeout = TimeSpan.FromSeconds(resolver.ShutdownTimeoutSeconds()),
-                RegionEndpoint = resolver.GetAwsRegion()
-            };
+            MaxErrorRetry = resolver.GeneralRetryLimit(),
+            RetryMode = resolver.GetAwsRetryMode(),
+            Timeout = TimeSpan.FromSeconds(resolver.ShutdownTimeoutSeconds()),
+            RegionEndpoint = resolver.GetAwsRegion()
+        };
 
-            var credentials = await GetCredentialsAsync(cancellationToken);
-            return credentials != null
-                ? new AmazonIdentityManagementServiceClient(credentials, config)
-                : new AmazonIdentityManagementServiceClient(config);
-        }, cancellationToken);
-    }
-
-    public void Dispose()
-    {
-        foreach (var client in _clientCache.Values.OfType<IDisposable>())
-            try
-            {
-                client.Dispose();
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Error disposing AWS client");
-            }
-
-        _clientCache.Clear();
-        _semaphore.Dispose();
-    }
-
-    private async Task<T> GetOrCreateClient<T>(Func<Task<T>> factory, CancellationToken cancellationToken)
-        where T : class
-    {
-        if (_clientCache.TryGetValue(typeof(T), out var cachedClient)) return (T)cachedClient;
-
-        await _semaphore.WaitAsync(cancellationToken);
-        try
-        {
-            // Double-check locking pattern
-            if (_clientCache.TryGetValue(typeof(T), out cachedClient)) return (T)cachedClient;
-
-            logger.LogDebug("Creating new AWS client of type {ClientType}", typeof(T).Name);
-            var client = await factory();
-            _clientCache.TryAdd(typeof(T), client);
-            return client;
-        }
-        finally
-        {
-            _semaphore.Release();
-        }
+        var credentials = await GetCredentialsAsync(cancellationToken);
+        return credentials != null
+            ? new AmazonIdentityManagementServiceClient(credentials, config)
+            : new AmazonIdentityManagementServiceClient(config);
     }
 
     private async Task<bool> ValidateCredentialsAsync(AWSCredentials? credentials, CancellationToken cancellationToken)
@@ -164,17 +108,19 @@ public sealed class AwsClientFactory(
 
     private async Task<AWSCredentials?> GetCredentialsAsync(CancellationToken cancellationToken)
     {
-        var credentialsValid = _cachedCredentials is not null &&
-                               await ValidateCredentialsAsync(_cachedCredentials, cancellationToken);
+        var credentialsValid = _cachedCredentials?.Expiration is not null &&
+                               timeProvider.GetUtcNow() < _cachedCredentials.Expiration;
+
         if (credentialsValid) return _cachedCredentials;
+        var expiresIn = resolver.AwsCredentialsTimeoutSeconds();
 
         var credentialSources = new List<(string Name, Func<CancellationToken, Task<AWSCredentials?>> Factory)>
         {
             ("Roles Anywhere", TryGetRolesAnyWhereCredentials),
-            ("Environment Variables", _ => Task.FromResult(TryGetEnvironmentCredentials())),
-            ("AWS Profile", _ => Task.FromResult(TryGetProfileCredentials())),
-            ("IAM Role", TryGetInstanceProfileCredentialsAsync),
-            ("Web Identity Token", _ => Task.FromResult(TryGetWebIdentityCredentials()))
+            ("Environment Variables", _ => Task.FromResult(TryGetEnvironmentCredentials(timeProvider, expiresIn))),
+            ("AWS Profile", _ => Task.FromResult(TryGetProfileCredentials(timeProvider, expiresIn))),
+            ("IAM Role", c => TryGetInstanceProfileCredentialsAsync(timeProvider, expiresIn, c)),
+            ("Web Identity Token", _ => Task.FromResult(TryGetWebIdentityCredentials(timeProvider, expiresIn)))
         };
 
         foreach (var (name, factory) in credentialSources)
@@ -188,7 +134,7 @@ public sealed class AwsClientFactory(
                 if (!await ValidateCredentialsAsync(credentials, cancellationToken)) continue;
 
                 logger.LogInformation("Successfully resolved AWS credentials using {CredentialSource}", name);
-                _cachedCredentials = credentials; // Cache the valid credentials
+                _cachedCredentials = credentials;
                 return credentials;
             }
             catch (Exception ex)
@@ -208,6 +154,8 @@ public sealed class AwsClientFactory(
         var trustAnchorArn = resolver.RolesAnyWhereTrustAnchorArn();
         var certificateFileName = resolver.RolesAnyWhereCertificateFileName();
         var privateKeyFileName = resolver.RolesAnyWherePrivateKeyFileName();
+        var credentialsTimeout = resolver.AwsCredentialsTimeoutSeconds();
+
         var region = resolver.GetAwsRegion();
 
         if (string.IsNullOrWhiteSpace(profileArn)) return null;
@@ -216,7 +164,7 @@ public sealed class AwsClientFactory(
         if (!File.Exists(certificateFileName)) return null;
         if (!File.Exists(privateKeyFileName)) return null;
 
-        var (accessKey, secretKey, sessionToken) = await temporaryCredentialsServer.GetCredentials(
+        var (accessKey, secretKey, sessionToken, expirationString) = await temporaryCredentialsServer.GetCredentials(
             profileArn,
             roleArn,
             trustAnchorArn,
@@ -228,12 +176,18 @@ public sealed class AwsClientFactory(
         if (string.IsNullOrWhiteSpace(accessKey) || string.IsNullOrWhiteSpace(secretKey))
             return null;
 
-        return string.IsNullOrWhiteSpace(sessionToken)
+        AWSCredentials newCredentials = string.IsNullOrWhiteSpace(sessionToken)
             ? new BasicAWSCredentials(accessKey, secretKey)
             : new SessionAWSCredentials(accessKey, secretKey, sessionToken);
+        if (!string.IsNullOrWhiteSpace(expirationString) && DateTime.TryParse(expirationString, out var expiration))
+            newCredentials.Expiration = expiration;
+
+        newCredentials.Expiration ??= timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(credentialsTimeout)).DateTime;
+        return newCredentials;
     }
 
-    private static AWSCredentials? TryGetEnvironmentCredentials()
+    private static AWSCredentials? TryGetEnvironmentCredentials(TimeProvider timeProvider,
+        int credentialsTimeout = 3600)
     {
         //if all the variables needed for temporary credentials are set, use them
 
@@ -244,36 +198,23 @@ public sealed class AwsClientFactory(
         if (string.IsNullOrEmpty(accessKey) || string.IsNullOrEmpty(secretKey))
             return null;
 
-        return string.IsNullOrEmpty(sessionToken)
+        AWSCredentials credentials = string.IsNullOrEmpty(sessionToken)
             ? new BasicAWSCredentials(accessKey, secretKey)
             : new SessionAWSCredentials(accessKey, secretKey, sessionToken);
+        credentials.Expiration ??= timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(credentialsTimeout)).DateTime;
+        return credentials;
     }
 
-    private static AWSCredentials? TryGetProfileCredentials()
+    private static AWSCredentials? TryGetProfileCredentials(TimeProvider timeProvider, int credentialsTimeout = 3600)
     {
         try
         {
             var profileName = Environment.GetEnvironmentVariable("AWS_PROFILE") ?? "default";
             var chain = new CredentialProfileStoreChain();
 
-            return chain.TryGetAWSCredentials(profileName, out var credentials)
-                ? credentials
-                : null;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static async Task<AWSCredentials?> TryGetInstanceProfileCredentialsAsync(
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var credentials = new InstanceProfileAWSCredentials();
-            // Test if we can get credentials
-            await credentials.GetCredentialsAsync();
+            chain.TryGetAWSCredentials(profileName, out var credentials);
+            if (credentials is null) return null;
+            credentials.Expiration ??= timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(credentialsTimeout)).DateTime;
             return credentials;
         }
         catch
@@ -282,7 +223,27 @@ public sealed class AwsClientFactory(
         }
     }
 
-    private static AWSCredentials? TryGetWebIdentityCredentials()
+    private static async Task<AWSCredentials?> TryGetInstanceProfileCredentialsAsync(
+        TimeProvider timeProvider,
+        int credentialsTimeout = 3600,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var credentials = new InstanceProfileAWSCredentials();
+            // Test if we can get credentials
+            await credentials.GetCredentialsAsync();
+            credentials.Expiration ??= timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(credentialsTimeout)).DateTime;
+            return credentials;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static AWSCredentials? TryGetWebIdentityCredentials(TimeProvider timeProvider,
+        int credentialsTimeout = 3600)
     {
         try
         {
@@ -293,10 +254,12 @@ public sealed class AwsClientFactory(
             if (string.IsNullOrEmpty(roleArn) || string.IsNullOrEmpty(webIdentityTokenFile))
                 return null;
 
-            return new AssumeRoleWithWebIdentityCredentials(
+            var credentials = new AssumeRoleWithWebIdentityCredentials(
                 webIdentityTokenFile,
                 roleArn,
                 roleSessionName ?? "aws-client-factory-session");
+            credentials.Expiration ??= timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(credentialsTimeout)).DateTime;
+            return credentials;
         }
         catch
         {

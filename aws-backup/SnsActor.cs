@@ -131,7 +131,8 @@ public sealed class SnsActor(
 
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        var sns = await clientFactory.CreateSnsClient(cancellationToken);
+        logger.LogInformation("SnsActor started");
+        using var sns = await clientFactory.CreateSnsClient(cancellationToken);
         await foreach (var message in snsMessageMediator.GetMessages(cancellationToken))
             try
             {

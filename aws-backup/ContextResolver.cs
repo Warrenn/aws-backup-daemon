@@ -78,6 +78,7 @@ public interface IContextResolver
     string RollingLogFolder();
     Task UpdateConfiguration(Configuration configOptions, CancellationToken cancellationToken);
     string CronSchedule();
+    int AwsCredentialsTimeoutSeconds();
 }
 
 public sealed class ContextResolver : IContextResolver
@@ -183,7 +184,7 @@ public sealed class ContextResolver : IContextResolver
 
         _localCacheFolder = _configOptions.LocalCacheFolder;
         if (string.IsNullOrWhiteSpace(_localCacheFolder) || !IsValidPath(_localCacheFolder))
-            _localCacheFolder = Path.GetTempPath();
+            _localCacheFolder = Path.Combine(Path.GetTempPath(), "cache");
 
         if (!Path.IsPathRooted(_localCacheFolder))
             _localCacheFolder = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, _localCacheFolder));
@@ -291,7 +292,7 @@ public sealed class ContextResolver : IContextResolver
 
     public int DelayBetweenUploadsSeconds()
     {
-        return _configOptions.DelayBetweenUploadsSeconds ?? 1;
+        return _configOptions.DelayBetweenUploadsSeconds ?? 60;
     }
 
     public int DownloadAttemptLimit()
@@ -396,22 +397,22 @@ public sealed class ContextResolver : IContextResolver
 
     public string CurrentRestoreBucketKey()
     {
-        return $"{_clientId}/restores.json.gz";
+        return $"{_clientId}/restores.json.tar.gz";
     }
 
     public string CurrentArchiveRunsBucketKey()
     {
-        return $"{_clientId}/archive-runs.json.gz";
+        return $"{_clientId}/archive-requests.json.tar.gz";
     }
 
     public string ChunkManifestBucketKey()
     {
-        return $"{_clientId}/chunk-manifest.json.gz";
+        return $"{_clientId}/chunk-manifest.json.tar.gz";
     }
 
     public string RestoreManifestBucketKey()
     {
-        return $"{_clientId}/restore-manifest.json.gz";
+        return $"{_clientId}/restore-manifest.json.tar.gz";
     }
 
     public bool NotifyOnArchiveComplete()
@@ -497,15 +498,22 @@ public sealed class ContextResolver : IContextResolver
             return;
         }
 
-        root["Configuration"] = JsonSerializer.SerializeToNode(configOptions, Json.Options);
+        root["Configuration"] =
+            JsonSerializer.SerializeToNode(configOptions, SourceGenerationContext.Default.Configuration);
 
         _logger.LogInformation("Writing updated configuration to {appSettingsPath}", _appSettingsPath);
-        await File.WriteAllTextAsync(_appSettingsPath, root.ToJsonString(Json.Options), cancellationToken);
+        await File.WriteAllTextAsync(_appSettingsPath, root.ToJsonString(SourceGenerationContext.Default.Options),
+            cancellationToken);
     }
 
     public string CronSchedule()
     {
         return _configOptions.CronSchedule;
+    }
+
+    public int AwsCredentialsTimeoutSeconds()
+    {
+        return _configOptions.AwsCredentialsTimeoutSeconds ?? 3600;
     }
 
     private void ResetCache()

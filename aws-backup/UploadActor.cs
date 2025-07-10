@@ -16,6 +16,7 @@ public sealed class UploadActor(
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
+        logger.LogInformation("SnsActor started");
         var workers = new[]
         {
             RunUploadAsync(runMediator.GetArchiveRuns, cancellationToken),
@@ -39,6 +40,7 @@ public sealed class UploadActor(
             await foreach (var (bucketKey, data) in getData(cancellationToken))
                 try
                 {
+                    logger.LogInformation("Uploading {BucketKey} to S3", bucketKey);
                     var delayBetweenUploads = contextResolver.DelayBetweenUploadsSeconds();
                     await s3Service.UploadCompressedObject(bucketKey, data, StorageTemperature.Hot, cancellationToken);
                     await Task.Delay(delayBetweenUploads, cancellationToken);

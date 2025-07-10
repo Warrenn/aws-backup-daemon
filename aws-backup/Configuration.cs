@@ -45,6 +45,7 @@ public sealed record Configuration
     public string? RolesAnyWhereTrustAnchorArn { get; set; }
     public string? RolesAnyWhereCertificateFileName { get; set; }
     public string? RolesAnyWherePrivateKeyFileName { get; set; }
+    public int? AwsCredentialsTimeoutSeconds { get; set; }
     public int? ReadBufferSize { get; set; }
     public long? S3PartSize { get; set; }
     public int? NoOfConcurrentDownloadsPerFile { get; set; }

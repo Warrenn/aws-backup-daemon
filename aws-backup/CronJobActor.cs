@@ -50,8 +50,8 @@ public sealed class CronJobActor(
         var cronSchedule = contextResolver.CronSchedule();
         var scheduler = cronSchedulerFactory.Create(cronSchedule);
 
-        logger.LogInformation("CronJobService started with schedule '{Schedule}' in zone '{Zone}' {threadId}",
-            cronSchedule, TimeZoneInfo.Utc.Id, Environment.CurrentManagedThreadId);
+        logger.LogInformation("CronJobService started with schedule '{Schedule}' in zone '{Zone}'",
+            cronSchedule, TimeZoneInfo.Utc.Id);
 
         while (!cancellationToken.IsCancellationRequested)
             try
@@ -72,9 +72,9 @@ public sealed class CronJobActor(
 
                 if (finished == waitForSignal)
                 {
-                    logger.LogInformation("Cron schedule changed {cronSchedule}.", cronSchedule); // Signal arrived
                     cronSchedule = await waitForSignal;
                     scheduler = cronSchedulerFactory.Create(cronSchedule);
+                    logger.LogInformation("Cron schedule changed {cronSchedule}.", cronSchedule); // Signal arrived
                     continue;
                 }
 

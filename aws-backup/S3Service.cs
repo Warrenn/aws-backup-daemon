@@ -4,6 +4,7 @@ using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Amazon.S3;
 using Amazon.S3.Model;
 using Amazon.S3.Transfer;
@@ -61,7 +62,7 @@ public sealed class S3Service(
     {
         var bucketId = awsConfiguration.BucketName;
         var key = contextResolver.RunIdBucketKey(runId);
-        var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
+        using var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
         return await S3ObjectExistsAsync(s3Client, bucketId, key, cancellationToken);
     }
 
@@ -75,7 +76,7 @@ public sealed class S3Service(
     {
         var bucketId = awsConfiguration.BucketName;
         var key = contextResolver.RestoreIdBucketKey(restoreId);
-        var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
+        using var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
         return await S3ObjectExistsAsync(s3Client, bucketId, key, cancellationToken);
     }
 
@@ -88,7 +89,7 @@ public sealed class S3Service(
     public async Task<S3ChunkRestoreStatus> ScheduleDeepArchiveRecovery(string chunkS3Key,
         CancellationToken cancellationToken)
     {
-        var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
+        using var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
         var bucketName = awsConfiguration.BucketName;
 
         var (storageClass, restoreInProgress) =
@@ -148,7 +149,7 @@ public sealed class S3Service(
         if (!File.Exists(localFilePath)) return;
 
         var pipe = new Pipe();
-        var s3 = await awsClientFactory.CreateS3Client(cancellationToken);
+        using var s3 = await awsClientFactory.CreateS3Client(cancellationToken);
         var bucketName = awsConfiguration.BucketName;
         var partSizeBytes = contextResolver.S3PartSize();
         var encryptionMethod = contextResolver.ServerSideEncryption();
@@ -200,7 +201,7 @@ public sealed class S3Service(
 
     public async Task<T?> DownloadCompressedObject<T>(string key, CancellationToken cancellationToken)
     {
-        var s3 = await awsClientFactory.CreateS3Client(cancellationToken);
+        using var s3 = await awsClientFactory.CreateS3Client(cancellationToken);
         var bucketName = awsConfiguration.BucketName;
 
         if (!await S3ObjectExistsAsync(s3, bucketName, key, cancellationToken)) return default;
@@ -210,7 +211,8 @@ public sealed class S3Service(
             cancellationToken);
 
         await using var gzip = new GZipStream(resp.ResponseStream, CompressionMode.Decompress, false);
-        return await JsonSerializer.DeserializeAsync<T>(gzip, Json.Options, cancellationToken);
+        return await JsonSerializer.DeserializeAsync(gzip, (JsonTypeInfo<T>)GetTypeInfo<T>(),
+            cancellationToken);
     }
 
     public async Task UploadCompressedObject<T>(string key, T obj, StorageTemperature temp,
@@ -218,7 +220,7 @@ public sealed class S3Service(
     {
         // 1) Create the pipe
         var pipe = new Pipe();
-        var s3 = await awsClientFactory.CreateS3Client(cancellationToken);
+        using var s3 = await awsClientFactory.CreateS3Client(cancellationToken);
         var bucketName = awsConfiguration.BucketName;
         var partSizeBytes = contextResolver.S3PartSize();
         var encryptionMethod = contextResolver.ServerSideEncryption();
@@ -253,7 +255,8 @@ public sealed class S3Service(
         await using (var writerStream = pipe.Writer.AsStream())
         await using (var gzip = new GZipStream(writerStream, CompressionLevel.SmallestSize, false))
         {
-            await JsonSerializer.SerializeAsync(gzip, obj, Json.Options, cancellationToken);
+            await JsonSerializer.SerializeAsync(gzip, obj, SourceGenerationContext.Default.GetTypeInfo(typeof(T))!,
+                cancellationToken);
         }
         // disposing gzip and writerStream will complete the pipe for the reader
 
@@ -292,7 +295,7 @@ public sealed class S3Service(
             Key = key
         }, cancellationToken);
 
-        var currentTags = currentTagsResp.Tagging.ToDictionary(t => t.Key, t => t.Value);
+        var currentTags = currentTagsResp.Tagging?.ToDictionary(t => t.Key, t => t.Value) ?? [];
 
         foreach (var update in updates)
             if (currentTags.TryGetValue(update.Key, out var existingValue))
@@ -317,6 +320,12 @@ public sealed class S3Service(
                      Tagging = new Tagging { TagSet = chunk }
                  }))
             await client.PutObjectTaggingAsync(request, cancellationToken);
+    }
+
+    private static JsonTypeInfo GetTypeInfo<T>()
+    {
+        // Use the source generation context to get the type info for T
+        return SourceGenerationContext.Default.GetTypeInfo(typeof(T))!;
     }
 
     private static async Task<(S3StorageClass storageClass, bool restoreInProgress)> GetStorageClass(IAmazonS3 s3Client,

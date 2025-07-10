@@ -112,21 +112,20 @@ public sealed class RestoreService(
     ISnsMessageMediator snsMed,
     IS3Service s3Service,
     S3RestoreChunkManifest restoreManifest,
-    CurrentRestoreRequests currentReqs,
+    CurrentRestoreRequests restoreRequests,
     DataChunkManifest chunkManifest,
     ILogger<RestoreService> logger)
     : IRestoreService
 {
     // instance‐scoped state
-    private readonly ConcurrentDictionary<string, RestoreRun> _restoreRuns = new();
+    private readonly ConcurrentDictionary<string, RestoreRun> _restoreRunsCache = new();
 
     // per‐run locks to serialize multi‐threaded updates
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _runLocks = new();
 
     public async Task<RestoreRun?> LookupRestoreRun(string restoreId, CancellationToken ct)
     {
-        
-        if (_restoreRuns.TryGetValue(restoreId, out var cached)) return cached;
+        if (_restoreRunsCache.TryGetValue(restoreId, out var cached)) return cached;
 
         if (!await s3Service.RestoreExists(restoreId, ct))
         {
@@ -135,7 +134,7 @@ public sealed class RestoreService(
         }
 
         var run = await s3Service.GetRestoreRun(restoreId, ct);
-        _restoreRuns[restoreId] = run;
+        _restoreRunsCache[restoreId] = run;
         logger.LogInformation("Loaded restore run {RestoreId} from S3", restoreId);
         return run;
     }
@@ -184,7 +183,7 @@ public sealed class RestoreService(
     {
         try
         {
-            if (!_restoreRuns.TryGetValue(req.RestoreId, out var run)) return;
+            if (!_restoreRunsCache.TryGetValue(req.RestoreId, out var run)) return;
             if (!run.RequestedFiles.TryGetValue(req.FilePath, out var fileMeta)) return;
 
             fileMeta.Status = FileRestoreStatus.Completed;
@@ -218,7 +217,7 @@ public sealed class RestoreService(
     {
         try
         {
-            if (!_restoreRuns.TryGetValue(req.RestoreId, out var run)) return;
+            if (!_restoreRunsCache.TryGetValue(req.RestoreId, out var run)) return;
             if (!run.RequestedFiles.TryGetValue(req.FilePath, out var fileMeta)) return;
 
             fileMeta.Status = FileRestoreStatus.Failed;
@@ -255,10 +254,10 @@ public sealed class RestoreService(
     {
         try
         {
-            currentReqs[run.RestoreId] = request;
-            await requestsMed.SaveRunningRequest(currentReqs, ct);
+            restoreRequests[run.RestoreId] = request;
+            await requestsMed.SaveRunningRequest(restoreRequests, ct);
 
-            if (!_restoreRuns.TryAdd(run.RestoreId, run)) return;
+            if (!_restoreRunsCache.TryAdd(run.RestoreId, run)) return;
             logger.LogInformation("Initiating restore run {RunId}", run.RestoreId);
 
             // schedule each chunk
@@ -395,9 +394,9 @@ public sealed class RestoreService(
         await runMed.SaveRestoreRun(run, ct);
 
         // clean up
-        _restoreRuns.TryRemove(run.RestoreId, out _);
-        currentReqs.TryRemove(run.RestoreId, out _);
-        await requestsMed.SaveRunningRequest(currentReqs, ct);
+        _restoreRunsCache.TryRemove(run.RestoreId, out _);
+        restoreRequests.TryRemove(run.RestoreId, out _);
+        await requestsMed.SaveRunningRequest(restoreRequests, ct);
     }
 
     /// <summary>
@@ -411,7 +410,7 @@ public sealed class RestoreService(
     )
     {
         
-        foreach (var run in _restoreRuns.Values
+        foreach (var run in _restoreRunsCache.Values
                      .Where(r => r.RequestedFiles.Values.Any(f => f.Chunks.Contains(key))))
         {
             // get or create the run‐lock

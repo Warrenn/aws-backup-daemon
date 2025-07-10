@@ -26,33 +26,37 @@ public sealed class Mediator(
             });
 
     private readonly Channel<ArchiveRun> _archiveRunChannel =
-        Channel.CreateUnbounded<ArchiveRun>(
-            new UnboundedChannelOptions
+        Channel.CreateBounded<ArchiveRun>(
+            new BoundedChannelOptions(1)
             {
+                FullMode = BoundedChannelFullMode.DropOldest,
                 SingleReader = true,
                 SingleWriter = false
             });
 
     private readonly Channel<CurrentArchiveRunRequests> _currentArchiveRunRequestsChannel =
-        Channel.CreateUnbounded<CurrentArchiveRunRequests>(
-            new UnboundedChannelOptions
+        Channel.CreateBounded<CurrentArchiveRunRequests>(
+            new BoundedChannelOptions(1)
             {
+                FullMode = BoundedChannelFullMode.DropOldest,
                 SingleReader = true,
                 SingleWriter = false
             });
 
     private readonly Channel<CurrentRestoreRequests> _currentRestoreRequestsChannel =
-        Channel.CreateUnbounded<CurrentRestoreRequests>(
-            new UnboundedChannelOptions
+        Channel.CreateBounded<CurrentRestoreRequests>(
+            new BoundedChannelOptions(1)
             {
+                FullMode = BoundedChannelFullMode.DropOldest,
                 SingleReader = true,
                 SingleWriter = false
             });
 
     private readonly Channel<DataChunkManifest> _dataChunksManifestChannel =
-        Channel.CreateUnbounded<DataChunkManifest>(
-            new UnboundedChannelOptions
+        Channel.CreateBounded<DataChunkManifest>(
+            new BoundedChannelOptions(1)
             {
+                FullMode = BoundedChannelFullMode.DropOldest,
                 SingleReader = true,
                 SingleWriter = false
             });
@@ -83,9 +87,10 @@ public sealed class Mediator(
             });
 
     private readonly Channel<RestoreRun> _restoreRunChannel =
-        Channel.CreateUnbounded<RestoreRun>(
-            new UnboundedChannelOptions
+        Channel.CreateBounded<RestoreRun>(
+            new BoundedChannelOptions(1)
             {
+                FullMode = BoundedChannelFullMode.DropOldest,
                 SingleReader = true,
                 SingleWriter = false
             });

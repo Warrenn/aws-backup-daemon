@@ -20,12 +20,11 @@ public interface ISignalHub<T>
 public sealed class SignalHub<T> : ISignalHub<T>
 {
     private readonly Channel<T> _channel =
-        Channel.CreateBounded<T>(
-            new BoundedChannelOptions(1)
+        Channel.CreateUnbounded<T>(
+            new UnboundedChannelOptions
             {
-                FullMode = BoundedChannelFullMode.DropOldest,
-                SingleReader = true, // only one consumer
-                SingleWriter = true // only one producer
+                SingleReader = true,
+                SingleWriter = true
             });
 
     public Task<T> WaitAsync(CancellationToken cancellationToken = default)

@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using System.Text.Json;
-using Amazon.S3;
 using Amazon.SQS;
 using Amazon.SQS.Model;
 using aws_backup;

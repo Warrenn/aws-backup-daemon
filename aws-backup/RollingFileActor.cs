@@ -10,6 +10,7 @@ public sealed class RollingFileActor(
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
+        logger.LogInformation("Starting rolling file actor");
         while (!cancellationToken.IsCancellationRequested)
         {
             await Task.Delay(TimeSpan.FromDays(1), cancellationToken);

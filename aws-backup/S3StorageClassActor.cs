@@ -1,15 +1,18 @@
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
 public sealed class S3StorageClassActor(
     IS3Service s3Service,
     IRestoreService restoreService,
-    IContextResolver resolver
+    IContextResolver resolver,
+    ILogger<S3StorageClassActor> logger
 ) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
+        logger.LogInformation("Starting rolling file actor");
         while (!cancellationToken.IsCancellationRequested)
         {
             await foreach (var s3StorageInfo in s3Service.GetStorageClasses(cancellationToken))

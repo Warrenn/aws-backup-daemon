@@ -31,7 +31,7 @@ public sealed record DataChunkDetails(
 
 public interface IDataChunkService
 {
-    bool ChunkRequiresUpload(DataChunkDetails chunk);
+    bool ChunkAlreadyUploaded(DataChunkDetails chunk);
 
     Task MarkChunkAsUploaded(DataChunkDetails chunk, string key, string bucketName,
         CancellationToken cancellationToken);
@@ -42,7 +42,7 @@ public sealed class DataChunkService(
     DataChunkManifest dataChunkManifest
 ) : IDataChunkService
 {
-    public bool ChunkRequiresUpload(DataChunkDetails chunk)
+    public bool ChunkAlreadyUploaded(DataChunkDetails chunk)
     {
         var key = new ByteArrayKey(chunk.HashKey);
         return dataChunkManifest.ContainsKey(key);

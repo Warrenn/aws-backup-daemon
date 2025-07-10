@@ -27,6 +27,7 @@ public sealed class RetryActor(
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
+        logger.LogInformation("Starting retry Actor");
         await foreach (var state in mediator.GetRetries(cancellationToken))
             try
             {
@@ -35,6 +36,7 @@ public sealed class RetryActor(
 
                 if (state.AttemptCount > limit)
                 {
+                    logger.LogInformation("Retry Limit Exceeded for {State}", state);
                     await (state.LimitExceeded?.Invoke(state, cancellationToken) ?? Task.CompletedTask);
                     continue;
                 }
@@ -47,7 +49,8 @@ public sealed class RetryActor(
                     await mediator.RetryAttempt(state, cancellationToken);
                     continue;
                 }
-
+                
+                logger.LogInformation("Retry Attempt: {State}", state);
                 state.AttemptCount += 1;
                 state.NextAttemptAt = contextResolver.NextRetryTime(state.AttemptCount);
 

@@ -71,7 +71,7 @@ public class UploadChunkDataActorTests
         chan.Writer.Complete();
 
         // chunkRequiresUpload = false, IsTheFileSkipped = false => skip branch
-        _chunkSvc.Setup(s => s.ChunkRequiresUpload(chunk)).Returns(false);
+        _chunkSvc.Setup(s => s.ChunkAlreadyUploaded(chunk)).Returns(false);
         _archiveSvc.Setup(a => a.IsTheFileSkipped("run1", "file1")).Returns(false);
 
         var orch = CreateOrch(chan);
@@ -100,7 +100,7 @@ public class UploadChunkDataActorTests
         await chan.Writer.WriteAsync(req);
         chan.Writer.Complete();
 
-        _chunkSvc.Setup(s => s.ChunkRequiresUpload(chunk)).Returns(true);
+        _chunkSvc.Setup(s => s.ChunkAlreadyUploaded(chunk)).Returns(true);
         _archiveSvc.Setup(a => a.IsTheFileSkipped("run2", "file2")).Returns(false);
 
         // fake S3 client
@@ -149,7 +149,7 @@ public class UploadChunkDataActorTests
         await chan.Writer.WriteAsync(req);
         chan.Writer.Complete();
 
-        _chunkSvc.Setup(s => s.ChunkRequiresUpload(chunk)).Returns(true);
+        _chunkSvc.Setup(s => s.ChunkAlreadyUploaded(chunk)).Returns(true);
         _archiveSvc.Setup(a => a.IsTheFileSkipped("run3", "file3")).Returns(false);
 
         // S3 client returns wrong checksum
@@ -211,7 +211,7 @@ public class UploadChunkDataActorTests
         await chan.Writer.WriteAsync(req);
         chan.Writer.Complete();
 
-        _chunkSvc.Setup(s => s.ChunkRequiresUpload(chunk)).Returns(true);
+        _chunkSvc.Setup(s => s.ChunkAlreadyUploaded(chunk)).Returns(true);
         _archiveSvc.Setup(a => a.IsTheFileSkipped("run4", "file4")).Returns(false);
 
         // s3Client.Create throws

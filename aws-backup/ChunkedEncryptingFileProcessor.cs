@@ -19,7 +19,8 @@ public sealed class ChunkedEncryptingFileProcessor(
     IContextResolver contextResolver,
     AwsConfiguration awsConfiguration,
     IAesContextResolver aesContextResolver,
-    IUploadChunksMediator mediator) : IChunkedEncryptingFileProcessor
+    IUploadChunksMediator mediator,
+    IArchiveService archiveService) : IChunkedEncryptingFileProcessor
 {
     public async Task<FileProcessResult> ProcessFileAsync(string runId, string inputPath,
         CancellationToken cancellationToken = default)
@@ -31,6 +32,7 @@ public sealed class ChunkedEncryptingFileProcessor(
         var chunkSize = awsConfiguration.ChunkSizeBytes;
         var cacheFolder = contextResolver.LocalCacheFolder();
         var aesKey = await aesContextResolver.FileEncryptionKey(cancellationToken);
+        await archiveService.ResetFileStatus(runId, inputPath, cancellationToken);
 
         // open for read, disallow writers
         await using var fs = new FileStream(
@@ -150,6 +152,11 @@ public sealed class ChunkedEncryptingFileProcessor(
                 bytesInChunk
             );
             chunks.Add(chunkData);
+            await archiveService.AddChunkToFile(
+                runId,
+                inputPath,
+                chunkHasher.Hash,
+                cancellationToken);
             var request = new UploadChunkRequest(runId, inputPath, chunkData);
             await mediator.ProcessChunk(request, cancellationToken);
 

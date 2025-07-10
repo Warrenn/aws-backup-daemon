@@ -15,6 +15,7 @@ public sealed class DownloadFileActor(
 
     protected override Task ExecuteAsync(CancellationToken cancellationToken)
     {
+        logger.LogInformation("DownloadFileActor started");
         var restoreS3Concurrency = contextResolver.NoOfS3FilesToDownloadConcurrently();
         // Spin up N worker loops
         _workers = new Task[restoreS3Concurrency];

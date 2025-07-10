@@ -47,7 +47,8 @@ public class ChunkedEncryptAndReconstructTests
             ctxProc.Object,
             awsConfig,
             aesMock.Object,
-            mediatorMock.Object);
+            mediatorMock.Object,
+            Mock.Of<IArchiveService>());
 
         // 3) Process into chunks
         var result = await processor.ProcessFileAsync("run", tempFile, CancellationToken.None);
@@ -157,7 +158,8 @@ public class ChunkedEncryptAndReconstructTests
             ctxProc.Object,
             awsConfig,
             aesMock.Object,
-            mediatorMock.Object);
+            mediatorMock.Object,
+            Mock.Of<IArchiveService>());
 
         // 3) Process into chunks
         var result = await processor.ProcessFileAsync("run", tempFile, CancellationToken.None);
@@ -191,7 +193,7 @@ public class ChunkedEncryptAndReconstructTests
             .ReturnsAsync(s3);
 
         var reconstructor = new S3ChunkedFileReconstructor(
-            ctxRec.Object, 
+            ctxRec.Object,
             factory.Object,
             aesMock.Object);
 

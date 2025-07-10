@@ -21,8 +21,7 @@ public sealed class ArchiveRunActor(
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         await LoadArchiveRunsFromCloud(cancellationToken);
-        // This service is responsible for processing archive runs.
-        // It will read from the archiveQueue and process each archive.
+        logger.LogInformation("ArchiveRunActor started");
         await foreach (var runRequest in mediator.GetRunRequests(cancellationToken))
             try
             {
@@ -34,7 +33,13 @@ public sealed class ArchiveRunActor(
                     archiveRun = await archiveService.StartNewArchiveRun(runRequest, cancellationToken);
                 }
 
-                if (archiveRun.Status == ArchiveRunStatus.Completed) continue;
+                if (archiveRun.Status == ArchiveRunStatus.Completed)
+                {
+                    logger.Log(LogLevel.Information, "Archive run {ArchiveRunId} is already completed",
+                        runRequest.RunId);
+                    await archiveService.TryRemove(runRequest.RunId, cancellationToken);
+                    continue;
+                }
 
                 string[] ignorePatterns = [];
                 if (File.Exists(ignoreFilePath))

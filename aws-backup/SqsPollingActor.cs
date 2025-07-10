@@ -23,7 +23,7 @@ public sealed class SqsPollingActor(
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            var sqs = await clientFactory.CreateSqsClient(cancellationToken);
+            using var sqs = await clientFactory.CreateSqsClient(cancellationToken);
 
             var queueUrl = awsConfiguration.SqsInboxQueueUrl;
             var waitTimeSeconds = contextResolver.SqsWaitTimeSeconds();
@@ -95,7 +95,7 @@ public sealed class SqsPollingActor(
                     {
                         case "restore-backup":
                             var restoreRequest = rootElement.GetProperty("body")
-                                .Deserialize<RestoreRequest>(Json.Options);
+                                .Deserialize<RestoreRequest>(SourceGenerationContext.Default.RestoreRequest);
                             if (restoreRequest is null) continue;
 
                             await mediator.RestoreBackup(restoreRequest, cancellationToken);

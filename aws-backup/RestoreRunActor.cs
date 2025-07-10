@@ -17,6 +17,7 @@ public sealed class RestoreRunActor(
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
+        logger.LogInformation("DownloadFileActor started");
         await LoadRestoreRunsFromCloud(cancellationToken);
 
         await foreach (var restoreRequest in mediator.GetRestoreRequests(cancellationToken))
@@ -28,6 +29,9 @@ public sealed class RestoreRunActor(
                     logger.LogWarning("Received invalid restore request with null ArchiveRunId or RestorePaths");
                     continue;
                 }
+                
+                logger.LogInformation("Processing restore request for ArchiveRunId {ArchiveRunId} with paths {RestorePaths}",
+                    restoreRequest.ArchiveRunId, restoreRequest.RestorePaths);
 
                 var restoreId = contextResolver.RestoreId(restoreRequest.ArchiveRunId, restoreRequest.RestorePaths,
                     restoreRequest.RequestedAt);
@@ -90,6 +94,9 @@ public sealed class RestoreRunActor(
                     Status = RestoreRunStatus.Processing,
                     RequestedFiles = requestedFiles
                 };
+                
+                logger.LogInformation("Initiating restore run with ID {RestoreId} for ArchiveRunId {ArchiveRunId}",
+                    restoreRun.RestoreId, restoreRequest.ArchiveRunId);
 
                 await restoreService.InitiateRestoreRun(restoreRequest, restoreRun, cancellationToken);
             }

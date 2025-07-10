@@ -33,6 +33,7 @@ public sealed class UploadChunkDataActor(
 
     protected override Task ExecuteAsync(CancellationToken cancellationToken)
     {
+        logger.LogInformation("SnsActor started");
         var uploadConcurrency = contextResolver.NoOfS3FilesToUploadConcurrently();
         // Spin up N worker loops
         _workers = new Task[uploadConcurrency];
@@ -58,8 +59,8 @@ public sealed class UploadChunkDataActor(
                     state.Exception ?? new Exception("Exceeded limit"),
                     token);
 
-            if (!dataChunkService.ChunkRequiresUpload(chunk) &&
-                !archiveService.IsTheFileSkipped(request.ArchiveRunId, parentFile))
+            if (dataChunkService.ChunkAlreadyUploaded(chunk) ||
+                archiveService.IsTheFileSkipped(request.ArchiveRunId, parentFile))
             {
                 logger.LogInformation("Skipping chunk {ChunkIndex} for file {LocalFilePath} - already uploaded",
                     chunk.ChunkIndex, chunk.LocalFilePath);
@@ -69,7 +70,9 @@ public sealed class UploadChunkDataActor(
 
             try
             {
-                var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
+                logger.LogInformation("Uploading chunk {ChunkIndex} for file {LocalFilePath}",
+                    chunk.ChunkIndex, chunk.LocalFilePath);
+                using var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
                 var bucketName = awsConfiguration.BucketName;
                 var storageClass = contextResolver.ColdStorage();
                 var serverSideEncryptionMethod = contextResolver.ServerSideEncryption();
@@ -90,6 +93,9 @@ public sealed class UploadChunkDataActor(
                 };
 
                 await transferUtil.UploadAsync(uploadReq, cancellationToken);
+                
+                logger.LogInformation("Upload complete for chunk {ChunkIndex} for file {LocalFilePath}",
+                    chunk.ChunkIndex, chunk.LocalFilePath);
 
                 var head = await s3Client.GetObjectMetadataAsync(bucketName, key, cancellationToken);
 
@@ -108,6 +114,8 @@ public sealed class UploadChunkDataActor(
                     await retryMediator.RetryAttempt(request, cancellationToken);
                 }
 
+                logger.LogInformation("Appending tags for chunk {ChunkIndex} for file {LocalFilePath}",
+                    chunk.ChunkIndex, chunk.LocalFilePath);
                 await s3Service.AppendTags(s3Client, bucketName, key, new Dictionary<string, string>
                 {
                     { "storage-class", "cold" },
@@ -119,7 +127,15 @@ public sealed class UploadChunkDataActor(
                     { "chunk-size-bytes", awsConfiguration.ChunkSizeBytes.ToString() }
                 }, cancellationToken);
 
+                logger.LogInformation("Marking chunk {ChunkIndex} for file {LocalFilePath} as uploaded",
+                    chunk.ChunkIndex, chunk.LocalFilePath);
                 await dataChunkService.MarkChunkAsUploaded(chunk, key, bucketName, cancellationToken);
+                
+                await archiveService.RecordChunkUpload(
+                    request.ArchiveRunId,
+                    parentFile,
+                    chunk.HashKey,
+                    cancellationToken);
                 if (File.Exists(chunk.LocalFilePath)) File.Delete(chunk.LocalFilePath);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
