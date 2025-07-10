@@ -47,7 +47,6 @@ configBuilder
 var configuration = configBuilder.Build();
 var builder = Host.CreateApplicationBuilder(args);
 builder.Configuration.AddConfiguration(configuration);
-builder.Logging.AddSerilog().AddConsole();
 builder
     .Services
     .AddSerilog(config => config.ReadFrom.Configuration(configuration))

@@ -18,19 +18,26 @@ public sealed class SqsPollingActor(
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        var sqs = await clientFactory.CreateSqsClient(cancellationToken);
-
-        var queueUrl = awsConfiguration.SqsInboxQueueUrl;
-        var waitTimeSeconds = contextResolver.SqsWaitTimeSeconds();
-        var maxNumberOfMessages = contextResolver.SqsMaxNumberOfMessages();
-        var visibilityTimeout = contextResolver.SqsVisibilityTimeout();
-        var retryDelay = contextResolver.SqsRetryDelaySeconds();
-        var sqsDecryptionKey = await aesContextResolver.SqsEncryptionKey(cancellationToken);
-
-        logger.LogInformation("Starting SQS polling on {Url}", queueUrl);
+        logger.LogInformation("Starting SQS polling");
+        var logQueueUrl = "";
 
         while (!cancellationToken.IsCancellationRequested)
         {
+            var sqs = await clientFactory.CreateSqsClient(cancellationToken);
+
+            var queueUrl = awsConfiguration.SqsInboxQueueUrl;
+            var waitTimeSeconds = contextResolver.SqsWaitTimeSeconds();
+            var maxNumberOfMessages = contextResolver.SqsMaxNumberOfMessages();
+            var visibilityTimeout = contextResolver.SqsVisibilityTimeout();
+            var retryDelay = contextResolver.SqsRetryDelaySeconds();
+            var sqsDecryptionKey = await aesContextResolver.SqsEncryptionKey(cancellationToken);
+
+            if (logQueueUrl != queueUrl)
+            {
+                logQueueUrl = queueUrl;
+                logger.LogInformation("SQS queue URL: {QueueUrl}", queueUrl);
+            }
+
             ReceiveMessageResponse resp;
             try
             {
@@ -57,7 +64,7 @@ public sealed class SqsPollingActor(
             if ((resp.Messages?.Count ?? 0) <= 0)
                 continue; // no messages this cycle, long-poll will loop
 
-            foreach (var msg in resp.Messages)
+            foreach (var msg in resp.Messages!)
                 try
                 {
                     logger.LogInformation("Received message {Id}", msg.MessageId);
@@ -88,8 +95,7 @@ public sealed class SqsPollingActor(
                     {
                         case "restore-backup":
                             var restoreRequest = rootElement.GetProperty("body")
-                                .Deserialize<RestoreRequest>(
-                                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                                .Deserialize<RestoreRequest>(Json.Options);
                             if (restoreRequest is null) continue;
 
                             await mediator.RestoreBackup(restoreRequest, cancellationToken);
