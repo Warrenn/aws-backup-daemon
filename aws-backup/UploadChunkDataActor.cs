@@ -53,9 +53,10 @@ public sealed class UploadChunkDataActor(
             request.Retry ??= (state, token) =>
                 mediator.ProcessChunk((UploadChunkRequest)state, token);
             request.LimitExceeded ??= (state, token) =>
-                archiveService.RecordFailedFile(
+                archiveService.RecordFailedChunk(
                     ((UploadChunkRequest)state).ArchiveRunId,
                     ((UploadChunkRequest)state).ParentFile,
+                    ((UploadChunkRequest)state).DataChunkDetails.HashKey,
                     state.Exception ?? new Exception("Exceeded limit"),
                     token);
 

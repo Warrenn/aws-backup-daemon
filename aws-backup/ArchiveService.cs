@@ -101,6 +101,9 @@ public interface IArchiveService
     Task RecordFailedFile(string archiveRunId, string filePath, Exception exception,
         CancellationToken cancellationToken);
 
+    Task RecordFailedChunk(string archiveRunId, string filePath, byte[] chunkHash, Exception exception,
+        CancellationToken cancellationToken);
+
     Task RecordLocalFile(ArchiveRun run, string filePath, CancellationToken cancellationToken);
     bool IsTheFileSkipped(string archiveRunId, string parentFile);
     Task TryRemove(string archiveRunId, CancellationToken cancellationToken);
@@ -200,7 +203,7 @@ public sealed class ArchiveService(
         var need = false;
         await UpdateFileMetaData(runId, filePath, (_, meta, _) =>
         {
-            need = meta.Status is FileStatus.Added;
+            need = meta.Status is not FileStatus.Processed;
             logger.LogDebug("DoesFileRequireProcessing({Run},{File}) => {Need}", runId, filePath, need);
             return Task.CompletedTask;
         }, ct);
@@ -260,6 +263,24 @@ public sealed class ArchiveService(
                 $"File Skipped: {localFilePath} in run {runId}",
                 $"Skipped due to: {exception.Message}"), token);
         }, ct);
+    }
+
+    public async Task RecordFailedChunk(string archiveRunId, string filePath, byte[] chunkHash, Exception exception,
+        CancellationToken cancellationToken)
+    {
+        await UpdateFileMetaData(archiveRunId, filePath, (run, meta, _) =>
+        {
+            var hashKey = new ByteArrayKey(chunkHash);
+            meta.ChunkStatus.TryUpdate(hashKey, ChunkStatus.Failed, ChunkStatus.Added);
+            meta.ChunkStatus.TryUpdate(hashKey, ChunkStatus.Failed, ChunkStatus.Uploaded);
+
+            run.Files[filePath] = meta with
+            {
+                Status = FileStatus.Skipped
+            };
+            run.SkipReason[filePath] = exception.Message;
+            return Task.CompletedTask;
+        }, cancellationToken);
     }
 
     public async Task RecordLocalFile(
