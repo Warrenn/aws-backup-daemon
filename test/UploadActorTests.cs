@@ -316,7 +316,7 @@ public class UploadActorTests
         _hotStorageService.Verify(
             x => x.UploadCompressedObject(It.IsAny<string>(), It.IsAny<object>(), It.IsAny<StorageTemperature>(), It.IsAny<CancellationToken>()),
             Times.Never);
-        Assert.Empty(_logger.LogRecords);
+        Assert.Single(_logger.LogRecords);
     }
 
     [Fact]

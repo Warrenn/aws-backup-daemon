@@ -337,16 +337,10 @@ public sealed class ArchiveService(
         {
             logger.LogDebug("RecordChunkUpload: {Run}/{File}", runId, localFilePath);
             var chunkKey = new ByteArrayKey(chunkHashKey);
-            meta.ChunkStatus.TryUpdate(chunkKey, ChunkStatus.Uploaded, ChunkStatus.Added);
-            meta.ChunkStatus.TryUpdate(chunkKey, ChunkStatus.Uploaded, ChunkStatus.Failed);
-
-            var fileReady = meta.ChunkStatus.Values.All(status => status is ChunkStatus.Uploaded);
-            if (!fileReady) return Task.CompletedTask;
-
-            run.Files[localFilePath] = meta with
-            {
-                Status = FileStatus.Processed
-            };
+            if (meta.ChunkStatus.TryGetValue(chunkKey, out var currentStatus))
+                meta.ChunkStatus.TryUpdate(chunkKey, ChunkStatus.Uploaded, currentStatus);
+            else
+                meta.ChunkStatus.TryAdd(chunkKey, ChunkStatus.Uploaded);
             return Task.CompletedTask;
         }, ct);
     }
@@ -396,8 +390,7 @@ public sealed class ArchiveService(
         await lockSlim.WaitAsync(ct);
         try
         {
-            var run = await LookupArchiveRun(runId, ct);
-            if (run is null) return;
+            if (!currentRunsCache.TryGetValue(runId, out var run)) return;
 
             if (!run.Files.TryGetValue(localFilePath, out var meta))
             {
@@ -414,8 +407,38 @@ public sealed class ArchiveService(
         }
     }
 
+    private static bool AreEqualSets<T>(IEnumerable<T> a, IEnumerable<T> b)
+    {
+        return new HashSet<T>(a).SetEquals(b);
+    }
+
     private async Task SaveAndFinalizeIfComplete(ArchiveRun run, CancellationToken ct)
     {
+        var currentFileData = run.Files.ToArray();
+        foreach (var (key, meta) in currentFileData)
+        {
+            var fileStatus = FileStatus.Added;
+            var fileReady =
+                !meta.ChunkStatus.IsEmpty &&
+                meta.Chunks.Length > 0 &&
+                meta.ChunkStatus.Values.All(chunkStatus => chunkStatus is ChunkStatus.Uploaded or ChunkStatus.Failed) &&
+                AreEqualSets(meta.ChunkStatus.Keys, meta.Chunks.Select(c => new ByteArrayKey(c.HashKey)));
+
+            var hasFailedChunks = meta.ChunkStatus.Values.Any(chunkStatus => chunkStatus == ChunkStatus.Failed);
+            if (fileReady) fileStatus = hasFailedChunks ? FileStatus.Skipped : FileStatus.Processed;
+            if (fileStatus is FileStatus.Added ||
+                meta.Status is FileStatus.Skipped ||
+                fileStatus == meta.Status) continue;
+
+            run.Files[key] = meta with { Status = fileStatus };
+            if (fileStatus is FileStatus.Skipped && !run.SkipReason.ContainsKey(key))
+            {
+                run.SkipReason.TryAdd(key, "File skipped due to chunk failing to upload");
+            }
+            
+            logger.LogDebug("File {File} status updated to {Status}", key, fileStatus);
+        }
+
         // persist current state
         await runMed.SaveArchiveRun(run, ct);
 

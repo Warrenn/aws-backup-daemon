@@ -95,24 +95,49 @@ public class ArchiveServiceTests
     [Fact]
     public async Task ReportProcessingResult_FinalizesRunAndPublishes()
     {
+        var runId = "r4";
+        var run = new ArchiveRun
+        {
+            RunId = runId, PathsToArchive = "/p", CronSchedule = "* * * * *", Status = ArchiveRunStatus.Processing,
+            CreatedAt = DateTimeOffset.Now
+        };
+
+        _s3Service.Setup(s => s.RunExists(runId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        _s3Service.Setup(s => s.GetArchive(runId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(run);
+        
         var sut = CreateSut();
-        var req = new RunRequest("r4", "/p", "* * * * *");
+        var req = new RunRequest(runId, "/p", "* * * * *");
         await sut.StartNewArchiveRun(req, CancellationToken.None);
 
         // Add two files
-        await sut.DoesFileRequireProcessing("r4", "a", CancellationToken.None);
-        await sut.DoesFileRequireProcessing("r4", "b", CancellationToken.None);
+        await sut.DoesFileRequireProcessing(runId, "a", CancellationToken.None);
+        await sut.DoesFileRequireProcessing(runId, "b", CancellationToken.None);
+
+        var d1 = new DataChunkDetails("a", 0, 10, [1, 2, 3], 10);
+        var d2 = new DataChunkDetails("a", 1, 10, [4, 5, 6], 10);
+        var d3 = new DataChunkDetails("b", 0, 10, [7, 8, 9], 10);
+        var d4 = new DataChunkDetails("b", 2, 10, [10, 11, 12], 10);
 
         // Process first file
-        await sut.ReportProcessingResult("r4", new FileProcessResult("a", 10, new byte[] { }, new DataChunkDetails[0]),
+        await sut.ReportProcessingResult(runId, new FileProcessResult("a", 10, [1, 2, 3], [d1, d2]),
             CancellationToken.None);
+        // Process second file → this is last
+        await sut.ReportProcessingResult(runId, new FileProcessResult("b", 20, [4, 5, 6], [d3, d4]),
+            CancellationToken.None);
+
         // Should not yet finalize
         _snsMed.VerifyNoOtherCalls();
 
-        // Process second file → this is last
-        await sut.ReportProcessingResult("r4", new FileProcessResult("b", 20, new byte[] { }, new DataChunkDetails[0]),
-            CancellationToken.None);
+        await sut.RecordChunkUpload("r4", "a", d1.HashKey, CancellationToken.None);
+        await sut.RecordChunkUpload("r4", "b", d3.HashKey, CancellationToken.None);
 
+        // Should not yet finalize
+        _snsMed.VerifyNoOtherCalls();
+        await sut.RecordChunkUpload("r4", "a", d2.HashKey, CancellationToken.None);
+        await sut.RecordChunkUpload("r4", "b", d4.HashKey, CancellationToken.None);
+        
         // Now run is completed and SNS message sent
         _snsMed.Verify(s =>
             s.PublishMessage(It.IsAny<ArchiveCompleteMessage>(), It.IsAny<CancellationToken>()), Times.Once);

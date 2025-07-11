@@ -14,17 +14,20 @@ public class UploadChunkDataActorTests
     private readonly Mock<IArchiveService> _archiveSvc = new();
     private readonly Mock<IAwsClientFactory> _awsFactory = new();
     private readonly Mock<IDataChunkService> _chunkSvc = new();
-    private readonly Mock<IContextResolver> _ctx = new();
-    private readonly Mock<ILogger<UploadChunkDataActor>> _logger = new();
-    private readonly Mock<IUploadChunksMediator> _mediator = new();
-    private readonly Mock<IRetryMediator> _retryMed = new();
+
     private readonly AwsConfiguration _config = new(
         16,
         "sqs-enc", "file-enc",
         "bucket", "region",
         "https://queue", "queue-out",
         "arn:aws:sns:us-east-1:123456789012:archive-complete", "arn:aws:sns:us-east-1:123456789012:archive-error",
-        "arn:aws:sns:us-east-1:123456789012:restore-complete", "arn:aws:sns:us-east-1:123456789012:restore-error", "arn:aws:sns:us-east-1:123456789012:exception");
+        "arn:aws:sns:us-east-1:123456789012:restore-complete", "arn:aws:sns:us-east-1:123456789012:restore-error",
+        "arn:aws:sns:us-east-1:123456789012:exception");
+
+    private readonly Mock<IContextResolver> _ctx = new();
+    private readonly Mock<ILogger<UploadChunkDataActor>> _logger = new();
+    private readonly Mock<IUploadChunksMediator> _mediator = new();
+    private readonly Mock<IRetryMediator> _retryMed = new();
 
 
     // weave together an orchestration whose WorkerLoopAsync we can call
@@ -71,7 +74,7 @@ public class UploadChunkDataActorTests
         chan.Writer.Complete();
 
         // chunkRequiresUpload = false, IsTheFileSkipped = false => skip branch
-        _chunkSvc.Setup(s => s.ChunkAlreadyUploaded(chunk)).Returns(false);
+        _chunkSvc.Setup(s => s.ChunkAlreadyUploaded(chunk)).Returns(true);
         _archiveSvc.Setup(a => a.IsTheFileSkipped("run1", "file1")).Returns(false);
 
         var orch = CreateOrch(chan);
@@ -100,7 +103,7 @@ public class UploadChunkDataActorTests
         await chan.Writer.WriteAsync(req);
         chan.Writer.Complete();
 
-        _chunkSvc.Setup(s => s.ChunkAlreadyUploaded(chunk)).Returns(true);
+        _chunkSvc.Setup(s => s.ChunkAlreadyUploaded(chunk)).Returns(false);
         _archiveSvc.Setup(a => a.IsTheFileSkipped("run2", "file2")).Returns(false);
 
         // fake S3 client
@@ -142,14 +145,14 @@ public class UploadChunkDataActorTests
     {
         // arrange file
         var temp = Path.GetTempFileName();
-        File.WriteAllText(temp, "abc");
-        var chunk = new DataChunkDetails(temp, 1, 10, [], 3);
+        await File.WriteAllTextAsync(temp, "abc");
+        var chunk = new DataChunkDetails(temp, 1, 10, [1, 2, 3], 3);
         var req = new UploadChunkRequest("run3", "file3", chunk);
         var chan = Channel.CreateUnbounded<UploadChunkRequest>();
         await chan.Writer.WriteAsync(req);
         chan.Writer.Complete();
 
-        _chunkSvc.Setup(s => s.ChunkAlreadyUploaded(chunk)).Returns(true);
+        _chunkSvc.Setup(s => s.ChunkAlreadyUploaded(chunk)).Returns(false);
         _archiveSvc.Setup(a => a.IsTheFileSkipped("run3", "file3")).Returns(false);
 
         // S3 client returns wrong checksum
@@ -158,7 +161,7 @@ public class UploadChunkDataActorTests
             .ReturnsAsync(new PutObjectResponse());
         s3.Setup(s => s.GetObjectMetadataAsync("bucket", It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new GetObjectMetadataResponse
-                { ChecksumSHA256 = Convert.ToBase64String(new byte[] { 9, 9, 9 }) });
+                { ChecksumSHA256 = Convert.ToBase64String([12, 9, 9, 9]) });
 
         _awsFactory.Setup(f => f.CreateS3Client(It.IsAny<CancellationToken>()))
             .ReturnsAsync(s3.Object);
@@ -167,7 +170,7 @@ public class UploadChunkDataActorTests
         _ctx.Setup(c => c.ColdStorage()).Returns("CLASS");
         _ctx.Setup(c => c.ServerSideEncryption()).Returns(ServerSideEncryptionMethod.AES256);
         _ctx.Setup(c => c.S3PartSize()).Returns(5);
-        _ctx.Setup(c => c.ChunkS3Key( It.IsAny<byte[]>()))
+        _ctx.Setup(c => c.ChunkS3Key(It.IsAny<byte[]>()))
             .Returns("k3");
 
         bool retryCalled = false, limitExceededCalled = false;
@@ -178,7 +181,8 @@ public class UploadChunkDataActorTests
 
         // capture RecordFailedFile when LimitExceeded invoked eventually
         _archiveSvc
-            .Setup(a => a.RecordFailedFile("run3", "file3", It.IsAny<Exception>(), It.IsAny<CancellationToken>()))
+            .Setup(a => a.RecordFailedChunk("run3", "file3", It.Is<byte[]>(bytes => bytes[0] == 1 && bytes[1] == 2 && bytes[2] == 3),
+                It.IsAny<Exception>(), It.IsAny<CancellationToken>()))
             .Callback(() => limitExceededCalled = true)
             .Returns(Task.CompletedTask);
 
@@ -211,7 +215,7 @@ public class UploadChunkDataActorTests
         await chan.Writer.WriteAsync(req);
         chan.Writer.Complete();
 
-        _chunkSvc.Setup(s => s.ChunkAlreadyUploaded(chunk)).Returns(true);
+        _chunkSvc.Setup(s => s.ChunkAlreadyUploaded(chunk)).Returns(false);
         _archiveSvc.Setup(a => a.IsTheFileSkipped("run4", "file4")).Returns(false);
 
         // s3Client.Create throws

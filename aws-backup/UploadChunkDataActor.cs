@@ -65,6 +65,11 @@ public sealed class UploadChunkDataActor(
             {
                 logger.LogInformation("Skipping chunk {ChunkIndex} for file {LocalFilePath} - already uploaded",
                     chunk.ChunkIndex, chunk.LocalFilePath);
+                await archiveService.RecordChunkUpload(
+                    request.ArchiveRunId,
+                    parentFile,
+                    chunk.HashKey,
+                    cancellationToken);
                 if (File.Exists(chunk.LocalFilePath)) File.Delete(chunk.LocalFilePath);
                 continue;
             }
