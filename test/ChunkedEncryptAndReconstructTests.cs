@@ -20,7 +20,7 @@ public class ChunkedEncryptAndReconstructTests
         Directory.CreateDirectory(cacheDir);
 
         var ctxProc = new Mock<IContextResolver>();
-        ctxProc.Setup(c => c.ReadBufferSize()).Returns(4096);
+        ctxProc.Setup(c => c.ReadBufferSize()).Returns(4_096);
         ctxProc.Setup(c => c.LocalCacheFolder()).Returns(cacheDir);
 
         var aesKey = new byte[32];
@@ -105,7 +105,7 @@ public class ChunkedEncryptAndReconstructTests
         };
 
         // 7) Reconstruct
-        var output = await reconstructor.ReconstructAsync(request, CancellationToken.None);
+        var (output, _) = await reconstructor.ReconstructAsync(request, CancellationToken.None);
 
         // 8) Assert exact match
         var restored = await File.ReadAllBytesAsync(output);
@@ -216,7 +216,7 @@ public class ChunkedEncryptAndReconstructTests
         };
 
         // 7) Reconstruct
-        var output = await reconstructor.ReconstructAsync(request, CancellationToken.None);
+        var (output, _) = await reconstructor.ReconstructAsync(request, CancellationToken.None);
 
         // 8) Assert exact match
         var restored = await File.ReadAllBytesAsync(output);

@@ -55,7 +55,11 @@ public sealed record FileMetaData(
     public long? OriginalSize { get; set; }
     public string? Owner { get; set; }
     public FileStatus Status { get; set; } = FileStatus.Added;
+
+    [JsonConverter(
+        typeof(JsonDictionaryConverter<ByteArrayKey, ChunkStatus, ConcurrentDictionary<ByteArrayKey, ChunkStatus>>))]
     public ConcurrentDictionary<ByteArrayKey, ChunkStatus> ChunkStatus { get; set; } = [];
+
     public DataChunkDetails[] Chunks { get; set; } = [];
 }
 
@@ -407,35 +411,41 @@ public sealed class ArchiveService(
         }
     }
 
-    private static bool AreEqualSets<T>(IEnumerable<T> a, IEnumerable<T> b)
-    {
-        return new HashSet<T>(a).SetEquals(b);
-    }
-
     private async Task SaveAndFinalizeIfComplete(ArchiveRun run, CancellationToken ct)
     {
-        var currentFileData = run.Files.ToArray();
-        foreach (var (key, meta) in currentFileData)
+        foreach (var (key, meta) in run.Files)
         {
             var fileStatus = FileStatus.Added;
-            var fileReady =
-                !meta.ChunkStatus.IsEmpty &&
-                meta.Chunks.Length > 0 &&
-                meta.ChunkStatus.Values.All(chunkStatus => chunkStatus is ChunkStatus.Uploaded or ChunkStatus.Failed) &&
-                AreEqualSets(meta.ChunkStatus.Keys, meta.Chunks.Select(c => new ByteArrayKey(c.HashKey)));
+            var hasAnAdd = false;
+            var hasAnError = false;
+            var statusHashSet = new HashSet<ByteArrayKey>();
+            var hasAnEntry = false;
 
-            var hasFailedChunks = meta.ChunkStatus.Values.Any(chunkStatus => chunkStatus == ChunkStatus.Failed);
-            if (fileReady) fileStatus = hasFailedChunks ? FileStatus.Skipped : FileStatus.Processed;
+            foreach (var (chunkKey, chunkStatus) in meta.ChunkStatus)
+            {
+                hasAnEntry = true;
+                statusHashSet.Add(chunkKey);
+                if (chunkStatus is ChunkStatus.Added) hasAnAdd = true;
+                if (chunkStatus is ChunkStatus.Failed) hasAnError = true;
+            }
+
+            var chunksHashSet = new HashSet<ByteArrayKey>(meta.Chunks.Select(c => new ByteArrayKey(c.HashKey)));
+
+            var fileReady =
+                hasAnEntry &&
+                chunksHashSet.Count > 0 &&
+                !hasAnAdd && // no chunks are still being added
+                statusHashSet.SetEquals(chunksHashSet);
+
+            if (fileReady) fileStatus = hasAnError ? FileStatus.Skipped : FileStatus.Processed;
             if (fileStatus is FileStatus.Added ||
                 meta.Status is FileStatus.Skipped ||
                 fileStatus == meta.Status) continue;
 
             run.Files[key] = meta with { Status = fileStatus };
             if (fileStatus is FileStatus.Skipped && !run.SkipReason.ContainsKey(key))
-            {
                 run.SkipReason.TryAdd(key, "File skipped due to chunk failing to upload");
-            }
-            
+
             logger.LogDebug("File {File} status updated to {Status}", key, fileStatus);
         }
 

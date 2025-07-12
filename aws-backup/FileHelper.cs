@@ -17,6 +17,28 @@ public static class FileHelper
         return returnValue.Replace('\\', '/');
     }
 
+    public static long FolderSize(string folderPath)
+    {
+        if (string.IsNullOrWhiteSpace(folderPath) || !Directory.Exists(folderPath))
+            return 0;
+
+        return Directory
+            .EnumerateFiles(folderPath, "*", SearchOption.AllDirectories)
+            .Select(path =>
+            {
+                try
+                {
+                    return new FileInfo(path).Length;
+                }
+                catch
+                {
+                    // file might have been deleted or locked between Enumerate and Info
+                    return 0L;
+                }
+            })
+            .Sum();
+    }
+
     /// <summary>
     ///     Runs the OS command to get "owner:group" for the given file.
     /// </summary>

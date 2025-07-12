@@ -8,7 +8,8 @@ public sealed record FileProcessResult(
     string LocalFilePath,
     long OriginalSize, // Size before compression
     byte[] FullFileHash, // SHA-256 hash of the full file
-    DataChunkDetails[] Chunks);
+    DataChunkDetails[] Chunks,
+    Exception? Error = null);
 
 public interface IChunkedEncryptingFileProcessor
 {
@@ -25,147 +26,184 @@ public sealed class ChunkedEncryptingFileProcessor(
     public async Task<FileProcessResult> ProcessFileAsync(string runId, string inputPath,
         CancellationToken cancellationToken = default)
     {
-        // full-file hasher
-        using var fullHasher = SHA256.Create();
-        var chunks = new List<DataChunkDetails>();
-        var bufferSize = contextResolver.ReadBufferSize();
-        var chunkSize = awsConfiguration.ChunkSizeBytes;
-        var cacheFolder = contextResolver.LocalCacheFolder();
-        var aesKey = await aesContextResolver.FileEncryptionKey(cancellationToken);
-        await archiveService.ResetFileStatus(runId, inputPath, cancellationToken);
-
-        // open for read, disallow writers
-        await using var fs = new FileStream(
-            inputPath,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
-            bufferSize,
-            FileOptions.SequentialScan);
-
-        var chunkIndex = 0;
-        long bytesInChunk = 0;
-
-        // will be initialized at first write
-        SHA256? chunkHasher = null!;
-        GZipStream gzipStream = null!;
-        CryptoStream cryptoStream = null!;
-        FileStream chunkFileFs = null!;
-
-        var buffer = new byte[bufferSize];
-        int read;
-
-        while ((read = await fs.ReadAsync(buffer, cancellationToken)) > 0)
+        if (!File.Exists(inputPath))
+            return new FileProcessResult(
+                LocalFilePath: inputPath,
+                OriginalSize: 0,
+                [],
+                [],
+                new FileNotFoundException("Input file does not exist", inputPath)
+            );
+        
+        var removableFiles = new List<string>();
+        try
         {
-            // feed the full-file hash
-            fullHasher.TransformBlock(buffer, 0, read, null, 0);
+            // full-file hasher
+            using var fullHasher = SHA256.Create();
+            var chunks = new List<DataChunkDetails>();
+            var bufferSize = contextResolver.ReadBufferSize();
+            var chunkSize = awsConfiguration.ChunkSizeBytes;
+            var cacheFolder = contextResolver.LocalCacheFolder();
+            var aesKey = await aesContextResolver.FileEncryptionKey(cancellationToken);
+            
+            await archiveService.ResetFileStatus(runId, inputPath, cancellationToken);
 
-            var offset = 0;
-            while (offset < read)
+            // open for read, disallow writers
+            await using var fs = new FileStream(
+                inputPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize,
+                FileOptions.SequentialScan);
+
+            var chunkIndex = 0;
+            long bytesInChunk = 0;
+
+            // will be initialized at first write
+            SHA256? chunkHasher = null!;
+            GZipStream gzipStream = null!;
+            CryptoStream cryptoStream = null!;
+            FileStream chunkFileFs = null!;
+
+            var buffer = new byte[bufferSize];
+            int read;
+
+            while ((read = await fs.ReadAsync(buffer, cancellationToken)) > 0)
             {
-                // ensure chunk pipeline is ready
-                if (chunkHasher is null)
-                    InitializeChunkPipeline();
-                if (chunkHasher is null) continue; // safety check
+                // feed the full-file hash
+                fullHasher.TransformBlock(buffer, 0, read, null, 0);
 
-                // how many bytes can we write into this chunk before we hit chunkSize?
-                var spaceLeft = chunkSize - bytesInChunk;
-                var toWrite = Math.Min(spaceLeft, read - offset);
+                var offset = 0;
+                while (offset < read)
+                {
+                    // ensure chunk pipeline is ready
+                    if (chunkHasher is null)
+                        InitializeChunkPipeline();
+                    if (chunkHasher is null) continue; // safety check
 
-                // feed chunk hash + compression + encryption
-                chunkHasher.TransformBlock(buffer, offset, (int)toWrite, null, 0);
-                await gzipStream.WriteAsync(buffer.AsMemory(offset, (int)toWrite), cancellationToken);
+                    // how many bytes can we write into this chunk before we hit chunkSize?
+                    var spaceLeft = chunkSize - bytesInChunk;
+                    var toWrite = Math.Min(spaceLeft, read - offset);
 
-                bytesInChunk += toWrite;
-                offset += (int)toWrite;
+                    // feed chunk hash + compression + encryption
+                    chunkHasher.TransformBlock(buffer, offset, (int)toWrite, null, 0);
+                    await gzipStream.WriteAsync(buffer.AsMemory(offset, (int)toWrite), cancellationToken);
 
-                if (bytesInChunk >= chunkSize)
-                    await FinalizeChunkAsync();
+                    bytesInChunk += toWrite;
+                    offset += (int)toWrite;
+
+                    if (bytesInChunk >= chunkSize)
+                        await FinalizeChunkAsync();
+                }
+            }
+
+            // finish last partial chunk
+            if (bytesInChunk > 0)
+                await FinalizeChunkAsync();
+
+            // finish full-file hash
+            fullHasher.TransformFinalBlock([], 0, 0);
+            return new FileProcessResult(
+                OriginalSize: fs.Length,
+                LocalFilePath: inputPath,
+                FullFileHash: fullHasher.Hash ?? [],
+                Chunks: [..chunks]
+            );
+
+            // local helpers:
+            void InitializeChunkPipeline()
+            {
+                bytesInChunk = 0;
+
+                // 1) chunk hasher
+                chunkHasher = SHA256.Create();
+
+                // 2) output file for this chunk
+                if (!Directory.Exists(cacheFolder))
+                    Directory.CreateDirectory(cacheFolder);
+
+                var fileNameHash = Base64Url.Encode(SHA256.HashData(Encoding.UTF8.GetBytes(inputPath)));
+                var outPath = $"{Path.Combine(cacheFolder, fileNameHash)}.chunk{chunkIndex:D4}.gz.aes";
+                if (File.Exists(outPath)) File.Delete(outPath);
+                removableFiles.Add(outPath);
+                
+                chunkFileFs = new FileStream(outPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+
+                // 3) AES setup
+                using var aes = Aes.Create();
+                aes.KeySize = 256;
+                aes.Mode = CipherMode.CBC;
+                aes.Key = aesKey;
+                aes.Padding = PaddingMode.PKCS7;
+                aes.GenerateIV(); // unique per chunk
+
+                // write the IV at the file start
+                chunkFileFs.Write(aes.IV, 0, 16);
+
+                // 4) crypto + gzip stream
+                cryptoStream = new CryptoStream(chunkFileFs, aes.CreateEncryptor(), CryptoStreamMode.Write);
+                gzipStream = new GZipStream(cryptoStream, CompressionLevel.SmallestSize, true);
+            }
+
+            async Task FinalizeChunkAsync()
+            {
+                if (chunkHasher is null) return;
+
+                // finalize chunk hash
+                chunkHasher.TransformFinalBlock([], 0, 0);
+
+                // finish compression & encryption
+                await gzipStream.FlushAsync(cancellationToken);
+                await gzipStream.DisposeAsync(); // closes GZip
+                await cryptoStream.FlushFinalBlockAsync(cancellationToken);
+                await cryptoStream.DisposeAsync(); // closes CryptoStream
+                await chunkFileFs.DisposeAsync(); // closes file stream
+
+                var chunkData = new DataChunkDetails(
+                    chunkFileFs.Name,
+                    chunkIndex,
+                    chunkSize,
+                    chunkHasher.Hash,
+                    bytesInChunk
+                );
+                chunks.Add(chunkData);
+                await archiveService.AddChunkToFile(
+                    runId,
+                    inputPath,
+                    chunkHasher.Hash,
+                    cancellationToken);
+                var request = new UploadChunkRequest(runId, inputPath, chunkData);
+                await mediator.ProcessChunk(request, cancellationToken);
+
+                // prepare for next chunk
+                chunkIndex++;
+                chunkHasher = null!;
+                gzipStream = null!;
+                cryptoStream = null!;
+                chunkFileFs = null!;
             }
         }
-
-        // finish last partial chunk
-        if (bytesInChunk > 0)
-            await FinalizeChunkAsync();
-
-        // finish full-file hash
-        fullHasher.TransformFinalBlock([], 0, 0);
-        return new FileProcessResult(
-            OriginalSize: fs.Length,
-            LocalFilePath: inputPath,
-            FullFileHash: fullHasher.Hash ?? [],
-            Chunks: [..chunks]
-        );
-
-        // local helpers:
-        void InitializeChunkPipeline()
+        catch (Exception ex)
         {
-            bytesInChunk = 0;
-
-            // 1) chunk hasher
-            chunkHasher = SHA256.Create();
-
-            // 2) output file for this chunk
-            if (!Directory.Exists(cacheFolder))
-                Directory.CreateDirectory(cacheFolder);
-
-            var fileNameHash = Base64Url.Encode(SHA256.HashData(Encoding.UTF8.GetBytes(inputPath)));
-            var outPath = $"{Path.Combine(cacheFolder, fileNameHash)}.chunk{chunkIndex:D4}.gz.aes";
-            if (File.Exists(outPath)) File.Delete(outPath);
-            chunkFileFs = new FileStream(outPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-
-            // 3) AES setup
-            using var aes = Aes.Create();
-            aes.KeySize = 256;
-            aes.Mode = CipherMode.CBC;
-            aes.Key = aesKey;
-            aes.Padding = PaddingMode.PKCS7;
-            aes.GenerateIV(); // unique per chunk
-
-            // write the IV at the file start
-            chunkFileFs.Write(aes.IV, 0, 16);
-
-            // 4) crypto + gzip stream
-            cryptoStream = new CryptoStream(chunkFileFs, aes.CreateEncryptor(), CryptoStreamMode.Write);
-            gzipStream = new GZipStream(cryptoStream, CompressionLevel.SmallestSize, true);
-        }
-
-        async Task FinalizeChunkAsync()
-        {
-            if (chunkHasher is null) return;
-
-            // finalize chunk hash
-            chunkHasher.TransformFinalBlock([], 0, 0);
-
-            // finish compression & encryption
-            await gzipStream.FlushAsync(cancellationToken);
-            await gzipStream.DisposeAsync(); // closes GZip
-            await cryptoStream.FlushFinalBlockAsync(cancellationToken);
-            await cryptoStream.DisposeAsync(); // closes CryptoStream
-            await chunkFileFs.DisposeAsync(); // closes file stream
-
-            var chunkData = new DataChunkDetails(
-                chunkFileFs.Name,
-                chunkIndex,
-                chunkSize,
-                chunkHasher.Hash,
-                bytesInChunk
+            foreach (var removableFile in removableFiles.Where(File.Exists))
+            {
+                try
+                {
+                    File.Delete(removableFile);
+                }
+                catch
+                {
+                    // ignore errors during cleanup
+                }
+            }
+            return new FileProcessResult(
+                LocalFilePath: inputPath,
+                OriginalSize: 0,
+                FullFileHash: [],
+                Chunks: [],
+                Error: ex
             );
-            chunks.Add(chunkData);
-            await archiveService.AddChunkToFile(
-                runId,
-                inputPath,
-                chunkHasher.Hash,
-                cancellationToken);
-            var request = new UploadChunkRequest(runId, inputPath, chunkData);
-            await mediator.ProcessChunk(request, cancellationToken);
-
-            // prepare for next chunk
-            chunkIndex++;
-            chunkHasher = null!;
-            gzipStream = null!;
-            cryptoStream = null!;
-            chunkFileFs = null!;
         }
     }
 }

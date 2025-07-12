@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Amazon.S3;
+using Amazon.S3.Model;
 using Amazon.S3.Transfer;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -78,65 +79,49 @@ public sealed class UploadChunkDataActor(
             {
                 logger.LogInformation("Uploading chunk {ChunkIndex} for file {LocalFilePath}",
                     chunk.ChunkIndex, chunk.LocalFilePath);
-                using var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
+
+                var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
                 var bucketName = awsConfiguration.BucketName;
                 var storageClass = contextResolver.ColdStorage();
                 var serverSideEncryptionMethod = contextResolver.ServerSideEncryption();
                 var s3PartSize = contextResolver.S3PartSize();
                 var key = contextResolver.ChunkS3Key(chunk.HashKey);
 
+                var localCheckSum = ComputeLocalBase64(chunk.LocalFilePath);
+
                 // upload the chunk file to S3
                 var transferUtil = new TransferUtility(s3Client);
                 var uploadReq = new TransferUtilityUploadRequest
                 {
+                    ChecksumSHA256 = localCheckSum,
                     BucketName = bucketName,
                     Key = key,
                     FilePath = chunk.LocalFilePath,
                     PartSize = s3PartSize,
                     StorageClass = storageClass,
                     ServerSideEncryptionMethod = serverSideEncryptionMethod,
-                    ChecksumAlgorithm = ChecksumAlgorithm.SHA256
+                    ChecksumAlgorithm = ChecksumAlgorithm.SHA256,
+                    TagSet =
+                    [
+                        new Tag { Key = "storage-class", Value = "cold" },
+                        new Tag { Key = "archive-run-id", Value = request.ArchiveRunId ?? "" },
+                        new Tag { Key = "parent-file", Value = parentFile ?? "" },
+                        new Tag { Key = "chunk-index", Value = chunk?.ChunkIndex.ToString() ?? "" },
+                        new Tag { Key = "size", Value = chunk?.Size.ToString() ?? "" },
+                        new Tag { Key = "chunk-hash", Value = key ?? "" },
+                        new Tag { Key = "chunk-size-bytes", Value = awsConfiguration?.ChunkSizeBytes.ToString() ?? "" }
+                    ]
                 };
 
                 await transferUtil.UploadAsync(uploadReq, cancellationToken);
-                
+
                 logger.LogInformation("Upload complete for chunk {ChunkIndex} for file {LocalFilePath}",
                     chunk.ChunkIndex, chunk.LocalFilePath);
-
-                var head = await s3Client.GetObjectMetadataAsync(bucketName, key, cancellationToken);
-
-                // This property is non-null if S3 computed a SHA-256 checksum on the object
-                var s3CheckSum = head.ChecksumSHA256;
-                var localCheckSum = ComputeLocalSha256Base64(chunk.LocalFilePath);
-
-                if (s3CheckSum != localCheckSum)
-                {
-                    logger.LogWarning(
-                        "Checksum mismatch for chunk {ChunkIndex} for file {LocalFilePath}. S3: {S3Checksum}, Local: {LocalChecksum}. Retrying upload...",
-                        chunk.ChunkIndex, chunk.LocalFilePath, s3CheckSum, localCheckSum);
-
-                    request.Exception = new InvalidOperationException(
-                        $"Checksum mismatch for chunk {chunk.ChunkIndex} for file {chunk.LocalFilePath}.S3: {s3CheckSum}, Local: {localCheckSum}");
-                    await retryMediator.RetryAttempt(request, cancellationToken);
-                }
-
-                logger.LogInformation("Appending tags for chunk {ChunkIndex} for file {LocalFilePath}",
-                    chunk.ChunkIndex, chunk.LocalFilePath);
-                await s3Service.AppendTags(s3Client, bucketName, key, new Dictionary<string, string>
-                {
-                    { "storage-class", "cold" },
-                    { "archive-run-id", request.ArchiveRunId },
-                    { "parent-file", parentFile },
-                    { "chunk-index", chunk.ChunkIndex.ToString() },
-                    { "hash-key", Base64Url.Encode(chunk.HashKey) },
-                    { "local-sha256", localCheckSum },
-                    { "chunk-size-bytes", awsConfiguration.ChunkSizeBytes.ToString() }
-                }, cancellationToken);
 
                 logger.LogInformation("Marking chunk {ChunkIndex} for file {LocalFilePath} as uploaded",
                     chunk.ChunkIndex, chunk.LocalFilePath);
                 await dataChunkService.MarkChunkAsUploaded(chunk, key, bucketName, cancellationToken);
-                
+
                 await archiveService.RecordChunkUpload(
                     request.ArchiveRunId,
                     parentFile,
@@ -157,11 +142,11 @@ public sealed class UploadChunkDataActor(
         }
     }
 
-    private static string ComputeLocalSha256Base64(string path)
+    private static string ComputeLocalBase64(string path)
     {
-        using var stream = File.OpenRead(path);
-        var hash = SHA256.HashData(stream);
-        return Convert.ToBase64String(hash);
+        if (!File.Exists(path)) return "";
+        using var s = File.OpenRead(path);
+        return Convert.ToBase64String(SHA256.HashData(s));
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)

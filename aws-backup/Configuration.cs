@@ -76,4 +76,6 @@ public sealed record Configuration
     public bool? NotifyOnException { get; set; }
     public int? DaysToKeepRestoredCopy { get; set; }
     public string? RollingLogFolder { get; set; }
+    public long? CacheFolderSizeLimitBytes { get; set; }
+    public long? CacheSizeCheckTimeoutSeconds { get; set; }
 }

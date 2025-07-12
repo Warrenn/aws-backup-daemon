@@ -59,6 +59,17 @@ public sealed class FileLister : IFileLister
                 if (!matcher.Match(rel).HasMatches)
                     continue;
 
+                try
+                {
+                    var fi = new FileInfo(file);
+                    if (!fi.Exists || fi.LinkTarget is not null)
+                        continue;
+                }
+                catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+                {
+                    continue;
+                }
+
                 yield return file.ToUnixRooted();
             }
 

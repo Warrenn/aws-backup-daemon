@@ -181,7 +181,8 @@ public class UploadChunkDataActorTests
 
         // capture RecordFailedFile when LimitExceeded invoked eventually
         _archiveSvc
-            .Setup(a => a.RecordFailedChunk("run3", "file3", It.Is<byte[]>(bytes => bytes[0] == 1 && bytes[1] == 2 && bytes[2] == 3),
+            .Setup(a => a.RecordFailedChunk("run3", "file3",
+                It.Is<byte[]>(bytes => bytes[0] == 1 && bytes[1] == 2 && bytes[2] == 3),
                 It.IsAny<Exception>(), It.IsAny<CancellationToken>()))
             .Callback(() => limitExceededCalled = true)
             .Returns(Task.CompletedTask);

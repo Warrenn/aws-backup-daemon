@@ -65,8 +65,40 @@ public sealed class ArchiveFilesActor(
                     continue;
                 }
 
+                while (true)
+                {
+                    var cacheFolderSizeLimit = contextResolver.CacheFolderSizeLimitBytes();
+                    if (cacheFolderSizeLimit <= 0) break; // no limit, skip cleanup
+
+                    var cacheFolder = contextResolver.LocalCacheFolder();
+                    var cacheSize = FileHelper.FolderSize(cacheFolder);
+                    var checkTimeSpan = TimeSpan.FromSeconds(contextResolver.CacheSizeCheckTimeoutSeconds());
+                    if (cacheSize < cacheFolderSizeLimit) break;
+
+                    logger.LogWarning(
+                        "Cache folder {cacheFolder} with size {cacheSize} exceeds limit {Limit}, waiting {checkTimeSpan} ",
+                        cacheFolder, cacheSize, cacheFolderSizeLimit, checkTimeSpan);
+                    await Task.Delay(checkTimeSpan, cancellationToken);
+                }
+                
                 logger.LogInformation("Processing {File} for {ArchiveRunId}", filePath, runId);
                 var result = await processor.ProcessFileAsync(runId, filePath, cancellationToken);
+                
+                if (result.Error is not null)
+                {
+                    request.Exception = result.Error;
+                    await retryMediator.RetryAttempt(request, cancellationToken);
+                    continue;
+                }
+                if (result.Chunks.Length == 0)
+                {
+                    logger.LogWarning("No chunks created for {File} in {ArchiveRunId}", filePath, runId);
+                    request.Exception = new InvalidOperationException("No chunks created");
+                    await retryMediator.RetryAttempt(request, cancellationToken);
+                    continue;
+                }
+                
+                logger.LogInformation("File {File} processed successfully for {ArchiveRunId}", filePath, runId);
                 await archiveService.ReportProcessingResult(runId, result, cancellationToken);
 
                 if (keepTimeStamps)

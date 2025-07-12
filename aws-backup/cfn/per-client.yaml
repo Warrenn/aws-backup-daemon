@@ -158,6 +158,12 @@ Resources:
 
               - Effect: Allow
                 Action:
+                  - kms:Decrypt
+                  - kms:GenerateDataKey
+                Resource: "arn:aws:kms:*:*:key/alias/aws/s3"
+
+              - Effect: Allow
+                Action:
                   - s3:PutObject
                   - s3:GetObject
                   - s3:DeleteObject

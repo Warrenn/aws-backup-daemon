@@ -19,5 +19,5 @@ public interface IRestoreRequestsMediator
     IAsyncEnumerable<RestoreRequest> GetRestoreRequests(CancellationToken cancellationToken);
 }
 
-[JsonConverter(typeof(JsonDictionaryConverter<RestoreRequest>))]
+[JsonConverter(typeof(JsonDictionaryConverter<string, RestoreRequest, CurrentRestoreRequests>))]
 public class CurrentRestoreRequests : ConcurrentDictionary<string, RestoreRequest>;

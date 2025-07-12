@@ -29,10 +29,7 @@ public sealed class AesContextResolver(
 
     private async Task<byte[]> GetEncryptionKey(string path, CancellationToken cancellationToken)
     {
-        using var ssmClient = await awsClientFactory.CreateSsmClient(cancellationToken);
-        // Retrieve from SSM Parameter Store
-        // Implementation depends on your key management strategy
-        // Example:
+        var ssmClient = await awsClientFactory.CreateSsmClient(cancellationToken);
         var response = await ssmClient.GetParameterAsync(new GetParameterRequest
         {
             Name = path,

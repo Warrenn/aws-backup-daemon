@@ -55,7 +55,7 @@ public class DownloadFileActorTests
 
         // Stub reconstructor to skip hash check
         _reconstructor.Setup(r => r.ReconstructAsync(req, It.IsAny<CancellationToken>()))
-            .ReturnsAsync("/tmp");
+            .ReturnsAsync(new ReconstructResult("/tmp", null));
         _reconstructor.Setup(r => r.VerifyDownloadHashAsync(req, "/tmp", It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
@@ -91,7 +91,7 @@ public class DownloadFileActorTests
         var worker = GetWorker();
 
         _reconstructor.Setup(r => r.ReconstructAsync(req, It.IsAny<CancellationToken>()))
-            .ReturnsAsync("file1");
+            .ReturnsAsync(new ReconstructResult("file1", null));
         _reconstructor.Setup(r => r.VerifyDownloadHashAsync(req, "file1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
@@ -116,7 +116,7 @@ public class DownloadFileActorTests
         var worker = GetWorker();
 
         _reconstructor.Setup(r => r.ReconstructAsync(req, It.IsAny<CancellationToken>()))
-            .ReturnsAsync("file2");
+            .ReturnsAsync(new ReconstructResult("file2", null));
         _reconstructor.Setup(r => r.VerifyDownloadHashAsync(req, "file2", It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
@@ -138,7 +138,7 @@ public class DownloadFileActorTests
     public async Task ExceptionDuringReconstruct_TriggersRetryAttemptAndSetsException()
     {
         var chan = Channel.CreateUnbounded<DownloadFileFromS3Request>();
-        var req = new DownloadFileFromS3Request("r", "f", Array.Empty<CloudChunkDetails>(), 0);
+        var req = new DownloadFileFromS3Request("r", "f", [], 0);
         chan.Writer.TryWrite(req);
         chan.Writer.Complete();
 

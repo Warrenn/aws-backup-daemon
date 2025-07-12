@@ -79,6 +79,8 @@ public interface IContextResolver
     Task UpdateConfiguration(Configuration configOptions, CancellationToken cancellationToken);
     string CronSchedule();
     int AwsCredentialsTimeoutSeconds();
+    long CacheFolderSizeLimitBytes();
+    long CacheSizeCheckTimeoutSeconds();
 }
 
 public sealed class ContextResolver : IContextResolver
@@ -86,7 +88,6 @@ public sealed class ContextResolver : IContextResolver
     private readonly string _appSettingsPath;
     private readonly string _clientId;
     private readonly ILogger<ContextResolver> _logger;
-    private readonly ISignalHub<string> _signalHub;
     private RegionEndpoint? _awsRegion;
 
     // Cached values
@@ -118,7 +119,6 @@ public sealed class ContextResolver : IContextResolver
             logger.LogInformation("Configuration updated in ContextResolver.");
             signalHub.Signal(_configOptions.CronSchedule);
         });
-        _signalHub = signalHub;
         _clientId = ScrubClientId(_configOptions.ClientId);
     }
 
@@ -488,7 +488,7 @@ public sealed class ContextResolver : IContextResolver
     public async Task UpdateConfiguration(Configuration configOptions, CancellationToken cancellationToken)
     {
         _logger.LogInformation("Updating configuration in ContextResolver from UpdateConfiguration.");
-        if (!IsValidPath(_appSettingsPath)) return;
+        if (!IsValidPath(_appSettingsPath) && File.Exists(_appSettingsPath)) return;
         var configString = await File.ReadAllTextAsync(_appSettingsPath, cancellationToken);
         var root = JsonNode.Parse(configString);
         if (root is null)
@@ -516,11 +516,21 @@ public sealed class ContextResolver : IContextResolver
         return _configOptions.AwsCredentialsTimeoutSeconds ?? 3600;
     }
 
+    public long CacheFolderSizeLimitBytes()
+    {
+        return _configOptions.CacheFolderSizeLimitBytes ?? 0;
+    }
+
+    public long CacheSizeCheckTimeoutSeconds()
+    {
+        return _configOptions.CacheSizeCheckTimeoutSeconds ?? 300000; // 5 minutes default
+    }
+
     private void ResetCache()
     {
         _awsRegion = null; // Reset cached region
         _awsRetryMode = null; // Reset cached retry mode
-        _coldStorageClass = null; // Reset cached storage classes)
+        _coldStorageClass = null; // Reset cached storage classes
         _hotStorageClass = null;
         _lowCostStorage = null;
         _serverSideEncryptionMethod = null; // Reset encryption method

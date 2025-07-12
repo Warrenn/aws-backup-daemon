@@ -23,7 +23,7 @@ public sealed class SqsPollingActor(
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            using var sqs = await clientFactory.CreateSqsClient(cancellationToken);
+            var sqs = await clientFactory.CreateSqsClient(cancellationToken);
 
             var queueUrl = awsConfiguration.SqsInboxQueueUrl;
             var waitTimeSeconds = contextResolver.SqsWaitTimeSeconds();

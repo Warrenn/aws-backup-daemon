@@ -45,7 +45,15 @@ public sealed class DownloadFileActor(
                 var keepAclEntries = contextResolver.KeepAclEntries();
 
                 logger.LogInformation("Processing download request {FilePath}", downloadRequest.FilePath);
-                var localFilePath = await reconstructor.ReconstructAsync(downloadRequest, cancellationToken);
+                var (localFilePath, error) = await reconstructor.ReconstructAsync(downloadRequest, cancellationToken);
+                if (error is not null || string.IsNullOrWhiteSpace(localFilePath))
+                {
+                    logger.LogError(error, "Failed to reconstruct file {FilePath}", downloadRequest.FilePath);
+                    downloadRequest.Exception = error;
+                    await retryMediator.RetryAttempt(downloadRequest, cancellationToken);
+                    continue;
+                }
+
                 var checkDownloadHash = contextResolver.CheckDownloadHash();
                 var hashPassed = !checkDownloadHash ||
                                  await reconstructor.VerifyDownloadHashAsync(downloadRequest, localFilePath,
@@ -72,7 +80,7 @@ public sealed class DownloadFileActor(
                         cancellationToken);
 
                 if (keepAclEntries) FileHelper.ApplyAcl(downloadRequest.AclEntries ?? [], localFilePath);
-                
+
                 await restoreService.ReportDownloadComplete(downloadRequest, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
