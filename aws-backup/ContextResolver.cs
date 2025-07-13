@@ -403,22 +403,22 @@ public sealed class ContextResolver : IContextResolver
 
     public string CurrentRestoreBucketKey()
     {
-        return $"{_clientId}/restores.json.tar.gz";
+        return $"{_clientId}/restores.json.tar.br";
     }
 
     public string CurrentArchiveRunsBucketKey()
     {
-        return $"{_clientId}/archive-requests.json.tar.gz";
+        return $"{_clientId}/archive-requests.json.tar.br";
     }
 
     public string ChunkManifestBucketKey()
     {
-        return $"{_clientId}/chunk-manifest.json.tar.gz";
+        return $"{_clientId}/chunk-manifest.json.tar.br";
     }
 
     public string RestoreManifestBucketKey()
     {
-        return $"{_clientId}/restore-manifest.json.tar.gz";
+        return $"{_clientId}/restore-manifest.json.tar.br";
     }
 
     public bool NotifyOnArchiveComplete()
@@ -448,12 +448,12 @@ public sealed class ContextResolver : IContextResolver
 
     public string RunIdBucketKey(string runId)
     {
-        return $"{_clientId}/archive-runs/{runId}.json.gz";
+        return $"{_clientId}/archive-runs/{runId}.json.br";
     }
 
     public string RestoreIdBucketKey(string restoreId)
     {
-        return $"{_clientId}/restore-runs/{restoreId}.json.gz";
+        return $"{_clientId}/restore-runs/{restoreId}.json.br";
     }
 
     public int DaysToKeepRestoredCopy()
