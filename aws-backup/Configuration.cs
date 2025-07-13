@@ -48,6 +48,7 @@ public sealed record Configuration
     public int? AwsCredentialsTimeoutSeconds { get; set; }
     public int? ReadBufferSize { get; set; }
     public long? S3PartSize { get; set; }
+    public int? NoOfConcurrentFileUploads { get; set; }
     public int? NoOfConcurrentDownloadsPerFile { get; set; }
     public int? NoOfS3FilesToDownloadConcurrently { get; set; }
     public int? NoOfS3FilesToUploadConcurrently { get; set; }

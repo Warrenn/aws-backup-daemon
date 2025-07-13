@@ -36,7 +36,7 @@ public interface IDownloadFileMediator
     Task DownloadFileFromS3(DownloadFileFromS3Request downloadFileFromS3Request,
         CancellationToken cancellationToken);
 
-    IAsyncEnumerable<DownloadFileFromS3Request> GetDownloadRequests(CancellationToken cancellationToken);
+    IAsyncEnumerable<DownloadFileFromS3Request> GetDownloadFileRequests(CancellationToken cancellationToken);
 }
 
 public enum RestoreRunStatus

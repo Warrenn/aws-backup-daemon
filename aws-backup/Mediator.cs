@@ -62,10 +62,9 @@ public sealed class Mediator(
             });
 
     private readonly Channel<DownloadFileFromS3Request> _downloadFileFromS3Channel =
-        Channel.CreateBounded<DownloadFileFromS3Request>(
-            new BoundedChannelOptions(resolver.NoOfS3FilesToDownloadConcurrently())
+        Channel.CreateUnbounded<DownloadFileFromS3Request>(
+            new UnboundedChannelOptions
             {
-                FullMode = BoundedChannelFullMode.Wait,
                 SingleReader = false,
                 SingleWriter = false
             });
@@ -121,8 +120,8 @@ public sealed class Mediator(
             });
 
     private readonly Channel<UploadChunkRequest> _uploadChunksChannel =
-        Channel.CreateUnbounded<UploadChunkRequest>(
-            new UnboundedChannelOptions
+        Channel.CreateBounded<UploadChunkRequest>(
+            new BoundedChannelOptions(resolver.NoOfS3FilesToUploadConcurrently())
             {
                 SingleReader = false,
                 SingleWriter = false
@@ -189,7 +188,7 @@ public sealed class Mediator(
         await _downloadFileFromS3Channel.Writer.WriteAsync(downloadFileFromS3Request, cancellationToken);
     }
 
-    IAsyncEnumerable<DownloadFileFromS3Request> IDownloadFileMediator.GetDownloadRequests(
+    IAsyncEnumerable<DownloadFileFromS3Request> IDownloadFileMediator.GetDownloadFileRequests(
         CancellationToken cancellationToken)
     {
         return _downloadFileFromS3Channel.Reader.ReadAllAsync(cancellationToken);

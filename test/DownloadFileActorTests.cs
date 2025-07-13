@@ -17,7 +17,7 @@ public class DownloadFileActorTests
 
     private DownloadFileActor CreateOrch(Channel<DownloadFileFromS3Request> chan)
     {
-        _mediator.Setup(m => m.GetDownloadRequests(It.IsAny<CancellationToken>()))
+        _mediator.Setup(m => m.GetDownloadFileRequests(It.IsAny<CancellationToken>()))
             .Returns(chan.Reader.ReadAllAsync());
         _ctx.Setup(c => c.NoOfS3FilesToDownloadConcurrently()).Returns(1);
         _ctx.Setup(c => c.DownloadAttemptLimit()).Returns(2);

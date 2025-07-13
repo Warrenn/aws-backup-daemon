@@ -38,6 +38,7 @@ public interface IContextResolver
     int NoOfConcurrentDownloadsPerFile();
     int NoOfS3FilesToDownloadConcurrently();
     int NoOfS3FilesToUploadConcurrently();
+    int NoOfConcurrentFileUploads();
     int ShutdownTimeoutSeconds();
     int RetryCheckIntervalMs();
     int StorageCheckDelaySeconds();
@@ -273,6 +274,11 @@ public sealed class ContextResolver : IContextResolver
     public int NoOfS3FilesToUploadConcurrently()
     {
         return _configOptions.NoOfS3FilesToUploadConcurrently ?? 10;
+    }
+
+    public int NoOfConcurrentFileUploads()
+    {
+        return _configOptions.NoOfConcurrentFileUploads ?? 4;
     }
 
     public int ShutdownTimeoutSeconds()

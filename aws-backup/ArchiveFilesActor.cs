@@ -28,9 +28,9 @@ public sealed class ArchiveFilesActor(
     protected override Task ExecuteAsync(CancellationToken cancellationToken)
     {
         logger.LogInformation("ArchiveFilesActor started");
-        var readConcurrency = contextResolver.NoOfConcurrentDownloadsPerFile();
+        var concurrency = contextResolver.NoOfConcurrentFileUploads();
 
-        _workers = new Task[readConcurrency];
+        _workers = new Task[concurrency];
         for (var i = 0; i < _workers.Length; i++)
             _workers[i] = Task.Run(() => WorkerLoopAsync(cancellationToken), cancellationToken);
 

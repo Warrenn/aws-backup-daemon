@@ -130,10 +130,11 @@ public sealed class SnsActor(
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         logger.LogInformation("SnsActor started");
-        var sns = await clientFactory.CreateSnsClient(cancellationToken);
         await foreach (var message in snsMessageMediator.GetMessages(cancellationToken))
             try
             {
+                var sns = await clientFactory.CreateSnsClient(cancellationToken);
+                
                 if (!_messageTypeToSnsArn.TryGetValue(message.GetType(), out var snsNotification))
                 {
                     logger.LogWarning("Received unhandled SNS message type: {MessageType}", message.GetType());

@@ -80,7 +80,10 @@ public sealed class ArchiveRun
     public long? OriginalSize { get; set; }
     public int? TotalFiles { get; set; }
     public int? TotalSkippedFiles { get; set; }
-    [JsonInclude] public ConcurrentDictionary<string, FileMetaData> Files { get; init; } = new();
+
+    [JsonConverter(typeof(JsonDictionaryConverter<string, FileMetaData, ConcurrentDictionary<string, FileMetaData>>))]
+    [JsonInclude]
+    public ConcurrentDictionary<string, FileMetaData> Files { get; init; } = new();
 }
 
 public interface IArchiveService

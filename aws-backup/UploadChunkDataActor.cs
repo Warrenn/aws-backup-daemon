@@ -33,9 +33,9 @@ public sealed class UploadChunkDataActor(
     protected override Task ExecuteAsync(CancellationToken cancellationToken)
     {
         logger.LogInformation("Upload Chunk Actor started");
-        var uploadConcurrency = contextResolver.NoOfS3FilesToUploadConcurrently();
+        var concurrency = contextResolver.NoOfS3FilesToUploadConcurrently();
         // Spin up N worker loops
-        _workers = new Task[uploadConcurrency];
+        _workers = new Task[concurrency];
         for (var i = 0; i < _workers.Length; i++)
             _workers[i] = Task.Run(() => WorkerLoopAsync(cancellationToken), cancellationToken);
 

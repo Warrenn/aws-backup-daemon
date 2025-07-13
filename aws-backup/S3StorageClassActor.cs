@@ -17,7 +17,6 @@ public sealed class S3StorageClassActor(
         while (!cancellationToken.IsCancellationRequested)
             try
             {
-                logger.LogInformation("Checking S3 storage classes");
                 await foreach (var s3StorageInfo in s3Service.GetStorageClasses(cancellationToken))
                 {
                     await restoreService.ReportS3Storage(s3StorageInfo.BucketName, s3StorageInfo.Key,

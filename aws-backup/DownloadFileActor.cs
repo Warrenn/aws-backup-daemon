@@ -28,13 +28,13 @@ public sealed class DownloadFileActor(
 
     private async Task WorkerLoopAsync(CancellationToken cancellationToken)
     {
-        await foreach (var downloadRequest in mediator.GetDownloadRequests(cancellationToken))
+        await foreach (var downloadFileRequest in mediator.GetDownloadFileRequests(cancellationToken))
             try
             {
-                downloadRequest.Retry ??= (req, ct) =>
+                downloadFileRequest.Retry ??= (req, ct) =>
                     mediator.DownloadFileFromS3((DownloadFileFromS3Request)req, ct);
-                downloadRequest.RetryLimit = contextResolver.DownloadAttemptLimit();
-                downloadRequest.LimitExceeded ??= (req, ct) =>
+                downloadFileRequest.RetryLimit = contextResolver.DownloadAttemptLimit();
+                downloadFileRequest.LimitExceeded ??= (req, ct) =>
                     restoreService.ReportDownloadFailed(
                         (DownloadFileFromS3Request)req,
                         req.Exception ?? new Exception("Exceeded limit"),
@@ -44,44 +44,44 @@ public sealed class DownloadFileActor(
                 var keepOwnerGroup = contextResolver.KeepOwnerGroup();
                 var keepAclEntries = contextResolver.KeepAclEntries();
 
-                logger.LogInformation("Processing download request {FilePath}", downloadRequest.FilePath);
-                var (localFilePath, error) = await reconstructor.ReconstructAsync(downloadRequest, cancellationToken);
+                logger.LogInformation("Processing download request {FilePath}", downloadFileRequest.FilePath);
+                var (localFilePath, error) = await reconstructor.ReconstructAsync(downloadFileRequest, cancellationToken);
                 if (error is not null || string.IsNullOrWhiteSpace(localFilePath))
                 {
-                    logger.LogError(error, "Failed to reconstruct file {FilePath}", downloadRequest.FilePath);
-                    downloadRequest.Exception = error;
-                    await retryMediator.RetryAttempt(downloadRequest, cancellationToken);
+                    logger.LogError(error, "Failed to reconstruct file {FilePath}", downloadFileRequest.FilePath);
+                    downloadFileRequest.Exception = error;
+                    await retryMediator.RetryAttempt(downloadFileRequest, cancellationToken);
                     continue;
                 }
 
                 var checkDownloadHash = contextResolver.CheckDownloadHash();
                 var hashPassed = !checkDownloadHash ||
-                                 await reconstructor.VerifyDownloadHashAsync(downloadRequest, localFilePath,
+                                 await reconstructor.VerifyDownloadHashAsync(downloadFileRequest, localFilePath,
                                      cancellationToken);
 
                 if (!hashPassed)
                 {
-                    logger.LogWarning("Download hash verification failed for {FilePath}", downloadRequest.FilePath);
-                    downloadRequest.Exception = new InvalidOperationException("Download hash verification failed");
-                    await retryMediator.RetryAttempt(downloadRequest, cancellationToken);
+                    logger.LogWarning("Download hash verification failed for {FilePath}", downloadFileRequest.FilePath);
+                    downloadFileRequest.Exception = new InvalidOperationException("Download hash verification failed");
+                    await retryMediator.RetryAttempt(downloadFileRequest, cancellationToken);
                     continue;
                 }
 
-                logger.LogInformation("Download completed for {FilePath}", downloadRequest.FilePath);
+                logger.LogInformation("Download completed for {FilePath}", downloadFileRequest.FilePath);
                 if (keepTimeStamps)
-                    FileHelper.SetTimestamps(localFilePath, downloadRequest.Created ?? DateTimeOffset.UtcNow,
-                        downloadRequest.LastModified ?? DateTimeOffset.UtcNow);
+                    FileHelper.SetTimestamps(localFilePath, downloadFileRequest.Created ?? DateTimeOffset.UtcNow,
+                        downloadFileRequest.LastModified ?? DateTimeOffset.UtcNow);
 
                 if (keepOwnerGroup)
                     await FileHelper.SetOwnerGroupAsync(
                         localFilePath,
-                        downloadRequest.Owner ?? "",
-                        downloadRequest.Group ?? "",
+                        downloadFileRequest.Owner ?? "",
+                        downloadFileRequest.Group ?? "",
                         cancellationToken);
 
-                if (keepAclEntries) FileHelper.ApplyAcl(downloadRequest.AclEntries ?? [], localFilePath);
+                if (keepAclEntries) FileHelper.ApplyAcl(downloadFileRequest.AclEntries ?? [], localFilePath);
 
-                await restoreService.ReportDownloadComplete(downloadRequest, cancellationToken);
+                await restoreService.ReportDownloadComplete(downloadFileRequest, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -89,10 +89,10 @@ public sealed class DownloadFileActor(
             }
             catch (Exception exception)
             {
-                logger.LogError(exception, "Error processing download request {FilePath}", downloadRequest.FilePath);
+                logger.LogError(exception, "Error processing download request {FilePath}", downloadFileRequest.FilePath);
                 //queue to the failed queue;
-                downloadRequest.Exception = exception;
-                await retryMediator.RetryAttempt(downloadRequest, cancellationToken);
+                downloadFileRequest.Exception = exception;
+                await retryMediator.RetryAttempt(downloadFileRequest, cancellationToken);
             }
     }
 
