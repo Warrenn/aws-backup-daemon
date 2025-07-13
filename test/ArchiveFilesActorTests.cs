@@ -26,7 +26,7 @@ public class ArchiveFilesActorTests
                 a.DoesFileRequireProcessing(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(requireProcessing);
 
-        ctxMock.Setup(c => c.NoOfConcurrentDownloadsPerFile()).Returns(2);
+        ctxMock.Setup(c => c.NoOfConcurrentFileUploads()).Returns(2);
         ctxMock.Setup(c => c.KeepTimeStamps()).Returns(keepTimeStamps);
         ctxMock.Setup(c => c.KeepOwnerGroup()).Returns(keepOwnerGroup);
         ctxMock.Setup(c => c.KeepAclEntries()).Returns(keepAclEntries);

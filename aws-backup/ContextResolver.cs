@@ -519,7 +519,7 @@ public sealed class ContextResolver : IContextResolver
 
     public int AwsCredentialsTimeoutSeconds()
     {
-        return _configOptions.AwsCredentialsTimeoutSeconds ?? 3600;
+        return _configOptions.AwsCredentialsTimeoutSeconds ?? 900; // 15 minutes default
     }
 
     public long CacheFolderSizeLimitBytes()

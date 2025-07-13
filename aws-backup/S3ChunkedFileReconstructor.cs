@@ -84,7 +84,7 @@ public sealed class S3ChunkedFileReconstructor(
                         aes.CreateDecryptor(),
                         CryptoStreamMode.Read);
 
-                    await using var gzipStream = new GZipStream(
+                    await using var gzipStream = new BrotliStream(
                         decryptStream,
                         CompressionMode.Decompress);
 

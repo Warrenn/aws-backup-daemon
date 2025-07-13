@@ -180,7 +180,7 @@ public sealed class S3Service(
 
         // In this thread, read the file → compress → write into pipe.Writer
         await using (var fileStream = File.OpenRead(localFilePath))
-        await using (var gzip = new GZipStream(pipe.Writer.AsStream(), CompressionLevel.SmallestSize, true))
+        await using (var gzip = new BrotliStream(pipe.Writer.AsStream(), CompressionLevel.SmallestSize, true))
         {
             await fileStream.CopyToAsync(gzip, cancellationToken);
         }
@@ -202,7 +202,7 @@ public sealed class S3Service(
             new GetObjectRequest { BucketName = bucketName, Key = key },
             cancellationToken);
 
-        await using var gzip = new GZipStream(resp.ResponseStream, CompressionMode.Decompress, false);
+        await using var gzip = new BrotliStream(resp.ResponseStream, CompressionMode.Decompress, false);
         return await JsonSerializer.DeserializeAsync(gzip, (JsonTypeInfo<T>)GetTypeInfo<T>(),
             cancellationToken);
     }
@@ -246,7 +246,7 @@ public sealed class S3Service(
 
         // 3) In this thread, serialize → gzip → pipe.Writer
         await using (var writerStream = pipe.Writer.AsStream())
-        await using (var gzip = new GZipStream(writerStream, CompressionLevel.SmallestSize, false))
+        await using (var gzip = new BrotliStream(writerStream, CompressionLevel.SmallestSize, false))
         {
             await JsonSerializer.SerializeAsync(gzip, obj, SourceGenerationContext.Default.GetTypeInfo(typeof(T))!,
                 cancellationToken);

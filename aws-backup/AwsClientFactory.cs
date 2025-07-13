@@ -17,8 +17,8 @@ public interface IAwsClientFactory
     Task<IAmazonSimpleSystemsManagement> CreateSsmClient(CancellationToken cancellationToken = default);
     Task<IAmazonSQS> CreateSqsClient(CancellationToken cancellationToken);
     Task<IAmazonSimpleNotificationService> CreateSnsClient(CancellationToken cancellationToken);
-
     Task<AmazonIdentityManagementServiceClient> CreateIamClient(CancellationToken cancellationToken = default);
+    void ResetCachedCredentials();
 }
 
 public sealed class AwsClientFactory(
@@ -86,6 +86,12 @@ public sealed class AwsClientFactory(
             : new AmazonIdentityManagementServiceClient(config);
     }
 
+    public void ResetCachedCredentials()
+    {
+        _cachedCredentials = null;
+        logger.LogDebug("Cached AWS credentials have been reset");
+    }
+
     private async Task<bool> ValidateCredentialsAsync(AWSCredentials? credentials, CancellationToken cancellationToken)
     {
         try
@@ -109,7 +115,7 @@ public sealed class AwsClientFactory(
     private async Task<AWSCredentials?> GetCredentialsAsync(CancellationToken cancellationToken)
     {
         var credentialsValid = _cachedCredentials?.Expiration is not null &&
-                               timeProvider.GetUtcNow() < _cachedCredentials.Expiration;
+                               timeProvider.GetLocalNow() < _cachedCredentials.Expiration;
 
         if (credentialsValid) return _cachedCredentials;
         var expiresIn = resolver.AwsCredentialsTimeoutSeconds();
@@ -134,6 +140,11 @@ public sealed class AwsClientFactory(
                 if (!await ValidateCredentialsAsync(credentials, cancellationToken)) continue;
 
                 logger.LogInformation("Successfully resolved AWS credentials using {CredentialSource}", name);
+                var expiryTime = timeProvider.GetLocalNow().Add(TimeSpan.FromSeconds(expiresIn)).DateTime;
+                
+                if(credentials.Expiration is null || credentials.Expiration > expiryTime)
+                    credentials.Expiration = expiryTime;
+                
                 _cachedCredentials = credentials;
                 return credentials;
             }

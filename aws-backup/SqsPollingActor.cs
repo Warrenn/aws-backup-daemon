@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Amazon.SQS;
 using Amazon.SQS.Model;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -38,7 +39,7 @@ public sealed class SqsPollingActor(
                 logger.LogInformation("SQS queue URL: {QueueUrl}", queueUrl);
             }
 
-            ReceiveMessageResponse resp;
+            ReceiveMessageResponse resp = null!;
             try
             {
                 resp = await sqs.ReceiveMessageAsync(new ReceiveMessageRequest
@@ -48,6 +49,13 @@ public sealed class SqsPollingActor(
                     MaxNumberOfMessages = maxNumberOfMessages, // batch up to 10
                     VisibilityTimeout = visibilityTimeout // allow 60s to process
                 }, cancellationToken);
+            }
+            catch (AmazonSQSException ex) when (ex.Message.Contains("Signature expired"))
+            {
+                logger.LogError(ex, "Signature expired. System clock or credentials may be invalid.");
+                clientFactory.ResetCachedCredentials();
+                
+                await Task.Delay(TimeSpan.FromSeconds(retryDelay), cancellationToken);
             }
             catch (OperationCanceledException)
             {
@@ -60,9 +68,8 @@ public sealed class SqsPollingActor(
                 await Task.Delay(TimeSpan.FromSeconds(retryDelay), cancellationToken);
                 continue;
             }
-
-            if ((resp.Messages?.Count ?? 0) <= 0)
-                continue; // no messages this cycle, long-poll will loop
+            
+            if(resp?.Messages is not { Count: > 0 }) continue;
 
             foreach (var msg in resp.Messages!)
                 try

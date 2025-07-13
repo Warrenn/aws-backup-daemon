@@ -63,7 +63,7 @@ public sealed class ChunkedEncryptingFileProcessor(
 
             // will be initialized at first write
             SHA256? chunkHasher = null!;
-            GZipStream gzipStream = null!;
+            BrotliStream gzipStream = null!;
             CryptoStream cryptoStream = null!;
             FileStream chunkFileFs = null!;
 
@@ -144,7 +144,7 @@ public sealed class ChunkedEncryptingFileProcessor(
 
                 // 4) crypto + gzip stream
                 cryptoStream = new CryptoStream(chunkFileFs, aes.CreateEncryptor(), CryptoStreamMode.Write);
-                gzipStream = new GZipStream(cryptoStream, CompressionLevel.SmallestSize, true);
+                gzipStream = new BrotliStream(cryptoStream, CompressionLevel.SmallestSize, true);
             }
 
             async Task FinalizeChunkAsync()

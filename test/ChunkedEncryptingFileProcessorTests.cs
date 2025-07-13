@@ -150,7 +150,7 @@ public class ChunkedEncryptingFileProcessorTests : IDisposable
         {
             var chunk = chunkList[i];
             Assert.Equal(i, chunk.ChunkIndex);
-            Assert.Equal(64, chunk.Size);
+            Assert.Equal(32, chunk.Size);
             Assert.True(File.Exists(chunk.LocalFilePath));
         }
 
