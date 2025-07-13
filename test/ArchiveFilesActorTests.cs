@@ -96,7 +96,7 @@ public class ArchiveFilesActorTests
         var processorMock = new Mock<IChunkedEncryptingFileProcessor>();
         var retryMock = new Mock<IRetryMediator>();
         processorMock.Setup(p => p.ProcessFileAsync("run2", "file2", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new FileProcessResult("file2", 0, [], [new DataChunkDetails("", 0, 0, [], 0)]));
+            .ReturnsAsync(new FileProcessResult("file2", 0, [], 0));
 
         var archiveServiceMock = new Mock<IArchiveService>();
         archiveServiceMock.Setup(a => a.DoesFileRequireProcessing("run2", "file2", It.IsAny<CancellationToken>()))

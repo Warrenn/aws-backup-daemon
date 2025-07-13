@@ -62,9 +62,10 @@ public sealed class Mediator(
             });
 
     private readonly Channel<DownloadFileFromS3Request> _downloadFileFromS3Channel =
-        Channel.CreateUnbounded<DownloadFileFromS3Request>(
-            new UnboundedChannelOptions
+        Channel.CreateBounded<DownloadFileFromS3Request>(
+            new BoundedChannelOptions(resolver.NoOfS3FilesToDownloadConcurrently())
             {
+                FullMode = BoundedChannelFullMode.Wait,
                 SingleReader = false,
                 SingleWriter = false
             });

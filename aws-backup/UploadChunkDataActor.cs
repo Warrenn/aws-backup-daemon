@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using Amazon.S3;
 using Amazon.S3.Model;
 using Amazon.S3.Transfer;
@@ -26,15 +25,14 @@ public sealed class UploadChunkDataActor(
     IDataChunkService dataChunkService,
     IArchiveService archiveService,
     IRetryMediator retryMediator,
-    AwsConfiguration awsConfiguration,
-    IS3Service s3Service)
+    AwsConfiguration awsConfiguration)
     : BackgroundService
 {
     private Task[] _workers = [];
 
     protected override Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        logger.LogInformation("SnsActor started");
+        logger.LogInformation("Upload Chunk Actor started");
         var uploadConcurrency = contextResolver.NoOfS3FilesToUploadConcurrently();
         // Spin up N worker loops
         _workers = new Task[uploadConcurrency];
@@ -47,6 +45,7 @@ public sealed class UploadChunkDataActor(
 
     private async Task WorkerLoopAsync(CancellationToken cancellationToken)
     {
+        //this should block the producer side due to bounded channel
         await foreach (var request in mediator.GetChunks(cancellationToken))
         {
             var (_, parentFile, chunk) = request;
@@ -77,8 +76,8 @@ public sealed class UploadChunkDataActor(
 
             try
             {
-                logger.LogInformation("Uploading chunk {ChunkIndex} for file {LocalFilePath}",
-                    chunk.ChunkIndex, chunk.LocalFilePath);
+                logger.LogInformation("Uploading chunk {ChunkIndex} for file {LocalFilePath} parent {ParentFile}",
+                    chunk.ChunkIndex, chunk.LocalFilePath, parentFile);
 
                 var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
                 var bucketName = awsConfiguration.BucketName;
@@ -87,7 +86,7 @@ public sealed class UploadChunkDataActor(
                 var s3PartSize = contextResolver.S3PartSize();
                 var key = contextResolver.ChunkS3Key(chunk.HashKey);
 
-                var localCheckSum = ComputeLocalBase64(chunk.LocalFilePath);
+                var localCheckSum = Convert.ToBase64String(chunk.CompressedHashKey);
 
                 // upload the chunk file to S3
                 var transferUtil = new TransferUtility(s3Client);
@@ -104,22 +103,26 @@ public sealed class UploadChunkDataActor(
                     TagSet =
                     [
                         new Tag { Key = "storage-class", Value = "cold" },
-                        new Tag { Key = "archive-run-id", Value = request.ArchiveRunId ?? "" },
-                        new Tag { Key = "parent-file", Value = parentFile ?? "" },
-                        new Tag { Key = "chunk-index", Value = chunk?.ChunkIndex.ToString() ?? "" },
-                        new Tag { Key = "size", Value = chunk?.Size.ToString() ?? "" },
-                        new Tag { Key = "chunk-hash", Value = key ?? "" },
-                        new Tag { Key = "chunk-size-bytes", Value = awsConfiguration?.ChunkSizeBytes.ToString() ?? "" }
+                        new Tag { Key = "archive-run-id", Value = S3Service.ScrubTagValue(request.ArchiveRunId) },
+                        new Tag { Key = "parent-file", Value = S3Service.ScrubTagValue(parentFile) },
+                        new Tag { Key = "chunk-index", Value = S3Service.ScrubTagValue(chunk.ChunkIndex.ToString()) },
+                        new Tag { Key = "size", Value = S3Service.ScrubTagValue(chunk.Size.ToString()) },
+                        new Tag { Key = "chunk-hash", Value = S3Service.ScrubTagValue(key) },
+                        new Tag
+                        {
+                            Key = "chunk-size-setting",
+                            Value = S3Service.ScrubTagValue(awsConfiguration.ChunkSizeBytes.ToString())
+                        }
                     ]
                 };
 
                 await transferUtil.UploadAsync(uploadReq, cancellationToken);
 
-                logger.LogInformation("Upload complete for chunk {ChunkIndex} for file {LocalFilePath}",
-                    chunk.ChunkIndex, chunk.LocalFilePath);
+                logger.LogInformation("Upload complete for chunk {ChunkIndex} for file {ParentFile} chunk file {LocalFilePath} chunk key {Key}",
+                    chunk.ChunkIndex, parentFile, chunk.LocalFilePath, key);
 
-                logger.LogInformation("Marking chunk {ChunkIndex} for file {LocalFilePath} as uploaded",
-                    chunk.ChunkIndex, chunk.LocalFilePath);
+                logger.LogInformation("Marking chunk {ChunkIndex} for file {ParentFile} as uploaded. Key: {Key}, Bucket: {BucketName}, LocalFilePath: {LocalFilePath}",
+                    chunk.ChunkIndex, parentFile, key, bucketName, chunk.LocalFilePath);
                 await dataChunkService.MarkChunkAsUploaded(chunk, key, bucketName, cancellationToken);
 
                 await archiveService.RecordChunkUpload(
@@ -140,13 +143,6 @@ public sealed class UploadChunkDataActor(
                 await retryMediator.RetryAttempt(request, cancellationToken);
             }
         }
-    }
-
-    private static string ComputeLocalBase64(string path)
-    {
-        if (!File.Exists(path)) return "";
-        using var s = File.OpenRead(path);
-        return Convert.ToBase64String(SHA256.HashData(s));
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)

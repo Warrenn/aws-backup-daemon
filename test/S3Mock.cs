@@ -24,6 +24,11 @@ public class S3Mock
         return _s3Mock;
     }
 
+    public byte[]? GetPart(string key)
+    {
+        return _store.TryGetValue(key, out var data) ? data : null;
+    }
+
     private void SetupMock()
     {
         _s3Mock.SetupGet(s3 => s3.Config)

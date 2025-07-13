@@ -1,3 +1,4 @@
+using System.Threading.Channels;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -25,9 +26,46 @@ public sealed class RetryActor(
     ILogger<RetryActor> logger,
     TimeProvider provider) : BackgroundService
 {
-    protected override async Task ExecuteAsync(CancellationToken cancellationToken)
+    private readonly Channel<RetryState> _channel = Channel.CreateUnbounded<RetryState>(new UnboundedChannelOptions
+    {
+        SingleReader = false,
+        SingleWriter = false
+    });
+
+    protected override Task ExecuteAsync(CancellationToken cancellationToken)
     {
         logger.LogInformation("Starting retry Actor");
+        var retryTask = Task.Run(() => RetryWorker(cancellationToken), cancellationToken);
+        var schedulingTask = Task.Run(() => SchedulingWorker(cancellationToken), cancellationToken);
+
+        return Task.WhenAll(retryTask, schedulingTask);
+    }
+
+    private async Task RetryWorker(CancellationToken cancellationToken)
+    {
+        await foreach (var state in _channel.Reader.ReadAllAsync(cancellationToken))
+            try
+            {
+                if (state.Retry is null) 
+                {
+                    logger.LogWarning("Retry function not set for {State}", state);
+                    continue;
+                }
+                await state.Retry(state, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error when retrying {state} request: {Message}", state, ex.Message);
+            }
+    }
+
+    private async Task SchedulingWorker(CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested) return;
         await foreach (var state in mediator.GetRetries(cancellationToken))
             try
             {
@@ -49,12 +87,12 @@ public sealed class RetryActor(
                     await mediator.RetryAttempt(state, cancellationToken);
                     continue;
                 }
-                
+
                 logger.LogInformation("Retry Attempt: {State}", state);
                 state.AttemptCount += 1;
                 state.NextAttemptAt = contextResolver.NextRetryTime(state.AttemptCount);
-
-                if (state.Retry is not null) await state.Retry(state, cancellationToken);
+                
+                await _channel.Writer.WriteAsync(state, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -64,5 +102,7 @@ public sealed class RetryActor(
             {
                 logger.LogError(ex, "Error retrying request: {Message}", ex.Message);
             }
+
+        _channel.Writer.Complete();
     }
 }

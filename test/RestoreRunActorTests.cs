@@ -190,7 +190,8 @@ public class RestoreRunActorTests
                 0,
                 1234,
                 hashKey,
-                1234
+                1234,
+                []
             );
 
             var meta = new FileMetaData(path)
@@ -204,7 +205,10 @@ public class RestoreRunActorTests
                 HashKey = hashKey,
                 Status = FileStatus.Added,
                 CompressedSize = 5678,
-                Chunks = new[] { chunk }
+                Chunks = new ConcurrentDictionary<ByteArrayKey, DataChunkDetails>
+                {
+                    [new ByteArrayKey(chunk.HashKey)] = chunk
+                }
             };
 
             // Note: ArchiveRun.Files is a ConcurrentDictionary

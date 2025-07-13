@@ -1,5 +1,3 @@
-using System.Text;
-
 namespace aws_backup;
 
 public static class Base64Url

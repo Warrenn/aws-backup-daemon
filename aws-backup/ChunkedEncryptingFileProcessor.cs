@@ -8,7 +8,7 @@ public sealed record FileProcessResult(
     string LocalFilePath,
     long OriginalSize, // Size before compression
     byte[] FullFileHash, // SHA-256 hash of the full file
-    DataChunkDetails[] Chunks,
+    long CompressedSize, // Size after compression (optional)
     Exception? Error = null);
 
 public interface IChunkedEncryptingFileProcessor
@@ -28,13 +28,13 @@ public sealed class ChunkedEncryptingFileProcessor(
     {
         if (!File.Exists(inputPath))
             return new FileProcessResult(
-                LocalFilePath: inputPath,
-                OriginalSize: 0,
+                inputPath,
+                0,
                 [],
-                [],
+                0,
                 new FileNotFoundException("Input file does not exist", inputPath)
             );
-        
+
         var removableFiles = new List<string>();
         try
         {
@@ -45,7 +45,7 @@ public sealed class ChunkedEncryptingFileProcessor(
             var chunkSize = awsConfiguration.ChunkSizeBytes;
             var cacheFolder = contextResolver.LocalCacheFolder();
             var aesKey = await aesContextResolver.FileEncryptionKey(cancellationToken);
-            
+
             await archiveService.ResetFileStatus(runId, inputPath, cancellationToken);
 
             // open for read, disallow writers
@@ -108,7 +108,7 @@ public sealed class ChunkedEncryptingFileProcessor(
                 OriginalSize: fs.Length,
                 LocalFilePath: inputPath,
                 FullFileHash: fullHasher.Hash ?? [],
-                Chunks: [..chunks]
+                CompressedSize: chunks.Sum(c => c.Size)
             );
 
             // local helpers:
@@ -127,7 +127,7 @@ public sealed class ChunkedEncryptingFileProcessor(
                 var outPath = $"{Path.Combine(cacheFolder, fileNameHash)}.chunk{chunkIndex:D4}.gz.aes";
                 if (File.Exists(outPath)) File.Delete(outPath);
                 removableFiles.Add(outPath);
-                
+
                 chunkFileFs = new FileStream(outPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
 
                 // 3) AES setup
@@ -160,20 +160,31 @@ public sealed class ChunkedEncryptingFileProcessor(
                 await cryptoStream.DisposeAsync(); // closes CryptoStream
                 await chunkFileFs.DisposeAsync(); // closes file stream
 
+                var compressedHash = await SHA256.HashDataAsync(File.OpenRead(chunkFileFs.Name), cancellationToken);
+                var fileInfo = new FileInfo(chunkFileFs.Name);
+
                 var chunkData = new DataChunkDetails(
                     chunkFileFs.Name,
                     chunkIndex,
                     chunkSize,
                     chunkHasher.Hash,
-                    bytesInChunk
-                );
+                    fileInfo.Length,
+                    compressedHash
+                )
+                {
+                    Status =
+                        ChunkStatus.Added
+                };
+
                 chunks.Add(chunkData);
                 await archiveService.AddChunkToFile(
                     runId,
                     inputPath,
-                    chunkHasher.Hash,
+                    chunkData,
                     cancellationToken);
                 var request = new UploadChunkRequest(runId, inputPath, chunkData);
+                
+                //this should block due to bounded channel
                 await mediator.ProcessChunk(request, cancellationToken);
 
                 // prepare for next chunk
@@ -187,7 +198,6 @@ public sealed class ChunkedEncryptingFileProcessor(
         catch (Exception ex)
         {
             foreach (var removableFile in removableFiles.Where(File.Exists))
-            {
                 try
                 {
                     File.Delete(removableFile);
@@ -196,12 +206,12 @@ public sealed class ChunkedEncryptingFileProcessor(
                 {
                     // ignore errors during cleanup
                 }
-            }
+
             return new FileProcessResult(
                 LocalFilePath: inputPath,
                 OriginalSize: 0,
                 FullFileHash: [],
-                Chunks: [],
+                CompressedSize: 0,
                 Error: ex
             );
         }

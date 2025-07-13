@@ -18,6 +18,7 @@ namespace aws_backup;
 [JsonSerializable(typeof(ByteArrayKey))]
 [JsonSerializable(typeof(AclEntry))]
 [JsonSerializable(typeof(S3RestoreChunkManifest))]
+[JsonSerializable(typeof(S3ChunkRestoreStatus))]
 [JsonSerializable(typeof(RestoreFileMetaData))]
 [JsonSerializable(typeof(RestoreRun))]
 [JsonSerializable(typeof(AwsConfiguration))]
@@ -35,7 +36,7 @@ internal partial class SourceGenerationContext : JsonSerializerContext
 public sealed class JsonDictionaryConverter<TKey, TValue, TDict> : JsonConverter<TDict>
     where TDict : IDictionary<TKey, TValue>, new()
     where TKey : notnull
-    where TValue : notnull
+    where TValue : class
 {
 
     public override TDict Read(ref Utf8JsonReader reader, Type typeToConvert,
@@ -59,6 +60,8 @@ public sealed class JsonDictionaryConverter<TKey, TValue, TDict> : JsonConverter
 
         TKey? key = default;
         TValue? value = default;
+        var keySet = false;
+        var valueSet = false;
 
         while (reader.Read())
         {
@@ -66,19 +69,27 @@ public sealed class JsonDictionaryConverter<TKey, TValue, TDict> : JsonConverter
                 break;
 
             if (reader.TokenType == JsonTokenType.PropertyName)
+            {
+                keySet = true;
                 key = keyConverter.Read(ref reader, typeof(TKey), options) ?? throw new JsonException(
                     $"Expected property name token, but got {reader.TokenType}.");
+            }
 
             if (reader.TokenType == JsonTokenType.StartObject)
+            {
+                valueSet = true;
                 value = valueConverter.Read(ref reader, typeof(TValue), options) ?? throw new JsonException(
                     $"Expected object token for value, but got {reader.TokenType}.");
+            }
 
-            if (key is null || value is null) continue;
+            if (!keySet || !valueSet) continue;
 
             manifest[key] = value;
             
             key = default;
             value = default;
+            keySet = false;
+            valueSet = false;
         }
 
         return manifest;

@@ -85,7 +85,7 @@ public class ArchiveServiceTests
 
         // Mark file processed
         var run = await sut.LookupArchiveRun("r3", CancellationToken.None);
-        run!.Files["f.txt"].Status = FileStatus.Processed;
+        run!.Files["f.txt"].Status = FileStatus.UploadComplete;
 
         // Now it should return false
         var need2 = await sut.DoesFileRequireProcessing("r3", "f.txt", CancellationToken.None);
@@ -106,7 +106,7 @@ public class ArchiveServiceTests
             .ReturnsAsync(true);
         _s3Service.Setup(s => s.GetArchive(runId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(run);
-        
+
         var sut = CreateSut();
         var req = new RunRequest(runId, "/p", "* * * * *");
         await sut.StartNewArchiveRun(req, CancellationToken.None);
@@ -115,21 +115,30 @@ public class ArchiveServiceTests
         await sut.DoesFileRequireProcessing(runId, "a", CancellationToken.None);
         await sut.DoesFileRequireProcessing(runId, "b", CancellationToken.None);
 
-        var d1 = new DataChunkDetails("a", 0, 10, [1, 2, 3], 10);
-        var d2 = new DataChunkDetails("a", 1, 10, [4, 5, 6], 10);
-        var d3 = new DataChunkDetails("b", 0, 10, [7, 8, 9], 10);
-        var d4 = new DataChunkDetails("b", 2, 10, [10, 11, 12], 10);
+        var d1 = new DataChunkDetails("a", 0, 10, [1, 2, 3], 10, []);
+        var d2 = new DataChunkDetails("a", 1, 10, [4, 5, 6], 10, []);
+        var d3 = new DataChunkDetails("b", 0, 10, [7, 8, 9], 10, []);
+        var d4 = new DataChunkDetails("b", 1, 10, [10, 11, 12], 10, []);
 
         // Process first file
-        await sut.ReportProcessingResult(runId, new FileProcessResult("a", 10, [1, 2, 3], [d1, d2]),
+        await sut.ReportProcessingResult(runId, new FileProcessResult("a", 10, [1, 2, 3], 1),
             CancellationToken.None);
         // Process second file → this is last
-        await sut.ReportProcessingResult(runId, new FileProcessResult("b", 20, [4, 5, 6], [d3, d4]),
+        await sut.ReportProcessingResult(runId, new FileProcessResult("b", 20, [4, 5, 6], 1),
             CancellationToken.None);
 
         // Should not yet finalize
         _snsMed.VerifyNoOtherCalls();
+        
+        //add the chunks from processor
+        await sut.AddChunkToFile("r4", "a", d1, CancellationToken.None);
+        await sut.AddChunkToFile("r4", "a", d2, CancellationToken.None);
+        await sut.AddChunkToFile("r4", "b", d3, CancellationToken.None);
+        await sut.AddChunkToFile("r4", "b", d4, CancellationToken.None);
 
+        // Should not yet finalize
+        _snsMed.VerifyNoOtherCalls();
+        
         await sut.RecordChunkUpload("r4", "a", d1.HashKey, CancellationToken.None);
         await sut.RecordChunkUpload("r4", "b", d3.HashKey, CancellationToken.None);
 
@@ -137,7 +146,7 @@ public class ArchiveServiceTests
         _snsMed.VerifyNoOtherCalls();
         await sut.RecordChunkUpload("r4", "a", d2.HashKey, CancellationToken.None);
         await sut.RecordChunkUpload("r4", "b", d4.HashKey, CancellationToken.None);
-        
+
         // Now run is completed and SNS message sent
         _snsMed.Verify(s =>
             s.PublishMessage(It.IsAny<ArchiveCompleteMessage>(), It.IsAny<CancellationToken>()), Times.Once);

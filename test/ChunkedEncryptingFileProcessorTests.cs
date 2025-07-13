@@ -56,13 +56,20 @@ public class ChunkedEncryptingFileProcessorTests : IDisposable
             .Setup(m => m.ProcessChunk(It.IsAny<UploadChunkRequest>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask)
             .Verifiable();
+        var archiveServiceMock = new Mock<IArchiveService>();
+        DataChunkDetails? chunk = null;
+        archiveServiceMock
+            .Setup(a => a.AddChunkToFile(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DataChunkDetails>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<string, string, DataChunkDetails, CancellationToken>((_, _, c, _) => chunk = c)
+            .Returns(Task.CompletedTask);
 
         var processor = new ChunkedEncryptingFileProcessor(
             ctxMock.Object,
             awsConfig,
             aesMock.Object,
             mediatorMock.Object,
-            Mock.Of<IArchiveService>());
+            archiveServiceMock.Object);
 
         // Act
         var result = await processor.ProcessFileAsync("run1", _tempFile, CancellationToken.None);
@@ -76,10 +83,10 @@ public class ChunkedEncryptingFileProcessorTests : IDisposable
         Assert.Equal(content.Length, result.OriginalSize);
 
         // Single chunk recorded
-        Assert.Single(result.Chunks);
-        var chunk = result.Chunks[0];
+        Assert.NotNull(chunk);
+        //var chunk = result.Chunks[0];
         Assert.Equal(0, chunk.ChunkIndex);
-        Assert.Equal(content.Length, chunk.Size);
+        Assert.Equal(result.CompressedSize, chunk.Size);
 
         // Ensure chunk file exists
         Assert.True(File.Exists(chunk.LocalFilePath));
@@ -119,24 +126,31 @@ public class ChunkedEncryptingFileProcessorTests : IDisposable
             .Setup(m => m.ProcessChunk(It.IsAny<UploadChunkRequest>(),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
-
+        var archiveServiceMock = new Mock<IArchiveService>();
+        List<DataChunkDetails> chunkList = [];
+        archiveServiceMock
+            .Setup(a => a.AddChunkToFile(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DataChunkDetails>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<string, string, DataChunkDetails, CancellationToken>((_, _, c, _) => chunkList.Add(c))
+            .Returns(Task.CompletedTask);
+        
         var processor = new ChunkedEncryptingFileProcessor(
             ctxMock.Object,
             awsConfig,
             aesMock.Object,
             mediatorMock.Object,
-            Mock.Of<IArchiveService>());
+            archiveServiceMock.Object);
 
         // Act
         var result = await processor.ProcessFileAsync("run2", _tempFile, CancellationToken.None);
 
         // Assert
-        Assert.Equal(3, result.Chunks.Length);
+        Assert.Equal(3, chunkList.Count);
         for (var i = 0; i < 3; i++)
         {
-            var chunk = result.Chunks[i];
+            var chunk = chunkList[i];
             Assert.Equal(i, chunk.ChunkIndex);
-            Assert.Equal(8, chunk.Size);
+            Assert.Equal(64, chunk.Size);
             Assert.True(File.Exists(chunk.LocalFilePath));
         }
 

@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Text.Json;
 using System.Text.Json.Serialization;
 using Amazon.S3;
 using Microsoft.Extensions.Logging;
@@ -52,7 +51,6 @@ public enum S3ChunkRestoreStatus
     ReadyToRestore
 }
 
-[JsonConverter(typeof(S3RestoreChunkManifestConverter))]
 public sealed class S3RestoreChunkManifest : ConcurrentDictionary<ByteArrayKey, S3ChunkRestoreStatus>;
 
 public enum FileRestoreStatus
@@ -262,12 +260,38 @@ public sealed class RestoreService(
 
             // schedule each chunk
             foreach (var meta in run.RequestedFiles.Values)
-            foreach (var key in meta.Chunks)
             {
-                var chunk = chunkManifest[key];
-                var status = await s3Service.ScheduleDeepArchiveRecovery(chunk.S3Key, ct);
-                restoreManifest[key] = status;
-                logger.LogDebug("Chunk {Key} initial state {Status}", key, status);
+                var readyToRestore = true;
+                foreach (var key in meta.Chunks)
+                {
+                    var chunk = chunkManifest[key];
+                    var status = await s3Service.ScheduleDeepArchiveRecovery(chunk.S3Key, ct);
+                    restoreManifest[key] = status;
+                    if (status != S3ChunkRestoreStatus.ReadyToRestore)
+                        readyToRestore = false;
+                    logger.LogDebug("Chunk {Key} initial state {Status}", key, status);
+                }
+
+                if (!readyToRestore) continue;
+                // enqueue download
+                logger.LogDebug("Enqueuing download of {File} in for restore Id {RestoreId}", meta.FilePath,
+                    run.RestoreId);
+                await mediator.DownloadFileFromS3(new DownloadFileFromS3Request(
+                    run.RestoreId,
+                    meta.FilePath,
+                    run.RequestedFiles[meta.FilePath].Chunks
+                        .Select(c => chunkManifest[c]).ToArray(),
+                    meta.Size)
+                {
+                    LastModified = meta.LastModified,
+                    Created = meta.Created,
+                    AclEntries = meta.AclEntries,
+                    Owner = meta.Owner,
+                    Group = meta.Group,
+                    Checksum = meta.Checksum
+                }, ct);
+
+                meta.Status = FileRestoreStatus.PendingS3Download;
             }
 
             await manifestMed.SaveRestoreManifest(restoreManifest, ct);
@@ -275,11 +299,11 @@ public sealed class RestoreService(
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            logger.LogInformation("InitiateRestoreRun canceled for {RunId}", run.RestoreId);
+            logger.LogInformation("InitiateRestoreRun canceled for {RestoreId}", run.RestoreId);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error initiating restore run {RunId}", run.RestoreId);
+            logger.LogError(ex, "Error initiating restore run {RestoreId}", run.RestoreId);
             throw;
         }
     }
@@ -308,7 +332,8 @@ public sealed class RestoreService(
                 if (!allReady) continue;
 
                 // enqueue download
-                logger.LogDebug("Enqueuing download of {File} in run {RunId}", fileMeta.FilePath, run.RestoreId);
+                logger.LogDebug("Enqueuing download of {File} for restore Id {RestoreId}", fileMeta.FilePath,
+                    run.RestoreId);
                 await mediator.DownloadFileFromS3(new DownloadFileFromS3Request(
                     run.RestoreId,
                     fileMeta.FilePath,
@@ -409,7 +434,6 @@ public sealed class RestoreService(
         CancellationToken ct
     )
     {
-        
         foreach (var run in _restoreRunsCache.Values
                      .Where(r => r.RequestedFiles.Values.Any(f => f.Chunks.Contains(key))))
         {
@@ -425,67 +449,5 @@ public sealed class RestoreService(
                 sem.Release();
             }
         }
-    }
-}
-
-public sealed class S3RestoreChunkManifestConverter
-    : JsonConverter<S3RestoreChunkManifest>
-{
-    public override S3RestoreChunkManifest Read(
-        ref Utf8JsonReader reader,
-        Type typeToConvert,
-        JsonSerializerOptions options)
-    {
-        if (reader.TokenType != JsonTokenType.StartArray)
-            throw new JsonException();
-
-        var manifest = new S3RestoreChunkManifest();
-        while (reader.Read())
-        {
-            if (reader.TokenType == JsonTokenType.EndArray)
-                return manifest;
-
-            // expect a two‐element array [ key, status ]
-            if (reader.TokenType != JsonTokenType.StartArray)
-                throw new JsonException();
-
-            // read key (Base64Url string)
-            reader.Read();
-            var keyBase64 = reader.GetString()!;
-            var keyBytes = Convert.FromBase64String(keyBase64);
-            var key = new ByteArrayKey(keyBytes);
-
-            // read status (enum string)
-            reader.Read();
-            var statusName = reader.GetString()!;
-            if (!Enum.TryParse<S3ChunkRestoreStatus>(statusName, out var status))
-                throw new JsonException($"Unknown status '{statusName}'");
-
-            // close inner array
-            reader.Read(); // EndArray
-
-            manifest[key] = status;
-        }
-
-        throw new JsonException("Unexpected end of JSON");
-    }
-
-    public override void Write(
-        Utf8JsonWriter writer,
-        S3RestoreChunkManifest value,
-        JsonSerializerOptions options)
-    {
-        writer.WriteStartArray();
-        foreach (var kv in value)
-        {
-            writer.WriteStartArray();
-            // write Base64 of the key bytes
-            writer.WriteStringValue(Convert.ToBase64String(kv.Key.ToArray()));
-            // write the enum as string
-            writer.WriteStringValue(kv.Value.ToString());
-            writer.WriteEndArray();
-        }
-
-        writer.WriteEndArray();
     }
 }

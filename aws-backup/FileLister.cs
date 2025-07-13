@@ -42,6 +42,11 @@ public sealed class FileLister : IFileLister
             // try to get files in this directory
             try
             {
+                var dirInfo = new DirectoryInfo(dir);
+                if (!dirInfo.Exists || dirInfo.LinkTarget is not null)
+                    // skip symlinks to directories
+                    continue;
+
                 files = Directory.GetFiles(dir);
             }
             catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
@@ -62,7 +67,7 @@ public sealed class FileLister : IFileLister
                 try
                 {
                     var fi = new FileInfo(file);
-                    if (!fi.Exists || fi.LinkTarget is not null)
+                    if (!fi.Exists || fi.LinkTarget is not null || fi.Length <= 0)
                         continue;
                 }
                 catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)

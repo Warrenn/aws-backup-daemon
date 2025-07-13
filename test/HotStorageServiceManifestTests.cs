@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using aws_backup;
 using Moq;
 
@@ -115,6 +116,12 @@ public class HotStorageServiceManifestTests
 
         // Act
         await service.UploadCompressedObject(key, manifest, StorageTemperature.Hot, CancellationToken.None);
+        var bytes = s3Mock.GetPart($"{_bucket}/{key}");
+        await using var gzip = new GZipStream(new MemoryStream(bytes), CompressionMode.Decompress, false);
+        // var reader = new StreamReader(gzip);
+        // var json = await reader.ReadToEndAsync();
+        // Assert.NotEmpty(json);
+        
         var downloaded = await service.DownloadCompressedObject<S3RestoreChunkManifest>(key, CancellationToken.None);
 
         // Assert

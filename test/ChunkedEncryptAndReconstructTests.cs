@@ -28,7 +28,15 @@ public class ChunkedEncryptAndReconstructTests
         var aesMock = new Mock<IAesContextResolver>();
         aesMock.Setup(a => a.FileEncryptionKey(It.IsAny<CancellationToken>()))
             .ReturnsAsync(aesKey);
-
+        
+        var archiveServiceMock = new Mock<IArchiveService>();
+        List<DataChunkDetails> chunks = [];
+        archiveServiceMock
+            .Setup(a => a.AddChunkToFile(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DataChunkDetails>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<string, string, DataChunkDetails, CancellationToken>((_, _, c, _) => chunks.Add(c))
+            .Returns(Task.CompletedTask);
+        
         // A no‐op mediator is fine; we’ll upload manually in the test
         var mediatorMock = new Mock<IUploadChunksMediator>();
         mediatorMock
@@ -48,18 +56,18 @@ public class ChunkedEncryptAndReconstructTests
             awsConfig,
             aesMock.Object,
             mediatorMock.Object,
-            Mock.Of<IArchiveService>());
+            archiveServiceMock.Object);
 
         // 3) Process into chunks
         var result = await processor.ProcessFileAsync("run", tempFile, CancellationToken.None);
 
         // Sanity check: multiple chunks
-        Assert.True(result.Chunks.Length > 1, "Expected more than one chunk");
+        Assert.True(chunks.Count > 1, "Expected more than one chunk");
 
         // 4) Upload those chunk files manually into an in‐memory S3
         var s3 = new S3Mock().GetObject();
         const string bucket = "test-bucket";
-        foreach (var chunk in result.Chunks)
+        foreach (var chunk in chunks)
         {
             var key = Path.GetFileName(chunk.LocalFilePath);
             await s3.PutObjectAsync(new PutObjectRequest
@@ -87,7 +95,7 @@ public class ChunkedEncryptAndReconstructTests
             aesMock.Object);
 
         // 6) Build the DownloadFileFromS3Request
-        var cloudDetails = result.Chunks.Select(ch => new CloudChunkDetails(
+        var cloudDetails = chunks.Select(ch => new CloudChunkDetails(
             Path.GetFileName(ch.LocalFilePath),
             bucket,
             ch.ChunkSize,
@@ -139,6 +147,14 @@ public class ChunkedEncryptAndReconstructTests
         var aesMock = new Mock<IAesContextResolver>();
         aesMock.Setup(a => a.FileEncryptionKey(It.IsAny<CancellationToken>()))
             .ReturnsAsync(aesKey);
+        
+        var archiveServiceMock = new Mock<IArchiveService>();
+        List<DataChunkDetails> chunks = [];
+        archiveServiceMock
+            .Setup(a => a.AddChunkToFile(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DataChunkDetails>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<string, string, DataChunkDetails, CancellationToken>((_, _, c, _) => chunks.Add(c))
+            .Returns(Task.CompletedTask);
 
         // A no‐op mediator is fine; we’ll upload manually in the test
         var mediatorMock = new Mock<IUploadChunksMediator>();
@@ -159,18 +175,18 @@ public class ChunkedEncryptAndReconstructTests
             awsConfig,
             aesMock.Object,
             mediatorMock.Object,
-            Mock.Of<IArchiveService>());
+            archiveServiceMock.Object);
 
         // 3) Process into chunks
         var result = await processor.ProcessFileAsync("run", tempFile, CancellationToken.None);
 
         // Sanity check: multiple chunks
-        Assert.True(result.Chunks.Length > 1, "Expected more than one chunk");
+        Assert.True(chunks.Count > 1, "Expected more than one chunk");
 
         // 4) Upload those chunk files manually into an in‐memory S3
         var s3 = new S3Mock().GetObject();
         const string bucket = "test-bucket";
-        foreach (var chunk in result.Chunks)
+        foreach (var chunk in chunks)
         {
             var key = Path.GetFileName(chunk.LocalFilePath);
             await s3.PutObjectAsync(new PutObjectRequest
@@ -198,7 +214,7 @@ public class ChunkedEncryptAndReconstructTests
             aesMock.Object);
 
         // 6) Build the DownloadFileFromS3Request
-        var cloudDetails = result.Chunks.Select(ch => new CloudChunkDetails(
+        var cloudDetails = chunks.Select(ch => new CloudChunkDetails(
             Path.GetFileName(ch.LocalFilePath),
             bucket,
             ch.ChunkSize,

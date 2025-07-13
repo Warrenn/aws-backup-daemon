@@ -33,7 +33,8 @@ public enum ChunkStatus
 public enum FileStatus
 {
     Added,
-    Processed,
+    ChunkingComplete,
+    UploadComplete,
     Skipped
 }
 
@@ -54,13 +55,11 @@ public sealed record FileMetaData(
     public DateTimeOffset? LastModified { get; set; }
     public long? OriginalSize { get; set; }
     public string? Owner { get; set; }
+
     public FileStatus Status { get; set; } = FileStatus.Added;
 
-    [JsonConverter(
-        typeof(JsonDictionaryConverter<ByteArrayKey, ChunkStatus, ConcurrentDictionary<ByteArrayKey, ChunkStatus>>))]
-    public ConcurrentDictionary<ByteArrayKey, ChunkStatus> ChunkStatus { get; set; } = [];
-
-    public DataChunkDetails[] Chunks { get; set; } = [];
+    public ConcurrentDictionary<ByteArrayKey, DataChunkDetails> Chunks { get; set; } = [];
+    public string SkipReason { get; set; } = "";
 }
 
 public sealed record RunRequest(
@@ -81,9 +80,7 @@ public sealed class ArchiveRun
     public long? OriginalSize { get; set; }
     public int? TotalFiles { get; set; }
     public int? TotalSkippedFiles { get; set; }
-
     [JsonInclude] public ConcurrentDictionary<string, FileMetaData> Files { get; init; } = new();
-    [JsonInclude] public ConcurrentDictionary<string, string> SkipReason { get; init; } = new();
 }
 
 public interface IArchiveService
@@ -116,7 +113,7 @@ public interface IArchiveService
     Task RecordChunkUpload(string requestArchiveRunId, string parentFile, byte[] chunkHashKey,
         CancellationToken cancellationToken);
 
-    Task AddChunkToFile(string runId, string localFilePath, byte[] chunkHasherHash,
+    Task AddChunkToFile(string runId, string localFilePath, DataChunkDetails chunkDetails,
         CancellationToken cancellationToken);
 
     Task ReportProcessingResult(string runId, FileProcessResult result, CancellationToken cancellationToken);
@@ -207,7 +204,7 @@ public sealed class ArchiveService(
         var need = false;
         await UpdateFileMetaData(runId, filePath, (_, meta, _) =>
         {
-            need = meta.Status is not FileStatus.Processed;
+            need = meta.Status is not FileStatus.UploadComplete;
             logger.LogDebug("DoesFileRequireProcessing({Run},{File}) => {Need}", runId, filePath, need);
             return Task.CompletedTask;
         }, ct);
@@ -258,9 +255,12 @@ public sealed class ArchiveService(
         {
             logger.LogWarning(exception, "RecordFailedFile: {Run}/{File}", runId, localFilePath);
 
-            meta = meta with { Status = FileStatus.Skipped };
+            meta = meta with
+            {
+                Status = FileStatus.Skipped,
+                SkipReason = exception.Message
+            };
             run.Files[localFilePath] = meta;
-            run.SkipReason[localFilePath] = exception.Message;
 
             // notify via SNS
             await snsMed.PublishMessage(new ExceptionMessage(
@@ -275,14 +275,17 @@ public sealed class ArchiveService(
         await UpdateFileMetaData(archiveRunId, filePath, (run, meta, _) =>
         {
             var hashKey = new ByteArrayKey(chunkHash);
-            meta.ChunkStatus.TryUpdate(hashKey, ChunkStatus.Failed, ChunkStatus.Added);
-            meta.ChunkStatus.TryUpdate(hashKey, ChunkStatus.Failed, ChunkStatus.Uploaded);
+
+            meta.Chunks[hashKey] = meta.Chunks[hashKey] with
+            {
+                Status = ChunkStatus.Failed
+            };
 
             run.Files[filePath] = meta with
             {
-                Status = FileStatus.Skipped
+                Status = FileStatus.Skipped,
+                SkipReason = exception.Message
             };
-            run.SkipReason[filePath] = exception.Message;
             return Task.CompletedTask;
         }, cancellationToken);
     }
@@ -316,20 +319,16 @@ public sealed class ArchiveService(
 
     public async Task ResetFileStatus(string runId, string localFilePath, CancellationToken ct)
     {
-        await UpdateFileMetaData(runId, localFilePath, (run, meta, token) =>
+        await UpdateFileMetaData(runId, localFilePath, (run, meta, _) =>
         {
             logger.LogDebug("ResetFileStatus: {Run}/{File}", runId, localFilePath);
-            foreach (var key in meta.ChunkStatus.Keys)
-            {
-                meta.ChunkStatus.TryUpdate(key, ChunkStatus.Added, ChunkStatus.Failed);
-                meta.ChunkStatus.TryUpdate(key, ChunkStatus.Added, ChunkStatus.Uploaded);
-            }
+            meta.Chunks.Clear();
 
             run.Files[localFilePath] = meta with
             {
-                Status = FileStatus.Added
+                Status = FileStatus.Added,
+                SkipReason = string.Empty
             };
-            run.SkipReason.TryRemove(localFilePath, out _);
             return Task.CompletedTask;
         }, ct);
     }
@@ -337,26 +336,41 @@ public sealed class ArchiveService(
     public async Task RecordChunkUpload(string runId, string localFilePath, byte[] chunkHashKey,
         CancellationToken ct)
     {
-        await UpdateFileMetaData(runId, localFilePath, (run, meta, _) =>
+        await UpdateFileMetaData(runId, localFilePath, (_, meta, _) =>
         {
             logger.LogDebug("RecordChunkUpload: {Run}/{File}", runId, localFilePath);
             var chunkKey = new ByteArrayKey(chunkHashKey);
-            if (meta.ChunkStatus.TryGetValue(chunkKey, out var currentStatus))
-                meta.ChunkStatus.TryUpdate(chunkKey, ChunkStatus.Uploaded, currentStatus);
-            else
-                meta.ChunkStatus.TryAdd(chunkKey, ChunkStatus.Uploaded);
+            if (!meta.Chunks.TryGetValue(chunkKey, out var existingChunk))
+            {
+                logger.LogWarning("Skipping {FilePath} Chunk {ChunkKey} not found for file in run {RunId}",
+                    localFilePath, chunkKey, runId);
+                meta.Status = FileStatus.Skipped;
+                return Task.CompletedTask;
+            }
+
+            existingChunk.Status = ChunkStatus.Uploaded;
             return Task.CompletedTask;
         }, ct);
     }
 
-    public async Task AddChunkToFile(string runId, string localFilePath, byte[] chunkHasherHash,
+    public async Task AddChunkToFile(string runId, string localFilePath, DataChunkDetails chunkDetails,
         CancellationToken cancellationToken)
     {
         await UpdateFileMetaData(runId, localFilePath, (_, meta, _) =>
         {
             logger.LogDebug("AddChunkToFile: {Run}/{File}", runId, localFilePath);
-            var chunkKey = new ByteArrayKey(chunkHasherHash);
-            meta.ChunkStatus.TryAdd(chunkKey, ChunkStatus.Added);
+            var chunkKey = new ByteArrayKey(chunkDetails.HashKey);
+            if (meta.Chunks.TryAdd(chunkKey, chunkDetails)) return Task.CompletedTask;
+            logger.LogWarning("Chunk {ChunkKey} already exists for file {FilePath} in run {RunId}",
+                chunkKey, localFilePath, runId);
+            meta.Chunks[chunkKey] = meta.Chunks[chunkKey] with
+            {
+                ChunkIndex = chunkDetails.ChunkIndex,
+                ChunkSize = chunkDetails.ChunkSize,
+                CompressedHashKey = chunkDetails.CompressedHashKey,
+                Size = chunkDetails.Size,
+                Status = ChunkStatus.Added
+            };
             return Task.CompletedTask;
         }, cancellationToken);
     }
@@ -368,13 +382,21 @@ public sealed class ArchiveService(
         await UpdateFileMetaData(runId, localFilePath, (run, meta, _) =>
         {
             logger.LogDebug("ReportProcessingResult: {Run}/{File}", runId, localFilePath);
+            var status = FileStatus.ChunkingComplete;
+            var skipReason = string.Empty;
+            if (result.Error is not null)
+            {
+                status = FileStatus.Skipped;
+                skipReason = result.Error.Message;
+            }
 
             run.Files[localFilePath] = meta with
             {
-                CompressedSize = result.Chunks.Sum(c => c.ChunkSize),
+                CompressedSize = result.CompressedSize,
                 OriginalSize = result.OriginalSize,
+                Status = status,
                 HashKey = result.FullFileHash,
-                Chunks = result.Chunks.ToArray()
+                SkipReason = skipReason
             };
 
             return Task.CompletedTask;
@@ -415,45 +437,48 @@ public sealed class ArchiveService(
     {
         foreach (var (key, meta) in run.Files)
         {
-            var fileStatus = FileStatus.Added;
+            if (meta.Status is not FileStatus.ChunkingComplete) continue;
+
             var hasAnAdd = false;
             var hasAnError = false;
-            var statusHashSet = new HashSet<ByteArrayKey>();
-            var hasAnEntry = false;
+            var hasAnElement = false;
 
-            foreach (var (chunkKey, chunkStatus) in meta.ChunkStatus)
+            foreach (var chunk in meta.Chunks.Values)
             {
-                hasAnEntry = true;
-                statusHashSet.Add(chunkKey);
-                if (chunkStatus is ChunkStatus.Added) hasAnAdd = true;
-                if (chunkStatus is ChunkStatus.Failed) hasAnError = true;
+                var chunkStatus = chunk.Status;
+                hasAnElement = true;
+
+                if (chunkStatus is ChunkStatus.Added)
+                {
+                    hasAnAdd = true;
+                    break;
+                }
+
+                if (chunkStatus is not ChunkStatus.Failed) continue;
+
+                hasAnError = true;
+                break;
             }
 
-            var chunksHashSet = new HashSet<ByteArrayKey>(meta.Chunks.Select(c => new ByteArrayKey(c.HashKey)));
+            if (hasAnAdd || !hasAnElement) continue;
+            if (hasAnError && string.IsNullOrWhiteSpace(meta.SkipReason))
+                meta.SkipReason = "File skipped due to chunk failing to upload";
 
-            var fileReady =
-                hasAnEntry &&
-                chunksHashSet.Count > 0 &&
-                !hasAnAdd && // no chunks are still being added
-                statusHashSet.SetEquals(chunksHashSet);
+            if (hasAnError)
+            {
+                meta.Status = FileStatus.Skipped;
+                continue;
+            }
 
-            if (fileReady) fileStatus = hasAnError ? FileStatus.Skipped : FileStatus.Processed;
-            if (fileStatus is FileStatus.Added ||
-                meta.Status is FileStatus.Skipped ||
-                fileStatus == meta.Status) continue;
-
-            run.Files[key] = meta with { Status = fileStatus };
-            if (fileStatus is FileStatus.Skipped && !run.SkipReason.ContainsKey(key))
-                run.SkipReason.TryAdd(key, "File skipped due to chunk failing to upload");
-
-            logger.LogDebug("File {File} status updated to {Status}", key, fileStatus);
+            meta.Status = FileStatus.UploadComplete;
+            logger.LogDebug("File {File} status updated to UploadComplete", key);
         }
 
         // persist current state
         await runMed.SaveArchiveRun(run, ct);
 
         // check for completion
-        if (run.Files.Values.All(f => f.Status is FileStatus.Processed or FileStatus.Skipped))
+        if (run.Files.Values.All(f => f.Status is FileStatus.UploadComplete or FileStatus.Skipped))
             await FinalizeRun(run, ct);
     }
 
@@ -465,9 +490,10 @@ public sealed class ArchiveService(
         // update summary fields
         run.Status = ArchiveRunStatus.Completed;
         run.CompletedAt = DateTimeOffset.UtcNow;
-        run.CompressedSize = run.Files.Values.Where(f => f.Status == FileStatus.Processed)
+        run.CompressedSize = run.Files.Values.Where(f => f.Status == FileStatus.UploadComplete)
             .Sum(f => f.CompressedSize ?? 0);
-        run.OriginalSize = run.Files.Values.Where(f => f.Status == FileStatus.Processed).Sum(f => f.OriginalSize ?? 0);
+        run.OriginalSize = run.Files.Values.Where(f => f.Status == FileStatus.UploadComplete)
+            .Sum(f => f.OriginalSize ?? 0);
         run.TotalFiles = run.Files.Count;
         run.TotalSkippedFiles = run.Files.Values.Count(f => f.Status == FileStatus.Skipped);
 

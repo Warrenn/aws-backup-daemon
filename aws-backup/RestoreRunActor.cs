@@ -60,7 +60,7 @@ public sealed class RestoreRunActor(
                     {
                         path,
                         chunkIds = metadata
-                            .Chunks
+                            .Chunks.Values
                             .OrderBy(c => c.ChunkIndex)
                             .Select(c => new ByteArrayKey(c.HashKey))
                             .ToArray(),

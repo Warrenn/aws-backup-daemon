@@ -36,7 +36,11 @@ public class HotStorageServiceIntegrationTests
                 ["/tmp/foo/a.txt"] = new FileMetaData("/tmp/foo/a.txt")
                 {
                     Status = FileStatus.Added,
-                    Chunks = [new DataChunkDetails("a.chunk0", 0, 3000, [9, 10, 11], 2000)],
+                    Chunks =
+                    {
+                        [new ByteArrayKey([9, 10, 11])] =
+                            new DataChunkDetails("a.chunk0", 0, 3000, [9, 10, 11], 2000, [])
+                    },
                     LastModified = TimeProvider.System.GetUtcNow(),
                     Created = TimeProvider.System.GetUtcNow().AddDays(-1),
                     CompressedSize = 1000,
@@ -55,9 +59,12 @@ public class HotStorageServiceIntegrationTests
                     AclEntries = [new AclEntry("bob", "rw-", "Allow")],
                     Owner = "bob",
                     Group = "users",
-                    Status = FileStatus.Processed,
+                    Status = FileStatus.UploadComplete,
                     HashKey = [5, 6, 7, 8],
-                    Chunks = [new DataChunkDetails("b.chunk0", 0, 3000, [8, 9, 10], 3000)]
+                    Chunks =
+                    {
+                        [new ByteArrayKey([8, 9, 10])] = new DataChunkDetails("b.chunk0", 0, 3000, [8, 9, 10], 3000, [])
+                    }
                 }
             }
         };
@@ -124,11 +131,12 @@ public class HotStorageServiceIntegrationTests
                 Assert.Equal(origMeta.AclEntries[i], dlMeta.AclEntries[i]);
 
             // Chunks
-            Assert.Equal(origMeta.Chunks.Length, dlMeta.Chunks.Length);
-            for (var i = 0; i < origMeta.Chunks.Length; i++)
+            Assert.Equal(origMeta.Chunks.Values.Count, dlMeta.Chunks.Count);
+            for (var i = 0; i < origMeta.Chunks.Count; i++)
             {
-                var exp = origMeta.Chunks[i];
-                var act = dlMeta.Chunks[i];
+                var key = origMeta.Chunks.Keys.ElementAt(i);
+                var exp = origMeta.Chunks[key];
+                var act = dlMeta.Chunks[key];
 
                 Assert.Equal(exp.LocalFilePath, act.LocalFilePath);
                 Assert.Equal(exp.ChunkIndex, act.ChunkIndex);

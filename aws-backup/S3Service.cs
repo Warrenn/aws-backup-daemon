@@ -296,8 +296,12 @@ public sealed class S3Service(
         return (metadata.StorageClass, metadata.RestoreInProgress ?? false);
     }
 
-    public static string TrimToLimit(string input)
+    public static string ScrubTagValue(string input)
     {
+        if (string.IsNullOrWhiteSpace(input)) return "";
+        input = input.Trim().Replace("\0", "");
+        input = RegexHelper.InValidTagValuesRegex().Replace(input, "");
+
         var bytes = Encoding.UTF8.GetBytes(input);
         if (bytes.Length <= _maxTagValueLength)
             return input;

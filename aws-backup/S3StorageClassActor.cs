@@ -12,19 +12,33 @@ public sealed class S3StorageClassActor(
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        logger.LogInformation("Starting rolling file actor");
+        var storageCheckDelay = resolver.StorageCheckDelaySeconds();
+        logger.LogInformation("Starting storage class actor");
         while (!cancellationToken.IsCancellationRequested)
-        {
-            await foreach (var s3StorageInfo in s3Service.GetStorageClasses(cancellationToken))
+            try
             {
-                await restoreService.ReportS3Storage(s3StorageInfo.BucketName, s3StorageInfo.Key,
-                    s3StorageInfo.StorageClass, cancellationToken);
-                var storagePageDelay = resolver.StoragePageDelayMilliseconds();
-                await Task.Delay(storagePageDelay, cancellationToken); // small delay to avoid overwhelming the service
-            }
+                logger.LogInformation("Checking S3 storage classes");
+                await foreach (var s3StorageInfo in s3Service.GetStorageClasses(cancellationToken))
+                {
+                    await restoreService.ReportS3Storage(s3StorageInfo.BucketName, s3StorageInfo.Key,
+                        s3StorageInfo.StorageClass, cancellationToken);
+                    var storagePageDelay = resolver.StoragePageDelayMilliseconds();
+                    await Task.Delay(storagePageDelay,
+                        cancellationToken); // small delay to avoid overwhelming the service
+                }
 
-            var storageCheckDelay = resolver.StorageCheckDelaySeconds();
-            await Task.Delay(storageCheckDelay, cancellationToken);
-        }
+                storageCheckDelay = resolver.StorageCheckDelaySeconds();
+                await Task.Delay(storageCheckDelay, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error in S3 storage class actor: {Message}", ex.Message);
+                // Optionally, you could add a delay here to avoid rapid retries
+                await Task.Delay(storageCheckDelay, cancellationToken); // delay on error
+            }
     }
 }

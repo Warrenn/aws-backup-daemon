@@ -49,8 +49,7 @@ public class UploadChunkDataActorTests
             _chunkSvc.Object,
             _archiveSvc.Object,
             _retryMed.Object,
-            _config,
-            Mock.Of<IS3Service>()
+            _config
         );
     }
 
@@ -67,7 +66,7 @@ public class UploadChunkDataActorTests
         var temp = Path.GetTempFileName();
         File.WriteAllText(temp, "hello");
 
-        var chunk = new DataChunkDetails(temp, 0, 10, [1, 2], 5);
+        var chunk = new DataChunkDetails(temp, 0, 10, [1, 2], 5, []);
         var req = new UploadChunkRequest("run1", "file1", chunk);
         var chan = Channel.CreateUnbounded<UploadChunkRequest>();
         await chan.Writer.WriteAsync(req);
@@ -97,7 +96,7 @@ public class UploadChunkDataActorTests
         // arrange file
         var temp = Path.GetTempFileName();
         File.WriteAllText(temp, "data");
-        var chunk = new DataChunkDetails(temp, 0, 10, [], 4);
+        var chunk = new DataChunkDetails(temp, 0, 10, [], 4, []);
         var req = new UploadChunkRequest("run2", "file2", chunk);
         var chan = Channel.CreateUnbounded<UploadChunkRequest>();
         await chan.Writer.WriteAsync(req);
@@ -146,7 +145,7 @@ public class UploadChunkDataActorTests
         // arrange file
         var temp = Path.GetTempFileName();
         await File.WriteAllTextAsync(temp, "abc");
-        var chunk = new DataChunkDetails(temp, 1, 10, [1, 2, 3], 3);
+        var chunk = new DataChunkDetails(temp, 1, 10, [1, 2, 3], 3, []);
         var req = new UploadChunkRequest("run3", "file3", chunk);
         var chan = Channel.CreateUnbounded<UploadChunkRequest>();
         await chan.Writer.WriteAsync(req);
@@ -210,7 +209,7 @@ public class UploadChunkDataActorTests
         // arrange file
         var temp = Path.GetTempFileName();
         File.WriteAllText(temp, "xyz");
-        var chunk = new DataChunkDetails(temp, 2, 10, [], 3);
+        var chunk = new DataChunkDetails(temp, 2, 10, [], 3, []);
         var req = new UploadChunkRequest("run4", "file4", chunk);
         var chan = Channel.CreateUnbounded<UploadChunkRequest>();
         await chan.Writer.WriteAsync(req);

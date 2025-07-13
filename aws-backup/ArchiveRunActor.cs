@@ -71,7 +71,6 @@ public sealed class ArchiveRunActor(
             catch (Exception ex)
             {
                 logger.LogError(ex, "Error processing archive run request {RunId}", runRequest.RunId);
-                // Optionally, you can handle retries or logging here
             }
     }
 

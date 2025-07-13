@@ -32,8 +32,8 @@ Parameters:
 
   ChunkSize:
     Type: Number
-    Default: 524288000
-    Description: Chunk size for file chunks in bytes (default 500 MB)
+    Default: 104857600
+    Description: Chunk size for file chunks in bytes (default 100 MB)
 
 Resources:
   TrustAnchor:

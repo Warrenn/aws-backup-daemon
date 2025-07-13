@@ -80,44 +80,51 @@ public sealed class ArchiveFilesActor(
                         cacheFolder, cacheSize, cacheFolderSizeLimit, checkTimeSpan);
                     await Task.Delay(checkTimeSpan, cancellationToken);
                 }
-                
+
                 logger.LogInformation("Processing {File} for {ArchiveRunId}", filePath, runId);
-                var result = await processor.ProcessFileAsync(runId, filePath, cancellationToken);
-                
+                var task = processor.ProcessFileAsync(runId, filePath, cancellationToken);
+
+                try
+                {
+                    if (keepTimeStamps)
+                    {
+                        FileHelper.GetTimestamps(filePath, out var created, out var modified);
+                        await archiveService.UpdateTimeStamps(runId, filePath, created, modified,
+                            cancellationToken);
+                    }
+
+                    if (keepOwnerGroup)
+                    {
+                        var (owner, group) = await FileHelper.GetOwnerGroupAsync(filePath, cancellationToken);
+                        await archiveService.UpdateOwnerGroup(runId, filePath, owner, group, cancellationToken);
+                    }
+
+                    if (keepAclEntries)
+                    {
+                        var aclEntries = FileHelper.GetFileAcl(filePath);
+                        await archiveService.UpdateAclEntries(runId, filePath, aclEntries, cancellationToken);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Failed to update metadata for {File} in {ArchiveRunId}", filePath, runId);
+                    await task;
+                    request.Exception = ex;
+                    await retryMediator.RetryAttempt(request, cancellationToken);
+                    continue;
+                }
+
+                var result = await task;
+
                 if (result.Error is not null)
                 {
                     request.Exception = result.Error;
                     await retryMediator.RetryAttempt(request, cancellationToken);
                     continue;
                 }
-                if (result.Chunks.Length == 0)
-                {
-                    logger.LogWarning("No chunks created for {File} in {ArchiveRunId}", filePath, runId);
-                    request.Exception = new InvalidOperationException("No chunks created");
-                    await retryMediator.RetryAttempt(request, cancellationToken);
-                    continue;
-                }
-                
+
                 logger.LogInformation("File {File} processed successfully for {ArchiveRunId}", filePath, runId);
                 await archiveService.ReportProcessingResult(runId, result, cancellationToken);
-
-                if (keepTimeStamps)
-                {
-                    FileHelper.GetTimestamps(filePath, out var created, out var modified);
-                    await archiveService.UpdateTimeStamps(runId, result.LocalFilePath, created, modified,
-                        cancellationToken);
-                }
-
-                if (keepOwnerGroup)
-                {
-                    var (owner, group) = await FileHelper.GetOwnerGroupAsync(filePath, cancellationToken);
-                    await archiveService.UpdateOwnerGroup(runId, result.LocalFilePath, owner, group, cancellationToken);
-                }
-
-                if (!keepAclEntries) continue;
-
-                var aclEntries = FileHelper.GetFileAcl(filePath);
-                await archiveService.UpdateAclEntries(runId, result.LocalFilePath, aclEntries, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

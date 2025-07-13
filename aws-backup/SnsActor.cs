@@ -82,9 +82,7 @@ public sealed class SnsActor(
         foreach (var (filePath, metaData) in archiveRun.Files)
         {
             builder.Append(
-                $"File: {filePath} Status: {metaData.Status} Size: {metaData.OriginalSize} LastModified: {metaData.LastModified} ");
-            if (archiveRun.SkipReason.TryGetValue(filePath, out var value))
-                builder.Append($"Skip Reason: {value} ");
+                $"File: {filePath} Status: {metaData.Status} Size: {metaData.OriginalSize} LastModified: {metaData.LastModified} Skip Reason: {metaData.SkipReason} ");
             builder.AppendLine();
         }
 

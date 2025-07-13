@@ -327,8 +327,8 @@ public sealed class ContextResolver : IContextResolver
 
     public long S3PartSize()
     {
-        return _configOptions.S3PartSize ?? 5242880L;
-        // 5MB default
+        return _configOptions.S3PartSize ?? 104857600L;
+        // 100MB default
     }
 
     public long SqsRetryDelaySeconds()
