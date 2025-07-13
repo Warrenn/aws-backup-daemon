@@ -115,7 +115,7 @@ public sealed class AwsClientFactory(
     private async Task<AWSCredentials?> GetCredentialsAsync(CancellationToken cancellationToken)
     {
         var credentialsValid = _cachedCredentials?.Expiration is not null &&
-                               timeProvider.GetLocalNow() < _cachedCredentials.Expiration;
+                               timeProvider.GetUtcNow() < _cachedCredentials.Expiration?.ToUniversalTime();
 
         if (credentialsValid) return _cachedCredentials;
         var expiresIn = resolver.AwsCredentialsTimeoutSeconds();
@@ -140,10 +140,11 @@ public sealed class AwsClientFactory(
                 if (!await ValidateCredentialsAsync(credentials, cancellationToken)) continue;
 
                 logger.LogInformation("Successfully resolved AWS credentials using {CredentialSource}", name);
-                var expiryTime = timeProvider.GetLocalNow().Add(TimeSpan.FromSeconds(expiresIn)).DateTime;
+                var settingsExpiry = timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(expiresIn)).DateTime;
+                var credExpiry = credentials.Expiration?.ToUniversalTime();
                 
-                if(credentials.Expiration is null || credentials.Expiration > expiryTime)
-                    credentials.Expiration = expiryTime;
+                if(credExpiry is null || credExpiry > settingsExpiry)
+                    credentials.Expiration =  DateTime.SpecifyKind(settingsExpiry, DateTimeKind.Utc);
                 
                 _cachedCredentials = credentials;
                 return credentials;

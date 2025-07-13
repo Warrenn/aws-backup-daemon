@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Amazon;
@@ -82,6 +83,7 @@ public interface IContextResolver
     int AwsCredentialsTimeoutSeconds();
     long CacheFolderSizeLimitBytes();
     long CacheSizeCheckTimeoutSeconds();
+    CompressionLevel ZipCompressionLevel();
 }
 
 public sealed class ContextResolver : IContextResolver
@@ -101,6 +103,7 @@ public sealed class ContextResolver : IContextResolver
     private string? _localRestoreFolder;
     private S3StorageClass? _lowCostStorage;
     private ServerSideEncryptionMethod? _serverSideEncryptionMethod;
+    private CompressionLevel? _compressionLevel;
 
     public ContextResolver(
         string appSettingsPath,
@@ -519,7 +522,7 @@ public sealed class ContextResolver : IContextResolver
 
     public int AwsCredentialsTimeoutSeconds()
     {
-        return _configOptions.AwsCredentialsTimeoutSeconds ?? 900; // 15 minutes default
+        return _configOptions.AwsCredentialsTimeoutSeconds ?? 840; // 14 minutes default
     }
 
     public long CacheFolderSizeLimitBytes()
@@ -530,6 +533,20 @@ public sealed class ContextResolver : IContextResolver
     public long CacheSizeCheckTimeoutSeconds()
     {
         return _configOptions.CacheSizeCheckTimeoutSeconds ?? 300000; // 5 minutes default
+    }
+
+    public CompressionLevel ZipCompressionLevel()
+    {
+        if (_compressionLevel is not null) return _compressionLevel.Value;
+
+        var compressionLevel = _configOptions.CompressionLevel;
+        _compressionLevel = string.IsNullOrWhiteSpace(compressionLevel)
+            ? CompressionLevel.Optimal
+            : Enum.TryParse<CompressionLevel>(compressionLevel, true, out var level)
+                ? level
+                : CompressionLevel.Optimal;
+
+        return _compressionLevel.Value;
     }
 
     private void ResetCache()

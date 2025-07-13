@@ -149,6 +149,7 @@ public sealed class S3Service(
         var bucketName = awsConfiguration.BucketName;
         var partSizeBytes = contextResolver.S3PartSize();
         var encryptionMethod = contextResolver.ServerSideEncryption();
+        var compressionLevel = contextResolver.ZipCompressionLevel();
         var (storageClass, tag) = temp switch
         {
             StorageTemperature.Hot => (contextResolver.HotStorage(), "hot"),
@@ -180,7 +181,7 @@ public sealed class S3Service(
 
         // In this thread, read the file → compress → write into pipe.Writer
         await using (var fileStream = File.OpenRead(localFilePath))
-        await using (var gzip = new BrotliStream(pipe.Writer.AsStream(), CompressionLevel.SmallestSize, true))
+        await using (var gzip = new BrotliStream(pipe.Writer.AsStream(), compressionLevel, true))
         {
             await fileStream.CopyToAsync(gzip, cancellationToken);
         }
@@ -215,6 +216,7 @@ public sealed class S3Service(
         var s3 = await awsClientFactory.CreateS3Client(cancellationToken);
         var bucketName = awsConfiguration.BucketName;
         var partSizeBytes = contextResolver.S3PartSize();
+        var compressionLevel = contextResolver.ZipCompressionLevel();
         var encryptionMethod = contextResolver.ServerSideEncryption();
         var (storageClass, tag) = temp switch
         {
@@ -246,7 +248,7 @@ public sealed class S3Service(
 
         // 3) In this thread, serialize → gzip → pipe.Writer
         await using (var writerStream = pipe.Writer.AsStream())
-        await using (var gzip = new BrotliStream(writerStream, CompressionLevel.SmallestSize, false))
+        await using (var gzip = new BrotliStream(writerStream, compressionLevel, false))
         {
             await JsonSerializer.SerializeAsync(gzip, obj, SourceGenerationContext.Default.GetTypeInfo(typeof(T))!,
                 cancellationToken);

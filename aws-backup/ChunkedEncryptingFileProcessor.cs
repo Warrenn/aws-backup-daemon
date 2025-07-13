@@ -45,6 +45,7 @@ public sealed class ChunkedEncryptingFileProcessor(
             var bufferSize = contextResolver.ReadBufferSize();
             var chunkSize = awsConfiguration.ChunkSizeBytes;
             var cacheFolder = contextResolver.LocalCacheFolder();
+            var compressionLevel = contextResolver.ZipCompressionLevel();
             var aesKey = await aesContextResolver.FileEncryptionKey(cancellationToken);
 
             await archiveService.ResetFileStatus(runId, inputPath, cancellationToken);
@@ -125,7 +126,7 @@ public sealed class ChunkedEncryptingFileProcessor(
                     Directory.CreateDirectory(cacheFolder);
 
                 var fileNameHash = Base64Url.Encode(SHA256.HashData(Encoding.UTF8.GetBytes(inputPath)));
-                var outPath = $"{Path.Combine(cacheFolder, fileNameHash)}.chunk{chunkIndex:D4}.gz.aes";
+                var outPath = $"{Path.Combine(cacheFolder, fileNameHash)}.chunk{chunkIndex:D4}.br.aes";
                 if (File.Exists(outPath)) File.Delete(outPath);
                 removableFiles.Add(outPath);
 
@@ -144,7 +145,7 @@ public sealed class ChunkedEncryptingFileProcessor(
 
                 // 4) crypto + gzip stream
                 cryptoStream = new CryptoStream(chunkFileFs, aes.CreateEncryptor(), CryptoStreamMode.Write);
-                gzipStream = new BrotliStream(cryptoStream, CompressionLevel.SmallestSize, true);
+                gzipStream = new BrotliStream(cryptoStream, compressionLevel, true);
             }
 
             async Task FinalizeChunkAsync()

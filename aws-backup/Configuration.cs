@@ -79,4 +79,5 @@ public sealed record Configuration
     public string? RollingLogFolder { get; set; }
     public long? CacheFolderSizeLimitBytes { get; set; }
     public long? CacheSizeCheckTimeoutSeconds { get; set; }
+    public string? CompressionLevel { get; set; }
 }
