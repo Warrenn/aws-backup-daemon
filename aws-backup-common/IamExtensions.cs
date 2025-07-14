@@ -1,8 +1,7 @@
 using Amazon.IdentityManagement;
 using Amazon.IdentityManagement.Model;
-using aws_backup_common;
 
-namespace aws_backup;
+namespace aws_backup_common;
 
 public static class IamExtensions
 {

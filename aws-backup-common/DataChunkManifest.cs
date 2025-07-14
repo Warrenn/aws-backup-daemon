@@ -16,9 +16,6 @@ public sealed record CloudChunkDetails(
     long ChunkSize,
     byte[] Hash);
 
-[JsonConverter(
-    typeof(JsonDictionaryConverter<ByteArrayKey, CloudChunkDetails, DataChunkManifest>))]
-public sealed class DataChunkManifest : ConcurrentDictionary<ByteArrayKey, CloudChunkDetails>;
 public sealed record DataChunkDetails(
     string LocalFilePath,
     int ChunkIndex,
@@ -29,3 +26,7 @@ public sealed record DataChunkDetails(
 {
     public ChunkStatus Status { get; set; } = ChunkStatus.Added;
 }
+
+[JsonConverter(
+    typeof(JsonDictionaryConverter<ByteArrayKey, CloudChunkDetails, DataChunkManifest>))]
+public sealed class DataChunkManifest : ConcurrentDictionary<ByteArrayKey, CloudChunkDetails>;

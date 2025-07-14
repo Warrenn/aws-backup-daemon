@@ -188,7 +188,7 @@ public class ArchiveRunActorTests : IDisposable
         fileListerMock.Setup(f =>
                 f.GetAllFiles(It.IsAny<string>(),
                     It.Is<string[]>(p => p.SequenceEqual(new[] { "*.tmp" }))))
-            .Returns(new[] { "keep.txt" });
+            .Returns(["keep.txt"]);
 
         var orchestrator = new ArchiveRunActor(
             mediatorMock.Object,

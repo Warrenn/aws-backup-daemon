@@ -1,11 +1,7 @@
 using System.IO.Compression;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using Amazon;
 using Amazon.Runtime;
 using Amazon.S3;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace aws_backup_common;
 
@@ -78,7 +74,6 @@ public interface IContextResolver
     string PathsToArchive();
     string ClientId();
     string RollingLogFolder();
-    Task UpdateConfiguration(Configuration configOptions, CancellationToken cancellationToken);
     string CronSchedule();
     int AwsCredentialsTimeoutSeconds();
     long CacheFolderSizeLimitBytes();
@@ -87,45 +82,21 @@ public interface IContextResolver
     int AwsTimeoutSeconds();
 }
 
-public sealed class ContextResolver : IContextResolver
+public abstract class ContextResolverBase(CommonConfiguration configuration, string clientId) : IContextResolver
 {
-    private readonly string _appSettingsPath;
-    private readonly string _clientId;
-    private readonly ILogger<ContextResolver> _logger;
-    private RegionEndpoint? _awsRegion;
-
-    // Cached values
-    private RequestRetryMode? _awsRetryMode;
-    private S3StorageClass? _coldStorageClass;
-    private Configuration _configOptions;
-    private S3StorageClass? _hotStorageClass;
-    private string? _ignoreFile;
-    private string? _localCacheFolder;
-    private string? _localRestoreFolder;
-    private S3StorageClass? _lowCostStorage;
-    private ServerSideEncryptionMethod? _serverSideEncryptionMethod;
-    private CompressionLevel? _compressionLevel;
-
-    public ContextResolver(
-        string appSettingsPath,
-        IOptionsMonitor<Configuration> configOptions,
-        ISignalHub<string> signalHub,
-        ILogger<ContextResolver> logger)
-    {
-        _appSettingsPath = appSettingsPath;
-        _logger = logger;
-        _configOptions = configOptions.CurrentValue;
-        configOptions.OnChange((newConfig, _) =>
-        {
-            logger.LogInformation("Configuration changed, updating ContextResolver.");
-            logger.LogInformation("new config {config}", newConfig);
-            _configOptions = newConfig;
-            ResetCache();
-            logger.LogInformation("Configuration updated in ContextResolver.");
-            signalHub.Signal(_configOptions.CronSchedule);
-        });
-        _clientId = ScrubClientId(_configOptions.ClientId);
-    }
+    protected CommonConfiguration _configOptions = configuration;
+    
+    private readonly string _clientId = ScrubClientId(clientId);
+    protected RegionEndpoint? _awsRegion;
+    protected RequestRetryMode? _awsRetryMode;
+    protected S3StorageClass? _coldStorageClass;
+    protected CompressionLevel? _compressionLevel;
+    protected S3StorageClass? _hotStorageClass;
+    protected string? _ignoreFile;
+    protected string? _localCacheFolder;
+    protected string? _localRestoreFolder;
+    protected S3StorageClass? _lowCostStorage;
+    protected ServerSideEncryptionMethod? _serverSideEncryptionMethod;
 
     public S3StorageClass ColdStorage()
     {
@@ -284,7 +255,7 @@ public sealed class ContextResolver : IContextResolver
     {
         return _configOptions.NoOfConcurrentFileUploads ?? 4;
     }
-    
+
     public int AwsTimeoutSeconds()
     {
         return _configOptions.AwsTimeoutSeconds ?? 30;
@@ -486,10 +457,7 @@ public sealed class ContextResolver : IContextResolver
         return _configOptions.StoragePageDelayMilliseconds ?? 5;
     }
 
-    public string PathsToArchive()
-    {
-        return _configOptions.PathsToArchive;
-    }
+    public abstract string PathsToArchive();
 
     public string ClientId()
     {
@@ -501,31 +469,7 @@ public sealed class ContextResolver : IContextResolver
         return _configOptions.RollingLogFolder ?? "";
     }
 
-    public async Task UpdateConfiguration(Configuration configOptions, CancellationToken cancellationToken)
-    {
-        _logger.LogInformation("Updating configuration in ContextResolver from UpdateConfiguration.");
-        if (!IsValidPath(_appSettingsPath) && File.Exists(_appSettingsPath)) return;
-        var configString = await File.ReadAllTextAsync(_appSettingsPath, cancellationToken);
-        var root = JsonNode.Parse(configString);
-        if (root is null)
-        {
-            _logger.LogError("the existing configuration file {appSettingsPath} is not valid JSON, skipping update",
-                _appSettingsPath);
-            return;
-        }
-
-        root["Configuration"] =
-            JsonSerializer.SerializeToNode(configOptions, SourceGenerationContext.Default.Configuration);
-
-        _logger.LogInformation("Writing updated configuration to {appSettingsPath}", _appSettingsPath);
-        await File.WriteAllTextAsync(_appSettingsPath, root.ToJsonString(SourceGenerationContext.Default.Options),
-            cancellationToken);
-    }
-
-    public string CronSchedule()
-    {
-        return _configOptions.CronSchedule;
-    }
+    public abstract string CronSchedule();
 
     public int AwsCredentialsTimeoutSeconds()
     {
@@ -556,18 +500,6 @@ public sealed class ContextResolver : IContextResolver
         return _compressionLevel.Value;
     }
 
-    private void ResetCache()
-    {
-        _awsRegion = null; // Reset cached region
-        _awsRetryMode = null; // Reset cached retry mode
-        _coldStorageClass = null; // Reset cached storage classes
-        _hotStorageClass = null;
-        _lowCostStorage = null;
-        _serverSideEncryptionMethod = null; // Reset encryption method
-        _localCacheFolder = null; // Reset local cache folder
-        _ignoreFile = null; // Reset ignore file
-        _localRestoreFolder = null; // Reset restore folder
-    }
 
     private static S3StorageClass ResolveStorageClass(string? storageClassName, S3StorageClass defaultStorageClass)
     {
@@ -592,7 +524,7 @@ public sealed class ContextResolver : IContextResolver
         return Math.Abs(input.GetHashCode()).ToString("X8");
     }
 
-    private static bool IsValidPath(string path)
+    protected static bool IsValidPath(string path)
     {
         try
         {
@@ -604,4 +536,5 @@ public sealed class ContextResolver : IContextResolver
             return false;
         }
     }
+
 }

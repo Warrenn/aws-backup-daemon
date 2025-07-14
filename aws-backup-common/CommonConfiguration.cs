@@ -1,35 +1,7 @@
-using System.ComponentModel.DataAnnotations;
-
 namespace aws_backup_common;
 
-//settings that client should not change
-public sealed record AwsConfiguration(
-    long ChunkSizeBytes,
-    string AesSqsEncryptionPath,
-    string AesFileEncryptionPath,
-    string BucketName,
-    string BucketRegion,
-    string SqsInboxQueueUrl,
-    string SqsOutboxQueueUrl,
-    string ArchiveCompleteTopicArn,
-    string ArchiveCompleteErrorsTopicArn,
-    string RestoreCompleteTopicArn,
-    string RestoreCompleteErrorsTopicArn,
-    string ExceptionTopicArn);
-
-
-//settings that can change
-public sealed record Configuration
+public record CommonConfiguration
 {
-    [Required(AllowEmptyStrings = false)]
-    public required string ClientId { get; set; }
-
-    [Required(AllowEmptyStrings = false)]
-    public required string CronSchedule { get; set; }
-
-    [Required(AllowEmptyStrings = false)]
-    public required string PathsToArchive { get; set; }
-
     public string? ColdStorage { get; set; }
     public string? HotStorage { get; set; }
     public string? LowCostStorage { get; set; }

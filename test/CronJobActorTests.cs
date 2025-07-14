@@ -60,7 +60,7 @@ public class CronJobActorTests
         var signalHubMock = new Mock<ISignalHub<string>>();
         signalHubMock
             .Setup(h => h.WaitAsync(It.IsAny<CancellationToken>()))
-            .Returns(() => channel.Reader.ReadAsync().AsTask());
+            .Returns(() => channel.Reader.ReadAsync());
 
         // job just records invocation times
 
@@ -107,7 +107,7 @@ public class CronJobActorTests
         var signalHubMock = new Mock<ISignalHub<string>>();
         signalHubMock
             .Setup(h => h.WaitAsync(It.IsAny<CancellationToken>()))
-            .Returns(() => channel.Reader.ReadAsync().AsTask());
+            .Returns(() => channel.Reader.ReadAsync());
         
         var resolverMock = new Mock<IContextResolver>();
         resolverMock.Setup(r=>r.CronSchedule())

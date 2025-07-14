@@ -60,6 +60,7 @@ builder
             sp.GetRequiredService<IOptionsMonitor<Configuration>>(),
             sp.GetRequiredService<ISignalHub<string>>(),
             sp.GetRequiredService<ILogger<ContextResolver>>()))
+    .AddSingleton<IUpdateConfiguration, ContextResolver>()
     .AddSingleton(sp =>
     {
         var resolver = sp.GetRequiredService<IContextResolver>();

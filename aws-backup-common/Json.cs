@@ -36,7 +36,6 @@ namespace aws_backup_common;
 [JsonSerializable(typeof(CurrentRestoreRequests))]
 [JsonSerializable(typeof(CurrentArchiveRuns))]
 [JsonSerializable(typeof(CurrentArchiveRunRequests))]
-[JsonSerializable(typeof(Configuration))]
 [JsonSerializable(typeof(ArchiveRunStatus))]
 [JsonSerializable(typeof(FileStatus))]
 [JsonSerializable(typeof(ChunkStatus))]
