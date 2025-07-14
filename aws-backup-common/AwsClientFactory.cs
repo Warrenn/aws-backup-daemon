@@ -9,7 +9,7 @@ using Amazon.SimpleSystemsManagement;
 using Amazon.SQS;
 using Microsoft.Extensions.Logging;
 
-namespace aws_backup;
+namespace aws_backup_common;
 
 public interface IAwsClientFactory
 {
@@ -28,6 +28,7 @@ public sealed class AwsClientFactory(
     TimeProvider timeProvider)
     : IAwsClientFactory
 {
+    private readonly SemaphoreSlim _semaphoreSlim = new(1, 1);
     private AWSCredentials? _cachedCredentials;
 
     public async Task<IAmazonS3> CreateS3Client(CancellationToken cancellationToken)
@@ -112,50 +113,71 @@ public sealed class AwsClientFactory(
         }
     }
 
+    private static DateTime GetUniversalTime(DateTime? dateTime)
+    {
+        if (dateTime is null) return DateTime.UtcNow;
+        return dateTime.Value.Kind == DateTimeKind.Utc ? dateTime.Value : dateTime.Value.ToUniversalTime();
+    }
+
     private async Task<AWSCredentials?> GetCredentialsAsync(CancellationToken cancellationToken)
     {
         var credentialsValid = _cachedCredentials?.Expiration is not null &&
-                               timeProvider.GetUtcNow() < _cachedCredentials.Expiration?.ToUniversalTime();
+                               timeProvider.GetUtcNow() < GetUniversalTime(_cachedCredentials.Expiration);
 
         if (credentialsValid) return _cachedCredentials;
-        var expiresIn = resolver.AwsCredentialsTimeoutSeconds();
-
-        var credentialSources = new List<(string Name, Func<CancellationToken, Task<AWSCredentials?>> Factory)>
+        await _semaphoreSlim.WaitAsync(cancellationToken);
+        try
         {
-            ("Roles Anywhere", TryGetRolesAnyWhereCredentials),
-            ("Environment Variables", _ => Task.FromResult(TryGetEnvironmentCredentials(timeProvider, expiresIn))),
-            ("AWS Profile", _ => Task.FromResult(TryGetProfileCredentials(timeProvider, expiresIn))),
-            ("IAM Role", c => TryGetInstanceProfileCredentialsAsync(timeProvider, expiresIn, c)),
-            ("Web Identity Token", _ => Task.FromResult(TryGetWebIdentityCredentials(timeProvider, expiresIn)))
-        };
+            // double-checked locking
+            credentialsValid = _cachedCredentials?.Expiration is not null &&
+                               timeProvider.GetUtcNow() < GetUniversalTime(_cachedCredentials.Expiration);
 
-        foreach (var (name, factory) in credentialSources)
-            try
+            if (credentialsValid) return _cachedCredentials;
+
+            var expiresIn = resolver.AwsCredentialsTimeoutSeconds();
+
+            var credentialSources = new List<(string Name, Func<CancellationToken, Task<AWSCredentials?>> Factory)>
             {
-                logger.LogDebug("Attempting to resolve AWS credentials using {CredentialSource}", name);
-                var credentials = await factory(cancellationToken);
+                ("Roles Anywhere", TryGetRolesAnyWhereCredentials),
+                ("Environment Variables", _ => Task.FromResult(TryGetEnvironmentCredentials(timeProvider, expiresIn))),
+                ("AWS Profile", _ => Task.FromResult(TryGetProfileCredentials(timeProvider, expiresIn))),
+                ("IAM Role", c => TryGetInstanceProfileCredentialsAsync(timeProvider, expiresIn, c)),
+                ("Web Identity Token", _ => Task.FromResult(TryGetWebIdentityCredentials(timeProvider, expiresIn)))
+            };
 
-                if (credentials == null) continue;
-                // Test credentials by attempting to get caller identity
-                if (!await ValidateCredentialsAsync(credentials, cancellationToken)) continue;
+            foreach (var (name, factory) in credentialSources)
+                try
+                {
+                    logger.LogDebug("Attempting to resolve AWS credentials using {CredentialSource}", name);
+                    var credentials = await factory(cancellationToken);
 
-                logger.LogInformation("Successfully resolved AWS credentials using {CredentialSource}", name);
-                var settingsExpiry = timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(expiresIn)).DateTime;
-                var credExpiry = credentials.Expiration?.ToUniversalTime();
-                
-                if(credExpiry is null || credExpiry > settingsExpiry)
-                    credentials.Expiration =  DateTime.SpecifyKind(settingsExpiry, DateTimeKind.Utc);
-                
-                _cachedCredentials = credentials;
-                return credentials;
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to resolve AWS credentials using {CredentialSource}", name);
-            }
+                    if (credentials == null) continue;
+                    // Test credentials by attempting to get caller identity
+                    if (!await ValidateCredentialsAsync(credentials, cancellationToken)) continue;
 
-        logger.LogWarning("No valid AWS credentials found, falling back to default credential chain");
-        return null; // Let AWS SDK handle default credential chain
+                    logger.LogInformation("Successfully resolved AWS credentials using {CredentialSource}", name);
+                    var settingsExpiry = timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(expiresIn)).DateTime;
+                    var credExpiry = GetUniversalTime(credentials.Expiration);
+
+                    credentials.Expiration =
+                        DateTime.SpecifyKind(credExpiry >= settingsExpiry ? settingsExpiry : credExpiry,
+                            DateTimeKind.Utc);
+
+                    _cachedCredentials = credentials;
+                    return credentials;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to resolve AWS credentials using {CredentialSource}", name);
+                }
+
+            logger.LogWarning("No valid AWS credentials found, falling back to default credential chain");
+            return null; // Let AWS SDK handle default credential chain
+        }
+        finally
+        {
+            _semaphoreSlim.Release();
+        }
     }
 
     private async Task<AWSCredentials?> TryGetRolesAnyWhereCredentials(CancellationToken cancellationToken)
@@ -194,7 +216,8 @@ public sealed class AwsClientFactory(
         if (!string.IsNullOrWhiteSpace(expirationString) && DateTime.TryParse(expirationString, out var expiration))
             newCredentials.Expiration = expiration;
 
-        newCredentials.Expiration ??= timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(credentialsTimeout)).DateTime;
+        newCredentials.Expiration ??= DateTime.SpecifyKind(
+            timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(credentialsTimeout)).DateTime, DateTimeKind.Utc);
         return newCredentials;
     }
 
@@ -213,7 +236,8 @@ public sealed class AwsClientFactory(
         AWSCredentials credentials = string.IsNullOrEmpty(sessionToken)
             ? new BasicAWSCredentials(accessKey, secretKey)
             : new SessionAWSCredentials(accessKey, secretKey, sessionToken);
-        credentials.Expiration ??= timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(credentialsTimeout)).DateTime;
+        credentials.Expiration ??= DateTime.SpecifyKind(
+            timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(credentialsTimeout)).DateTime, DateTimeKind.Utc);
         return credentials;
     }
 
@@ -226,7 +250,8 @@ public sealed class AwsClientFactory(
 
             chain.TryGetAWSCredentials(profileName, out var credentials);
             if (credentials is null) return null;
-            credentials.Expiration ??= timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(credentialsTimeout)).DateTime;
+            credentials.Expiration ??= DateTime.SpecifyKind(
+                timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(credentialsTimeout)).DateTime, DateTimeKind.Utc);
             return credentials;
         }
         catch
@@ -245,7 +270,8 @@ public sealed class AwsClientFactory(
             var credentials = new InstanceProfileAWSCredentials();
             // Test if we can get credentials
             await credentials.GetCredentialsAsync();
-            credentials.Expiration ??= timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(credentialsTimeout)).DateTime;
+            credentials.Expiration ??= DateTime.SpecifyKind(
+                timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(credentialsTimeout)).DateTime, DateTimeKind.Utc);
             return credentials;
         }
         catch
@@ -270,7 +296,8 @@ public sealed class AwsClientFactory(
                 webIdentityTokenFile,
                 roleArn,
                 roleSessionName ?? "aws-client-factory-session");
-            credentials.Expiration ??= timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(credentialsTimeout)).DateTime;
+            credentials.Expiration ??= DateTime.SpecifyKind(
+                timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(credentialsTimeout)).DateTime, DateTimeKind.Utc);
             return credentials;
         }
         catch
@@ -285,7 +312,7 @@ public sealed class AwsClientFactory(
         {
             MaxErrorRetry = resolver.GeneralRetryLimit(),
             RetryMode = resolver.GetAwsRetryMode(),
-            Timeout = TimeSpan.FromSeconds(resolver.ShutdownTimeoutSeconds()),
+            Timeout = TimeSpan.FromSeconds(resolver.AwsTimeoutSeconds()),
             RegionEndpoint = resolver.GetAwsRegion(),
             BufferSize = resolver.ReadBufferSize(),
             UseAccelerateEndpoint = resolver.UseS3Accelerate(),
@@ -302,7 +329,7 @@ public sealed class AwsClientFactory(
         {
             MaxErrorRetry = resolver.GeneralRetryLimit(),
             RetryMode = resolver.GetAwsRetryMode(),
-            Timeout = TimeSpan.FromSeconds(resolver.ShutdownTimeoutSeconds()),
+            Timeout = TimeSpan.FromSeconds(resolver.AwsTimeoutSeconds()),
             RegionEndpoint = resolver.GetAwsRegion()
         };
         return config;
@@ -314,7 +341,7 @@ public sealed class AwsClientFactory(
         {
             MaxErrorRetry = resolver.GeneralRetryLimit(),
             RetryMode = resolver.GetAwsRetryMode(),
-            Timeout = TimeSpan.FromSeconds(resolver.ShutdownTimeoutSeconds()),
+            Timeout = TimeSpan.FromSeconds(resolver.AwsTimeoutSeconds()),
             RegionEndpoint = resolver.GetAwsRegion()
         };
         return config;
@@ -326,7 +353,7 @@ public sealed class AwsClientFactory(
         {
             MaxErrorRetry = resolver.GeneralRetryLimit(),
             RetryMode = resolver.GetAwsRetryMode(),
-            Timeout = TimeSpan.FromSeconds(resolver.ShutdownTimeoutSeconds()),
+            Timeout = TimeSpan.FromSeconds(resolver.AwsTimeoutSeconds()),
             RegionEndpoint = resolver.GetAwsRegion()
         };
         return config;

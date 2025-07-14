@@ -1,7 +1,6 @@
 using System.ComponentModel.DataAnnotations;
-using Microsoft.Extensions.Options;
 
-namespace aws_backup;
+namespace aws_backup_common;
 
 //settings that client should not change
 public sealed record AwsConfiguration(
@@ -23,13 +22,13 @@ public sealed record AwsConfiguration(
 public sealed record Configuration
 {
     [Required(AllowEmptyStrings = false)]
-    public string ClientId { get; set; }
+    public required string ClientId { get; set; }
 
     [Required(AllowEmptyStrings = false)]
-    public string CronSchedule { get; set; }
+    public required string CronSchedule { get; set; }
 
     [Required(AllowEmptyStrings = false)]
-    public string PathsToArchive { get; set; }
+    public required string PathsToArchive { get; set; }
 
     public string? ColdStorage { get; set; }
     public string? HotStorage { get; set; }
@@ -80,4 +79,5 @@ public sealed record Configuration
     public long? CacheFolderSizeLimitBytes { get; set; }
     public long? CacheSizeCheckTimeoutSeconds { get; set; }
     public string? CompressionLevel { get; set; }
+    public int? AwsTimeoutSeconds { get; set; }
 }

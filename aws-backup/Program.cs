@@ -1,6 +1,7 @@
 ﻿// See https://aka.ms/new-console-template for more information
 
 using System.CommandLine;
+using aws_backup_common;
 using aws_backup;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

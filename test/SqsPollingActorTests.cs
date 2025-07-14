@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Amazon.SQS;
 using Amazon.SQS.Model;
+using aws_backup_common;
 using aws_backup;
 using Microsoft.Extensions.Logging;
 using Moq;

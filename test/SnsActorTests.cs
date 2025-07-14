@@ -2,6 +2,7 @@ using System.Collections;
 using System.Runtime.CompilerServices;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
+using aws_backup_common;
 using aws_backup;
 using Microsoft.Extensions.Logging;
 using Moq;

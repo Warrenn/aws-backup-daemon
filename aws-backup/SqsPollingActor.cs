@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Amazon.SQS;
 using Amazon.SQS.Model;
+using aws_backup_common;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 

@@ -1,7 +1,9 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
-using Serilog;
+using aws_backup_common;
+
+// ReSharper disable AccessToModifiedClosure
 
 namespace aws_backup;
 
@@ -169,7 +171,7 @@ public sealed class ChunkedEncryptingFileProcessor(
                     chunkFileFs.Name,
                     chunkIndex,
                     chunkSize,
-                    chunkHasher.Hash,
+                    chunkHasher.Hash ?? [],
                     fileInfo.Length,
                     compressedHash
                 )
@@ -185,7 +187,7 @@ public sealed class ChunkedEncryptingFileProcessor(
                     chunkData,
                     cancellationToken);
                 var request = new UploadChunkRequest(runId, inputPath, chunkData);
-                
+
                 //this should block due to bounded channel
                 await mediator.ProcessChunk(request, cancellationToken);
 
@@ -210,11 +212,11 @@ public sealed class ChunkedEncryptingFileProcessor(
                 }
 
             return new FileProcessResult(
-                LocalFilePath: inputPath,
-                OriginalSize: 0,
-                FullFileHash: [],
-                CompressedSize: 0,
-                Error: ex
+                inputPath,
+                0,
+                [],
+                0,
+                ex
             );
         }
     }

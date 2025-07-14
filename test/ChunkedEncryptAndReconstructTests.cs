@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Amazon.S3.Model;
+using aws_backup_common;
 using aws_backup;
 using Moq;
 

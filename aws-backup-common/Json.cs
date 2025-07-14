@@ -1,11 +1,22 @@
+using System.IO.Compression;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Amazon.Runtime;
 
-namespace aws_backup;
+namespace aws_backup_common;
 
 [JsonSourceGenerationOptions(
     WriteIndented = true,
-    Converters = [typeof(JsonStringEnumConverter)],
+    Converters = [
+        typeof(JsonStringEnumConverter<RestoreRunStatus>),
+        typeof(JsonStringEnumConverter<S3ChunkRestoreStatus>),
+        typeof(JsonStringEnumConverter<ChunkStatus>),
+        typeof(JsonStringEnumConverter<ArchiveRunStatus>),
+        typeof(JsonStringEnumConverter<FileStatus>),
+        typeof(JsonStringEnumConverter<FileRestoreStatus>),
+        typeof(JsonStringEnumConverter<RequestRetryMode>),
+        typeof(JsonStringEnumConverter<CompressionLevel>)
+    ],
     PropertyNameCaseInsensitive = true
 )]
 [JsonSerializable(typeof(RestoreRequest))]
@@ -29,7 +40,7 @@ namespace aws_backup;
 [JsonSerializable(typeof(ArchiveRunStatus))]
 [JsonSerializable(typeof(FileStatus))]
 [JsonSerializable(typeof(ChunkStatus))]
-internal partial class SourceGenerationContext : JsonSerializerContext
+public partial class SourceGenerationContext : JsonSerializerContext
 {
 }
 
@@ -59,7 +70,7 @@ public sealed class JsonDictionaryConverter<TKey, TValue, TDict> : JsonConverter
             throw new JsonException();
 
         TKey? key = default;
-        TValue? value = default;
+        TValue? value = null;
         var keySet = false;
         var valueSet = false;
 
@@ -83,11 +94,12 @@ public sealed class JsonDictionaryConverter<TKey, TValue, TDict> : JsonConverter
             }
 
             if (!keySet || !valueSet) continue;
+            if (key is null || value is null) continue;
 
             manifest[key] = value;
             
             key = default;
-            value = default;
+            value = null;
             keySet = false;
             valueSet = false;
         }

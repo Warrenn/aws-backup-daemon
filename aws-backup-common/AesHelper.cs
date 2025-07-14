@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace aws_backup;
+namespace aws_backup_common;
 
 public static class AesHelper
 {

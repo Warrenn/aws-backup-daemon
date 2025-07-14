@@ -5,7 +5,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 
-namespace aws_backup;
+namespace aws_backup_common;
 
 public sealed record AwsTemporaryCredentials(
     string? AccessKeyId,

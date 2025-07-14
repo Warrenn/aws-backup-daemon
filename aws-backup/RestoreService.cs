@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json.Serialization;
 using Amazon.S3;
+using aws_backup_common;
 using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
@@ -39,68 +40,6 @@ public interface IDownloadFileMediator
     IAsyncEnumerable<DownloadFileFromS3Request> GetDownloadFileRequests(CancellationToken cancellationToken);
 }
 
-public enum RestoreRunStatus
-{
-    Processing,
-    Completed
-}
-
-public enum S3ChunkRestoreStatus
-{
-    PendingDeepArchiveRestore,
-    ReadyToRestore
-}
-
-public sealed class S3RestoreChunkManifest : ConcurrentDictionary<ByteArrayKey, S3ChunkRestoreStatus>;
-
-public enum FileRestoreStatus
-{
-    PendingDeepArchiveRestore,
-    PendingS3Download,
-    Completed,
-    Failed
-}
-
-public sealed record RestoreFileMetaData(
-    ByteArrayKey[] Chunks,
-    string FilePath,
-    long Size
-)
-{
-    public DateTimeOffset? LastModified { get; set; }
-    public DateTimeOffset? Created { get; set; }
-    public AclEntry[]? AclEntries { get; set; }
-    public string? Owner { get; set; }
-    public string? Group { get; set; }
-    public byte[]? Checksum { get; set; }
-    public FileRestoreStatus Status { get; set; } = FileRestoreStatus.PendingDeepArchiveRestore;
-}
-
-public sealed record DownloadFileFromS3Request(
-    string RestoreId,
-    string FilePath,
-    CloudChunkDetails[] CloudChunkDetails,
-    long Size) : RetryState
-{
-    public DateTimeOffset? LastModified { get; init; }
-    public DateTimeOffset? Created { get; init; }
-    public AclEntry[]? AclEntries { get; init; }
-    public string? Owner { get; init; }
-    public string? Group { get; init; }
-    public byte[]? Checksum { get; init; }
-}
-
-public sealed class RestoreRun
-{
-    public required string RestoreId { get; init; }
-    public required string RestorePaths { get; init; }
-    public required string ArchiveRunId { get; init; }
-    public required RestoreRunStatus Status { get; set; } = RestoreRunStatus.Processing;
-    public required DateTimeOffset RequestedAt { get; init; } = DateTimeOffset.UtcNow;
-    public DateTimeOffset? CompletedAt { get; set; }
-    [JsonInclude] public ConcurrentDictionary<string, RestoreFileMetaData> RequestedFiles { get; init; } = new();
-    [JsonInclude] public ConcurrentDictionary<string, string> FailedFiles { get; init; } = new();
-}
 
 public sealed class RestoreService(
     IDownloadFileMediator mediator,

@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text;
 using Amazon.SimpleNotificationService.Model;
+using aws_backup_common;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -133,8 +134,6 @@ public sealed class SnsActor(
         await foreach (var message in snsMessageMediator.GetMessages(cancellationToken))
             try
             {
-                var sns = await clientFactory.CreateSnsClient(cancellationToken);
-                
                 if (!_messageTypeToSnsArn.TryGetValue(message.GetType(), out var snsNotification))
                 {
                     logger.LogWarning("Received unhandled SNS message type: {MessageType}", message.GetType());
@@ -144,6 +143,7 @@ public sealed class SnsActor(
                 if (!snsNotification.notify) continue;
                 var messageContent = snsNotification.getMessage(message);
 
+                var sns = await clientFactory.CreateSnsClient(cancellationToken);
                 var request = new PublishRequest
                 {
                     TargetArn = snsNotification.arn,

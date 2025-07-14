@@ -1,18 +1,9 @@
 using System.Threading.Channels;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using aws_backup_common;
 
 namespace aws_backup;
-
-public abstract record RetryState
-{
-    public Exception? Exception { get; set; }
-    public DateTimeOffset? NextAttemptAt { get; set; }
-    public int AttemptCount { get; set; }
-    public int RetryLimit { get; set; }
-    public Func<RetryState, CancellationToken, Task>? Retry { get; set; }
-    public Func<RetryState, CancellationToken, Task>? LimitExceeded { get; set; }
-}
 
 public interface IRetryMediator
 {

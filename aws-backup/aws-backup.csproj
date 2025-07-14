@@ -25,14 +25,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="AWSSDK.IdentityManagement" Version="4.0.2.1" />
-    <PackageReference Include="AWSSDK.S3" Version="4.0.4" />
-    <PackageReference Include="AWSSDK.SecurityToken" Version="4.0.1.2" />
-    <PackageReference Include="AWSSDK.SimpleNotificationService" Version="4.0.0.12" />
-    <PackageReference Include="AWSSDK.SimpleSystemsManagement" Version="4.0.1.10" />
-    <PackageReference Include="AWSSDK.SQS" Version="4.0.0.11" />
-    <PackageReference Include="AWSSDK.SSO" Version="4.0.0.11" />
-    <PackageReference Include="AWSSDK.SSOOIDC" Version="4.0.0.11" />
     <PackageReference Include="Cronos" Version="0.11.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.0.6" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.6" />
@@ -46,6 +38,10 @@
     <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageReference Include="System.CommandLine" Version="2.0.0-beta5.25306.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\aws-backup-common\aws-backup-common.csproj" />
   </ItemGroup>
 
 </Project>

@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Threading.Channels;
 using Amazon.S3;
 using Amazon.S3.Model;
+using aws_backup_common;
 using aws_backup;
 using Microsoft.Extensions.Logging;
 using Moq;

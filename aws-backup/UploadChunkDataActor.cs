@@ -1,6 +1,7 @@
 using Amazon.S3;
 using Amazon.S3.Model;
 using Amazon.S3.Transfer;
+using aws_backup_common;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 

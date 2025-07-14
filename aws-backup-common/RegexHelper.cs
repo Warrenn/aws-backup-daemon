@@ -1,8 +1,8 @@
 using System.Text.RegularExpressions;
 
-namespace aws_backup;
+namespace aws_backup_common;
 
-public sealed partial class RegexHelper
+public static partial class RegexHelper
 {
     [GeneratedRegex(@"^[A-Za-z]:(?:\\|/)")]
     public static partial Regex DriveRootRegex();

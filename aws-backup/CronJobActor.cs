@@ -1,3 +1,4 @@
+using aws_backup_common;
 using Cronos;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -64,7 +65,7 @@ public sealed class CronJobActor(
                 if (delayTime.TotalMilliseconds <= 0)
                     continue;
 
-                var waitForSignal = signalHub.WaitAsync(cancellationToken);
+                var waitForSignal = signalHub.WaitAsync(cancellationToken).AsTask();
                 var delay = Task.Delay(delayTime, cancellationToken);
 
                 // Whichever completes first…

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using aws_backup_common;
 
 namespace aws_backup;
 

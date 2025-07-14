@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace aws_backup;
+namespace aws_backup_common;
 
 [JsonConverter(typeof(ByteArrayKeyConverter))]
 public readonly struct ByteArrayKey : IEquatable<ByteArrayKey>

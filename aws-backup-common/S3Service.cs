@@ -9,7 +9,7 @@ using Amazon.S3;
 using Amazon.S3.Model;
 using Amazon.S3.Transfer;
 
-namespace aws_backup;
+namespace aws_backup_common;
 
 public sealed record S3StorageInfo(
     string BucketName,
@@ -109,7 +109,6 @@ public sealed class S3Service(
     public async IAsyncEnumerable<S3StorageInfo> GetStorageClasses(
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
         var bucketName = awsConfiguration.BucketName;
         var prefix = contextResolver.S3DataPrefix();
         var request = new ListObjectsV2Request
@@ -122,6 +121,7 @@ public sealed class S3Service(
         ListObjectsV2Response response;
         do
         {
+            var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
             response = await s3Client.ListObjectsV2Async(request, cancellationToken);
 
             if ((response.KeyCount ?? 0) <= 0)

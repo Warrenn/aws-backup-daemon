@@ -1,18 +1,18 @@
 using System.Threading.Channels;
 
-namespace aws_backup;
+namespace aws_backup_common;
 
 public interface ISignalHub<T>
 {
     /// <summary>
     ///     Await the next value signaled by any caller of SignalAsync.
     /// </summary>
-    Task<T> WaitAsync(CancellationToken cancellationToken = default);
+    ValueTask<T> WaitAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Signal a value, unblocking exactly one waiter (or queue it for the next waiter).
     /// </summary>
-    Task SignalAsync(T value, CancellationToken cancellationToken = default);
+    ValueTask SignalAsync(T value, CancellationToken cancellationToken = default);
 
     bool Signal(T value);
 }
@@ -27,14 +27,14 @@ public sealed class SignalHub<T> : ISignalHub<T>
                 SingleWriter = true
             });
 
-    public Task<T> WaitAsync(CancellationToken cancellationToken = default)
+    public ValueTask<T> WaitAsync(CancellationToken cancellationToken = default)
     {
-        return _channel.Reader.ReadAsync(cancellationToken).AsTask();
+        return _channel.Reader.ReadAsync(cancellationToken);
     }
 
-    public Task SignalAsync(T value, CancellationToken cancellationToken = default)
+    public ValueTask SignalAsync(T value, CancellationToken cancellationToken = default)
     {
-        return _channel.Writer.WriteAsync(value, cancellationToken).AsTask();
+        return _channel.Writer.WriteAsync(value, cancellationToken);
     }
 
     public bool Signal(T value)

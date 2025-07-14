@@ -7,7 +7,7 @@ using Amazon.S3;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace aws_backup;
+namespace aws_backup_common;
 
 public interface IContextResolver
 {
@@ -46,9 +46,9 @@ public interface IContextResolver
     int DelayBetweenUploadsSeconds();
     int DownloadAttemptLimit();
     int UploadAttemptLimit();
-    int? SqsWaitTimeSeconds();
-    int? SqsMaxNumberOfMessages();
-    int? SqsVisibilityTimeout();
+    int SqsWaitTimeSeconds();
+    int SqsMaxNumberOfMessages();
+    int SqsVisibilityTimeout();
     long SqsRetryDelaySeconds();
     bool EncryptSqs();
     int GeneralRetryLimit();
@@ -84,6 +84,7 @@ public interface IContextResolver
     long CacheFolderSizeLimitBytes();
     long CacheSizeCheckTimeoutSeconds();
     CompressionLevel ZipCompressionLevel();
+    int AwsTimeoutSeconds();
 }
 
 public sealed class ContextResolver : IContextResolver
@@ -283,6 +284,12 @@ public sealed class ContextResolver : IContextResolver
     {
         return _configOptions.NoOfConcurrentFileUploads ?? 4;
     }
+    
+    public int AwsTimeoutSeconds()
+    {
+        return _configOptions.AwsTimeoutSeconds ?? 30;
+        // 60 seconds default
+    }
 
     public int ShutdownTimeoutSeconds()
     {
@@ -319,17 +326,17 @@ public sealed class ContextResolver : IContextResolver
         return _configOptions.GeneralRetryLimit ?? 3;
     }
 
-    public int? SqsWaitTimeSeconds()
+    public int SqsWaitTimeSeconds()
     {
         return _configOptions.SqsWaitTimeSeconds ?? 20;
     }
 
-    public int? SqsMaxNumberOfMessages()
+    public int SqsMaxNumberOfMessages()
     {
         return _configOptions.SqsMaxNumberOfMessages ?? 10;
     }
 
-    public int? SqsVisibilityTimeout()
+    public int SqsVisibilityTimeout()
     {
         return _configOptions.SqsVisibilityTimeout ?? 300;
     }

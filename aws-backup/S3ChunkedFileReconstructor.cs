@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 using Amazon.S3.Model;
+using aws_backup_common;
 
 namespace aws_backup;
 

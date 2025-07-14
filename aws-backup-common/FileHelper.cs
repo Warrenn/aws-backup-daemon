@@ -1,9 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
 
-namespace aws_backup;
+namespace aws_backup_common;
 
+[SuppressMessage("Interoperability", "CA1416:Validate platform compatibility")]
 public static class FileHelper
 {
     public static string ToUnixRooted(this string windowsPath)

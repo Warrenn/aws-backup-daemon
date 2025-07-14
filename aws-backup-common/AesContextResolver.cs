@@ -1,6 +1,6 @@
 using Amazon.SimpleSystemsManagement.Model;
 
-namespace aws_backup;
+namespace aws_backup_common;
 
 public interface IAesContextResolver
 {

@@ -1,12 +1,9 @@
 using System.Collections.Concurrent;
 using System.Text.Json.Serialization;
+using aws_backup_common;
 
 namespace aws_backup;
 
-public sealed record RestoreRequest(
-    string ArchiveRunId,
-    string RestorePaths,
-    DateTimeOffset RequestedAt);
 
 public interface IRestoreRequestsMediator
 {
@@ -18,6 +15,3 @@ public interface IRestoreRequestsMediator
 
     IAsyncEnumerable<RestoreRequest> GetRestoreRequests(CancellationToken cancellationToken);
 }
-
-[JsonConverter(typeof(JsonDictionaryConverter<string, RestoreRequest, CurrentRestoreRequests>))]
-public class CurrentRestoreRequests : ConcurrentDictionary<string, RestoreRequest>;

@@ -8,6 +8,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "cert-gen", "cert-gen\cert-g
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "aws-backup-commands", "aws-backup-commands\aws-backup-commands.csproj", "{B3A9B6E9-E138-42E7-BE80-9F0E026A98E0}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "aws-backup-common", "aws-backup-common\aws-backup-common.csproj", "{DAC52D4F-A7E2-4F37-A4D3-4AE788B76908}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -30,5 +32,9 @@ Global
 		{B3A9B6E9-E138-42E7-BE80-9F0E026A98E0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B3A9B6E9-E138-42E7-BE80-9F0E026A98E0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B3A9B6E9-E138-42E7-BE80-9F0E026A98E0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DAC52D4F-A7E2-4F37-A4D3-4AE788B76908}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DAC52D4F-A7E2-4F37-A4D3-4AE788B76908}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DAC52D4F-A7E2-4F37-A4D3-4AE788B76908}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DAC52D4F-A7E2-4F37-A4D3-4AE788B76908}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

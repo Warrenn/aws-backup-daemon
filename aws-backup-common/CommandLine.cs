@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace aws_backup;
+namespace aws_backup_common;
 
 public static class CommandLine
 {
