@@ -1,47 +1,65 @@
 ﻿// See https://aka.ms/new-console-template for more information
 
+using aws_backup_commands;
 using aws_backup_common;
+using Cocona;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Serilog;
 
-var appSettingsPath = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+var appSettingsPath = GetValueFromArgs("app-settings", "a", args) ??
+                      Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+
+var clientId = GetValueFromArgs("client-id", "c", args);
+
 if (!Path.IsPathRooted(appSettingsPath))
     appSettingsPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, appSettingsPath));
-if (!File.Exists(appSettingsPath))
+if (string.IsNullOrWhiteSpace(appSettingsPath) || !File.Exists(appSettingsPath))
 {
-    await Console.Error.WriteLineAsync($"Application settings file not found: {appSettingsPath}");
+    await Console.Error.WriteLineAsync(
+        $"Application settings file not found: {appSettingsPath} ");
     return -1;
 }
-
 
 var configBuilder = new ConfigurationBuilder();
 configBuilder
     .SetBasePath(AppContext.BaseDirectory)
-    .AddJsonFile(appSettingsPath, false, true)
-    .AddInMemoryCollection([
-        new KeyValuePair<string, string?>("Configuration:SettingsPath", appSettingsPath)
-    ])
+    .AddJsonFile(appSettingsPath, false)
     .AddEnvironmentVariables();
 
-var configuration = configBuilder.Build();
+var configurationRoot = configBuilder.Build();
+var configuration = configurationRoot.GetSection("Configuration").Get<Configuration>();
 
-var builder = Host.CreateApplicationBuilder(args);
-builder.Configuration.AddConfiguration(configuration);
+if (configuration is null)
+{
+    await Console.Error.WriteLineAsync("Configuration section 'Configuration' not found in appsettings.json.");
+    return -1;
+}
+
+if (string.IsNullOrWhiteSpace(configuration.ClientId) && string.IsNullOrWhiteSpace(clientId))
+{
+    await Console.Error.WriteLineAsync(
+        "Client ID is required. Please provide it via --client-id or in appsettings.json.");
+    return -1;
+}
+
+configuration.ClientId = clientId ?? configuration.ClientId;
+
+var builder = CoconaApp.CreateBuilder(args);
+builder.Configuration.AddConfiguration(configurationRoot);
 builder
     .Services
-    .AddSerilog(config => config.ReadFrom.Configuration(configuration));
+    .AddSerilog(config => config.ReadFrom.Configuration(configurationRoot));
 
 builder
     .Services
+    .AddSingleton<IContextResolver>(_ => new ContextResolver(configuration))
+    .AddSingleton(configuration)
     .AddSingleton(sp =>
     {
-        var resolver = sp.GetRequiredService<IContextResolver>();
         var factory = sp.GetRequiredService<IAwsClientFactory>();
         var iamClient = factory.CreateIamClient().GetAwaiter().GetResult();
-        var clientId = resolver.ClientId();
-        var awsConfig = iamClient.GetAwsConfigurationAsync(clientId).GetAwaiter().GetResult();
+        var awsConfig = iamClient.GetAwsConfigurationAsync(configuration.ClientId).GetAwaiter().GetResult();
         return awsConfig;
     })
     .AddSingleton(provider =>
@@ -82,5 +100,25 @@ builder
 
 var host = builder.Build();
 
-await host.RunAsync();
+await host.RunAsync<BackupCommands>();
 return 0;
+
+static string? GetValueFromArgs(string key, string keyAlt, string[] args)
+{
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] == $"--{key}" && i + 1 < args.Length)
+            return args[i + 1].Trim();
+
+        if (args[i].StartsWith($"--{key}="))
+            return args[i].Split('=')[1].Trim();
+
+        if (args[i] == $"-{keyAlt}" && i + 1 < args.Length)
+            return args[i + 1].Trim();
+
+        if (args[i].StartsWith($"-{keyAlt}="))
+            return args[i].Split('=')[1].Trim();
+    }
+
+    return null;
+}

@@ -39,7 +39,6 @@ public interface IDownloadFileMediator
     IAsyncEnumerable<DownloadFileFromS3Request> GetDownloadFileRequests(CancellationToken cancellationToken);
 }
 
-
 public sealed class RestoreService(
     IDownloadFileMediator mediator,
     IRestoreRunMediator runMed,

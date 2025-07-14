@@ -53,7 +53,6 @@ public interface IArchiveService
     Task ReportProcessingResult(string runId, FileProcessResult result, CancellationToken cancellationToken);
 }
 
-
 public sealed class ArchiveService(
     IS3Service s3Service,
     IArchiveRunMediator runMed,

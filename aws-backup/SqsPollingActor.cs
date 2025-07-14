@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 using Amazon.SQS;
 using Amazon.SQS.Model;
@@ -48,14 +47,15 @@ public sealed class SqsPollingActor(
                     QueueUrl = queueUrl,
                     WaitTimeSeconds = waitTimeSeconds, // long poll
                     MaxNumberOfMessages = maxNumberOfMessages, // batch up to 10
-                    VisibilityTimeout = visibilityTimeout // allow 60s to process
+                    VisibilityTimeout = visibilityTimeout,
+                    MessageAttributeNames = ["command"]
                 }, cancellationToken);
             }
             catch (AmazonSQSException ex) when (ex.Message.Contains("Signature expired"))
             {
                 logger.LogError(ex, "Signature expired. System clock or credentials may be invalid.");
                 clientFactory.ResetCachedCredentials();
-                
+
                 await Task.Delay(TimeSpan.FromSeconds(retryDelay), cancellationToken);
             }
             catch (OperationCanceledException)
@@ -69,41 +69,28 @@ public sealed class SqsPollingActor(
                 await Task.Delay(TimeSpan.FromSeconds(retryDelay), cancellationToken);
                 continue;
             }
-            
-            if(resp?.Messages is not { Count: > 0 }) continue;
+
+            if (resp?.Messages is not { Count: > 0 }) continue;
 
             foreach (var msg in resp.Messages!)
                 try
                 {
                     logger.LogInformation("Received message {Id}", msg.MessageId);
+                    if (msg.MessageAttributes is null ||
+                        !msg.MessageAttributes.TryGetValue("command", out var commandAttribute) ||
+                        commandAttribute is null) continue;
+
                     var messageString = msg.Body;
-                    if (string.IsNullOrWhiteSpace(messageString)) continue;
+                    var command = commandAttribute.StringValue;
+                    if (string.IsNullOrWhiteSpace(messageString) || string.IsNullOrWhiteSpace(command)) continue;
                     if (contextResolver.EncryptSqs())
                         messageString = AesHelper.DecryptString(msg.Body, sqsDecryptionKey);
 
-                    var utf8 = Encoding.UTF8.GetBytes(messageString);
-                    var reader = new Utf8JsonReader(utf8, true, default);
-                    if (!JsonDocument.TryParseValue(ref reader, out var jsonDocument))
-                    {
-                        logger.LogError("Received message {Id} but no json document", msg.MessageId);
-                        continue;
-                    }
-
-                    var rootElement = jsonDocument.RootElement;
-
-                    if (!rootElement.TryGetProperty("command", out var commandElement))
-                    {
-                        logger.LogWarning("Message {Id} does not contain a 'command' property, skipping",
-                            msg.MessageId);
-                        continue;
-                    }
-
-                    var command = commandElement.GetString();
                     switch (command)
                     {
                         case "restore-backup":
-                            var restoreRequest = rootElement.GetProperty("body")
-                                .Deserialize<RestoreRequest>(SourceGenerationContext.Default.RestoreRequest);
+                            var restoreRequest = JsonSerializer.Deserialize<RestoreRequest>(messageString,
+                                SourceGenerationContext.Default.RestoreRequest);
                             if (restoreRequest is null) continue;
 
                             await mediator.RestoreBackup(restoreRequest, cancellationToken);
@@ -113,7 +100,6 @@ public sealed class SqsPollingActor(
                                 command, msg.MessageId);
                             break;
                     }
-
 
                     await sqs.DeleteMessageAsync(queueUrl, msg.ReceiptHandle, cancellationToken);
                     logger.LogInformation("Deleted message {Id} from SQS", msg.MessageId);
