@@ -1,0 +1,28 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>aws_backup_common</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TrimMode>full</TrimMode>
+    <PublishAot>true</PublishAot>
+    <PublishTrimmed>true</PublishTrimmed>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+    <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AWSSDK.IdentityManagement" Version="4.0.2.2" />
+    <PackageReference Include="AWSSDK.S3" Version="4.0.4.2" />
+    <PackageReference Include="AWSSDK.SecurityToken" Version="4.0.1.4" />
+    <PackageReference Include="AWSSDK.SimpleNotificationService" Version="4.0.0.13" />
+    <PackageReference Include="AWSSDK.SimpleSystemsManagement" Version="4.0.2.2" />
+    <PackageReference Include="AWSSDK.SQS" Version="4.0.0.14" />
+    <PackageReference Include="AWSSDK.SSO" Version="4.0.0.13" />
+    <PackageReference Include="AWSSDK.SSOOIDC" Version="4.0.0.13" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.7" />
+  </ItemGroup>
+
+</Project>
