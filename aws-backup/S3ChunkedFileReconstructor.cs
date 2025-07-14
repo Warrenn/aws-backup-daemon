@@ -35,7 +35,7 @@ public sealed class S3ChunkedFileReconstructor(
         {
             var s3 = await awsClientFactory.CreateS3Client(cancellationToken);
             var destinationFolder = contextResolver.LocalRestoreFolder(request.RestoreId);
-            outputFilePath = Path.Combine(destinationFolder, request.FilePath);
+            outputFilePath = Path.Combine(destinationFolder, Path.GetFileName(request.FilePath));
             var bufferSize = contextResolver.ReadBufferSize();
             var maxDownloadConcurrency = contextResolver.NoOfConcurrentDownloadsPerFile();
             var originalFileSize = request.Size;
