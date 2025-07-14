@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Text.Json.Serialization;
 using Amazon.S3;
 using aws_backup_common;
 using Microsoft.Extensions.Logging;

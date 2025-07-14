@@ -1,6 +1,4 @@
-using System.IO.Compression;
 using aws_backup_common;
-using aws_backup;
 using Moq;
 
 namespace test;

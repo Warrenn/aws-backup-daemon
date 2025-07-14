@@ -1,6 +1,5 @@
 using System.Runtime.InteropServices;
 using aws_backup_common;
-using aws_backup;
 
 namespace test;
 
