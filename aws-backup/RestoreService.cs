@@ -15,6 +15,7 @@ public interface IRestoreService
 
     Task ReportDownloadComplete(DownloadFileFromS3Request request, CancellationToken cancellationToken);
     Task ReportDownloadFailed(DownloadFileFromS3Request request, Exception reason, CancellationToken cancellationToken);
+    Task FinalizeRun(RestoreRun restoreRun, CancellationToken cancellationToken);
 }
 
 public interface IRestoreManifestMediator
@@ -83,12 +84,11 @@ public sealed class RestoreService(
     {
         try
         {
-            // locate our chunk
-            var chunk = chunkManifest.Values
-                .FirstOrDefault(d => d.S3Key == s3Key && d.BucketName == bucketId);
-            if (chunk is null) return;
+            var filename = Path.GetFileName(s3Key);
+            var hash = Base64Url.Decode(filename);
+            var key = new ByteArrayKey(hash);
 
-            var key = new ByteArrayKey(chunk.Hash);
+            if (!chunkManifest.TryGetValue(key, out var chunk)) return;
             if (!restoreManifest.TryGetValue(key, out var status)) return;
 
             // dispatch based on current + incoming
@@ -331,7 +331,7 @@ public sealed class RestoreService(
     ///     Called when *all* files are either Completed or Failed.
     ///     Sends final SNS, updates run status, and cleans up in‐memory state.
     /// </summary>
-    private async Task FinalizeRun(RestoreRun run, CancellationToken ct)
+    public async Task FinalizeRun(RestoreRun run, CancellationToken ct)
     {
         run.Status = RestoreRunStatus.Completed;
         run.CompletedAt = DateTimeOffset.UtcNow;

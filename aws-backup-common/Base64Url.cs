@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+
 namespace aws_backup_common;
 
 public static class Base64Url
@@ -14,6 +17,14 @@ public static class Base64Url
             .Replace('/', '_'); // 63rd char of encoding
     }
     
+            
+    public static string ComputeSimpleHash(string input)
+    {
+        var data = Encoding.UTF8.GetBytes(input);
+        var hash = MD5.HashData(data);
+        return Encode(hash);
+    }
+
 
     /// <summary>
     /// Decode a URL-safe Base64 string back into the original bytes.

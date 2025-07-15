@@ -34,6 +34,7 @@ public sealed class BackupCommands(
         string archiveId,
         [Option("paths-to-restore", Description = "The paths you want to restore from the archive")]
         string[] pathsToRestore,
+        [Ignore]
         CancellationToken cancellationToken = default
     )
     {
@@ -80,12 +81,13 @@ public sealed class BackupCommands(
         
         Console.WriteLine($"Restore request for archive {archiveId} with paths {joinedPaths} sent to SQS.");
     }
-
+    
     [Command("list-paths", Description = "List all paths in the archive")]
     public async Task ListPaths(
         CommonParameters commonParams,
         [Option("archive-id", Description = "The archive Id to list paths for")]
         string archiveId,
+        [Ignore]
         CancellationToken cancellationToken = default)
     {
         Console.WriteLine("Listing all paths in the archive...");
@@ -98,6 +100,7 @@ public sealed class BackupCommands(
     [Command("list-archives", Description = "List all backup archives for client")]
     public async Task ListArchives(
         CommonParameters commonParams,
+        [Ignore]
         CancellationToken cancellationToken = default)
     {
         Console.WriteLine("Listing all archives...");

@@ -30,14 +30,30 @@ public sealed class RestoreRunActor(
                     logger.LogWarning("Received invalid restore request with null ArchiveRunId or RestorePaths");
                     continue;
                 }
-                
-                logger.LogInformation("Processing restore request for ArchiveRunId {ArchiveRunId} with paths {RestorePaths}",
+
+                logger.LogInformation(
+                    "Processing restore request for ArchiveRunId {ArchiveRunId} with paths {RestorePaths}",
                     restoreRequest.ArchiveRunId, restoreRequest.RestorePaths);
 
                 var restoreId = contextResolver.RestoreId(restoreRequest.ArchiveRunId, restoreRequest.RestorePaths,
                     restoreRequest.RequestedAt);
                 var restoreRun = await restoreService.LookupRestoreRun(restoreId, cancellationToken);
-                if (restoreRun != null) continue;
+                
+                if (restoreRun?.Status is RestoreRunStatus.Completed)
+                {
+                    await restoreService.FinalizeRun(restoreRun, cancellationToken);
+                    logger.LogInformation("Restore run with ID {RestoreId} already completed, skipping processing",
+                        restoreId);
+                    continue;
+                }
+                
+                if(restoreRun?.Status is RestoreRunStatus.Processing)
+                {
+                    logger.LogInformation("Restore run with ID {RestoreId} didn't finish processing, re initializing it",
+                        restoreId);
+                    await restoreService.InitiateRestoreRun(restoreRequest, restoreRun, cancellationToken);
+                    continue;
+                }
 
                 var matcher = restoreRequest
                     .RestorePaths.Split(':')
@@ -95,7 +111,7 @@ public sealed class RestoreRunActor(
                     Status = RestoreRunStatus.Processing,
                     RequestedFiles = requestedFiles
                 };
-                
+
                 logger.LogInformation("Initiating restore run with ID {RestoreId} for ArchiveRunId {ArchiveRunId}",
                     restoreRun.RestoreId, restoreRequest.ArchiveRunId);
 

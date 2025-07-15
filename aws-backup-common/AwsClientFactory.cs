@@ -1,3 +1,4 @@
+using System.Globalization;
 using Amazon.IdentityManagement;
 using Amazon.Runtime;
 using Amazon.Runtime.CredentialManagement;
@@ -205,7 +206,8 @@ public sealed class AwsClientFactory(
             certificateFileName,
             privateKeyFileName,
             region.SystemName,
-            cancellation: cancellationToken);
+            credentialsTimeout,
+            cancellationToken);
 
         if (string.IsNullOrWhiteSpace(accessKey) || string.IsNullOrWhiteSpace(secretKey))
             return null;
@@ -213,7 +215,8 @@ public sealed class AwsClientFactory(
         AWSCredentials newCredentials = string.IsNullOrWhiteSpace(sessionToken)
             ? new BasicAWSCredentials(accessKey, secretKey)
             : new SessionAWSCredentials(accessKey, secretKey, sessionToken);
-        if (!string.IsNullOrWhiteSpace(expirationString) && DateTime.TryParse(expirationString, out var expiration))
+        if (!string.IsNullOrWhiteSpace(expirationString) && DateTime.TryParse(expirationString,
+                CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out var expiration))
             newCredentials.Expiration = expiration;
 
         newCredentials.Expiration ??= DateTime.SpecifyKind(

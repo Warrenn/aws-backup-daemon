@@ -1,6 +1,5 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
-using System.Text;
 using aws_backup_common;
 
 // ReSharper disable AccessToModifiedClosure
@@ -127,7 +126,7 @@ public sealed class ChunkedEncryptingFileProcessor(
                 if (!Directory.Exists(cacheFolder))
                     Directory.CreateDirectory(cacheFolder);
 
-                var fileNameHash = Base64Url.Encode(SHA256.HashData(Encoding.UTF8.GetBytes(inputPath)));
+                var fileNameHash = Base64Url.ComputeSimpleHash(inputPath);
                 var outPath = $"{Path.Combine(cacheFolder, fileNameHash)}.chunk{chunkIndex:D4}.br.aes";
                 if (File.Exists(outPath)) File.Delete(outPath);
                 removableFiles.Add(outPath);

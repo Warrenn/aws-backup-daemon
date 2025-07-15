@@ -33,13 +33,20 @@ public sealed class S3ChunkedFileReconstructor(
         var outputFilePath = "";
         try
         {
-            var s3 = await awsClientFactory.CreateS3Client(cancellationToken);
             var destinationFolder = contextResolver.LocalRestoreFolder(request.RestoreId);
             outputFilePath = Path.Combine(destinationFolder, Path.GetFileName(request.FilePath));
             var bufferSize = contextResolver.ReadBufferSize();
             var maxDownloadConcurrency = contextResolver.NoOfConcurrentDownloadsPerFile();
             var originalFileSize = request.Size;
-            var aesKey = await aesContextResolver.FileEncryptionKey(cancellationToken);
+
+            if (File.Exists(outputFilePath))
+            {
+                var fileIsVerified = await VerifyDownloadHashAsync(request, outputFilePath, cancellationToken);
+                if (fileIsVerified)
+                    // File already exists and matches checksum, no need to download again
+                    return new ReconstructResult(outputFilePath, null);
+                File.Delete(outputFilePath);
+            }
 
             // Ensure output file exists and is sized (optional)
             await using (var pre = new FileStream(
@@ -61,6 +68,7 @@ public sealed class S3ChunkedFileReconstructor(
                 await sem.WaitAsync(cancellationToken);
                 try
                 {
+                    var s3 = await awsClientFactory.CreateS3Client(cancellationToken);
                     var resp = await s3.GetObjectAsync(new GetObjectRequest
                     {
                         BucketName = bucketName,
@@ -72,6 +80,7 @@ public sealed class S3ChunkedFileReconstructor(
                     // 1) read IV
                     var iv = new byte[16];
                     await respStream.ReadExactlyAsync(iv, cancellationToken);
+                    var aesKey = await aesContextResolver.FileEncryptionKey(cancellationToken);
 
                     // 2) decrypt + decompress
                     using var aes = Aes.Create();

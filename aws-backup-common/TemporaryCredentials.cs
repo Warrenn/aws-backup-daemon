@@ -22,8 +22,8 @@ public interface ITemporaryCredentialsServer
         string certificateFileName,
         string privateKeyFileName,
         string region,
-        int sessionDuration = 43200, // default 12 hours
-        CancellationToken cancellation = default);
+        int sessionDuration,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class RolesAnywhere : ITemporaryCredentialsServer
@@ -35,17 +35,18 @@ public sealed class RolesAnywhere : ITemporaryCredentialsServer
         string certificateFileName,
         string privateKeyFileName,
         string region,
-        int sessionDuration = 43200, // default 12 hours
-        CancellationToken cancellation = default)
+        int sessionDuration,
+        CancellationToken cancellationToken = default)
     {
         var endpoint = new Uri($"https://rolesanywhere.{region}.amazonaws.com");
         var url = new Uri(endpoint, "/sessions");
+        sessionDuration = Math.Max(sessionDuration, 900);
 
-        var keyPem = await File.ReadAllTextAsync(privateKeyFileName, cancellation);
+        var keyPem = await File.ReadAllTextAsync(privateKeyFileName, cancellationToken);
         using var rsa = RSA.Create();
         rsa.ImportFromPem(keyPem.ToCharArray());
 
-        var certPem = await File.ReadAllTextAsync(certificateFileName, cancellation);
+        var certPem = await File.ReadAllTextAsync(certificateFileName, cancellationToken);
         var cert = X509Certificate2.CreateFromPem(certPem);
         var serialHex = cert.SerialNumber; // hex string
         var derPub = cert.Export(X509ContentType.Cert);
@@ -112,8 +113,8 @@ public sealed class RolesAnywhere : ITemporaryCredentialsServer
         foreach (var kv in headers)
             req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
 
-        var resp = await client.SendAsync(req, cancellation);
-        var json = await resp.Content.ReadAsStringAsync(cancellation);
+        var resp = await client.SendAsync(req, cancellationToken);
+        var json = await resp.Content.ReadAsStringAsync(cancellationToken);
         return Parse(json);
     }
 

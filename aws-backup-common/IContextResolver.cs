@@ -84,13 +84,12 @@ public interface IContextResolver
 
 public abstract class ContextResolverBase(CommonConfiguration configuration, string clientId) : IContextResolver
 {
-    protected CommonConfiguration _configOptions = configuration;
-    
     private readonly string _clientId = ScrubClientId(clientId);
     protected RegionEndpoint? _awsRegion;
     protected RequestRetryMode? _awsRetryMode;
     protected S3StorageClass? _coldStorageClass;
     protected CompressionLevel? _compressionLevel;
+    protected CommonConfiguration _configOptions = configuration;
     protected S3StorageClass? _hotStorageClass;
     protected string? _ignoreFile;
     protected string? _localCacheFolder;
@@ -364,7 +363,7 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
 
     public string RestoreId(string archiveRunId, string restorePaths, DateTimeOffset requestedAt)
     {
-        var pathsHash = ComputeSimpleHash(restorePaths);
+        var pathsHash = Base64Url.ComputeSimpleHash(restorePaths);
         var timestamp = requestedAt.ToString("yyyy-MM-dd-HH-mm-ss");
         return $"restore_{archiveRunId}_{pathsHash}_{timestamp}";
     }
@@ -378,7 +377,7 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
     public DateTimeOffset NextRetryTime(int attemptCount)
     {
         // Exponential backoff: 2^attemptCount seconds, max 300 seconds (5 minutes)
-        var delaySeconds = Math.Min(Math.Pow(2, attemptCount), 300);
+        var delaySeconds = Math.Min(Math.Pow(2, attemptCount), 600);
         return DateTimeOffset.UtcNow.AddSeconds(delaySeconds);
     }
 
@@ -473,7 +472,7 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
 
     public int AwsCredentialsTimeoutSeconds()
     {
-        return _configOptions.AwsCredentialsTimeoutSeconds ?? 840; // 14 minutes default
+        return Math.Max(_configOptions.AwsCredentialsTimeoutSeconds ?? 900, 900); // 15 minutes minimum default
     }
 
     public long CacheFolderSizeLimitBytes()
@@ -483,7 +482,7 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
 
     public long CacheSizeCheckTimeoutSeconds()
     {
-        return _configOptions.CacheSizeCheckTimeoutSeconds ?? 300000; // 5 minutes default
+        return _configOptions.CacheSizeCheckTimeoutSeconds ?? 300; // 5 minutes default
     }
 
     public CompressionLevel ZipCompressionLevel()
@@ -518,12 +517,6 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
             .ToLowerInvariant();
     }
 
-    private static string ComputeSimpleHash(string input)
-    {
-        // Simple hash for generating IDs - use a proper hash function in production
-        return Math.Abs(input.GetHashCode()).ToString("X8");
-    }
-
     protected static bool IsValidPath(string path)
     {
         try
@@ -536,5 +529,4 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
             return false;
         }
     }
-
 }

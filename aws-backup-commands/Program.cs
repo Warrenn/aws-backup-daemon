@@ -3,6 +3,7 @@
 using aws_backup_commands;
 using aws_backup_common;
 using Cocona;
+using Cocona.Help;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
@@ -17,7 +18,9 @@ if (!Path.IsPathRooted(appSettingsPath))
 if (string.IsNullOrWhiteSpace(appSettingsPath) || !File.Exists(appSettingsPath))
 {
     await Console.Error.WriteLineAsync(
-        $"Application settings file not found: {appSettingsPath} ");
+        $"Application settings file not found: {appSettingsPath} to specify use --app-settings or -a");
+
+    await CoconaApp.CreateBuilder([..args, "--help"]).Build().RunAsync<BackupCommands>();
     return -1;
 }
 
@@ -33,6 +36,7 @@ var configuration = configurationRoot.GetSection("Configuration").Get<Configurat
 if (configuration is null)
 {
     await Console.Error.WriteLineAsync("Configuration section 'Configuration' not found in appsettings.json.");
+    await CoconaApp.CreateBuilder([..args, "--help"]).Build().RunAsync<BackupCommands>();
     return -1;
 }
 
@@ -40,6 +44,7 @@ if (string.IsNullOrWhiteSpace(configuration.ClientId) && string.IsNullOrWhiteSpa
 {
     await Console.Error.WriteLineAsync(
         "Client ID is required. Please provide it via --client-id or in appsettings.json.");
+    await CoconaApp.CreateBuilder([..args, "--help"]).Build().RunAsync<BackupCommands>();
     return -1;
 }
 
@@ -99,8 +104,16 @@ builder
     .AddSingleton<CurrentArchiveRuns>();
 
 var host = builder.Build();
+host.AddCommand((
+    [Option("client-id", ['c'], Description = "The client ID for the restore operation")] string? clientId,
+    [Option("app-settings", ['a'], Description = "Path to the application settings file")] string? appSettings,
+    [FromService] ICoconaHelpMessageBuilder helpMessageBuilder) =>
+{
+    Console.WriteLine(helpMessageBuilder.BuildAndRenderForCurrentContext());
+});
 
-await host.RunAsync<BackupCommands>();
+await host
+    .RunAsync<BackupCommands>();
 return 0;
 
 static string? GetValueFromArgs(string key, string keyAlt, string[] args)
