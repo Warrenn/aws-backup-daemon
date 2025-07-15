@@ -43,8 +43,9 @@ public sealed class UploadActor(
                 {
                     logger.LogInformation("Uploading {BucketKey} to S3", bucketKey);
                     var delayBetweenUploads = contextResolver.DelayBetweenUploadsSeconds();
+                    var delayTimeSpan = TimeSpan.FromSeconds(delayBetweenUploads);
                     await s3Service.UploadCompressedObject(bucketKey, data, StorageTemperature.Hot, cancellationToken);
-                    await Task.Delay(delayBetweenUploads, cancellationToken);
+                    await Task.Delay(delayTimeSpan, cancellationToken);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
