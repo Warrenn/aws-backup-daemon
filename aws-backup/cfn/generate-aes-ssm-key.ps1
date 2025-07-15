@@ -26,12 +26,11 @@ if ($decodedBytes.Length -ne 32) {
 
 # 3. Check if parameter exists
 $exists = & {
-    try {
-        aws ssm get-parameter --name $ParamName --region $REGION --with-decryption | Out-Null
-        return $true
-    } catch {
+    aws ssm get-parameter --name $ParamName --region $REGION --with-decryption
+    if ($LASTEXITCODE -ne 0) {
         return $false
     }
+    return $true
 }
 
 if ($exists) {

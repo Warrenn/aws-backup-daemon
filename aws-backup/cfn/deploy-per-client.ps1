@@ -32,15 +32,15 @@ $Region = $env:AWS_REGION
 if (-not $Region) { $Region = "us-east-1" }
 
 function Get-StackStatus {
-    try {
-        return aws cloudformation describe-stacks `
-            --region $Region `
-            --stack-name $StackName `
-            --query 'Stacks[0].StackStatus' `
-            --output text 2>$null
-    } catch {
+    aws cloudformation describe-stacks `
+        --region $Region `
+        --stack-name $StackName `
+        --query 'Stacks[0].StackStatus' `
+        --output text 
+    if ([string]::IsNullOrEmpty($status)) {
         return "STACK_NOT_FOUND"
     }
+    return $status
 }
 
 function Wait-ForStableStatus {
@@ -100,19 +100,15 @@ if ($currentStatus -eq "STACK_NOT_FOUND") {
         --region $Region 2>$null
 } else {
     Write-Host "Updating stack..."
-    $updateCode = & {
-        try {
-            aws cloudformation update-stack `
-                --stack-name $StackName `
-                --region $Region `
-                --template-body "file://$TemplateFile" `
-                --capabilities CAPABILITY_NAMED_IAM `
-                --parameters $params
-            return $LASTEXITCODE
-        } catch {
-            return $LASTEXITCODE
-        }
-    }
+
+    aws cloudformation update-stack `
+        --stack-name $StackName `
+        --region $Region `
+        --template-body "file://$TemplateFile" `
+        --capabilities CAPABILITY_NAMED_IAM `
+        --parameters $params
+
+    $updateCode = $LASTEXITCODE
 
     if ($updateCode -eq 254) {
         Write-Host "No updates to be performed."

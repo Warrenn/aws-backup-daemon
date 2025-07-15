@@ -1,22 +1,21 @@
 $ErrorActionPreference = "Stop"
 
-$STACK_NAME = "aws-backup-initial"
+$STACK_NAME = "aws-backup-test"
 $TEMPLATE_FILE = "aws-backup-initial.yaml"
 $REGION = $env:AWS_REGION
 if (-not $REGION) { $REGION = "us-east-1" }
-$BUCKET_PREFIX = "backup-bucket"
+$BUCKET_PREFIX = "backup-bucket-test"
 
 function Check-StackStatus {
-    try {
-        $status = aws cloudformation describe-stacks `
-            --region $REGION `
-            --stack-name $STACK_NAME `
-            --query 'Stacks[0].StackStatus' `
-            --output text 2>$null
-        return $status
-    } catch {
+    $status = aws cloudformation describe-stacks `
+        --region $REGION `
+        --stack-name $STACK_NAME `
+        --query 'Stacks[0].StackStatus' `
+        --output text
+    if ([string]::IsNullOrEmpty($status)) {
         return "STACK_NOT_FOUND"
     }
+    return $status
 }
 
 function Wait-ForStableStatus {
@@ -59,6 +58,7 @@ if ($currentStatus -like "*ROLLBACK_COMPLETE" -or $currentStatus -like "*CREATE_
     $currentStatus = Check-StackStatus
 }
 
+
 if ($currentStatus -eq "STACK_NOT_FOUND") {
     Write-Host "Creating new stack..."
     aws cloudformation create-stack `
@@ -66,27 +66,22 @@ if ($currentStatus -eq "STACK_NOT_FOUND") {
         --region $REGION `
         --template-body "file://$TEMPLATE_FILE" `
         --capabilities CAPABILITY_NAMED_IAM `
-        --parameters ParameterKey=BucketNamePrefix,ParameterValue=$BUCKET_PREFIX
+        --parameters "ParameterKey=BucketNamePrefix,ParameterValue=$BUCKET_PREFIX"
     Write-Host "Waiting for stack operation to complete..."
     aws cloudformation wait stack-create-complete `
         --stack-name $STACK_NAME `
         --region $REGION 2>$null
 } else {
     Write-Host "Updating existing stack..."
-    $updateResult = & {
-        try {
-            aws cloudformation update-stack `
-                --stack-name $STACK_NAME `
-                --region $REGION `
-                --template-body "file://$TEMPLATE_FILE" `
-                --capabilities CAPABILITY_NAMED_IAM `
-                --parameters ParameterKey=BucketNamePrefix,ParameterValue=$BUCKET_PREFIX
-            return $LASTEXITCODE
-        } catch {
-            return $LASTEXITCODE
-        }
-    }
-
+    aws cloudformation update-stack `
+        --stack-name $STACK_NAME `
+        --region $REGION `
+        --template-body "file://$TEMPLATE_FILE" `
+        --capabilities CAPABILITY_NAMED_IAM `
+        --parameters "ParameterKey=BucketNamePrefix,ParameterValue=$BUCKET_PREFIX"
+    
+    $updateResult = $LASTEXITCODE
+    
     if ($updateResult -eq 254) {
         Write-Host "No updates to be performed."
         exit 0
