@@ -136,7 +136,7 @@ public sealed class ArchiveService(
         {
             need = meta.Status is not FileStatus.UploadComplete;
             logger.LogDebug("DoesFileRequireProcessing({Run},{File}) => {Need}", runId, filePath, need);
-            return Task.CompletedTask;
+            return Task.FromResult(false);
         }, ct);
         return need;
     }
@@ -149,7 +149,7 @@ public sealed class ArchiveService(
         {
             logger.LogDebug("UpdateTimeStamps: {Run}/{File}", runId, localFilePath);
             run.Files[localFilePath] = meta with { Created = created, LastModified = modified };
-            return Task.CompletedTask;
+            return Task.FromResult(true);
         }, ct);
     }
 
@@ -161,7 +161,7 @@ public sealed class ArchiveService(
         {
             logger.LogDebug("UpdateOwnerGroup: {Run}/{File}", runId, localFilePath);
             run.Files[localFilePath] = meta with { Owner = owner, Group = group };
-            return Task.CompletedTask;
+            return Task.FromResult(true);
         }, ct);
     }
 
@@ -173,7 +173,7 @@ public sealed class ArchiveService(
         {
             logger.LogDebug("UpdateAclEntries: {Run}/{File}", runId, localFilePath);
             run.Files[localFilePath] = meta with { AclEntries = aclEntries };
-            return Task.CompletedTask;
+            return Task.FromResult(true);
         }, ct);
     }
 
@@ -196,6 +196,8 @@ public sealed class ArchiveService(
             await snsMed.PublishMessage(new ExceptionMessage(
                 $"File Skipped: {localFilePath} in run {runId}",
                 $"Skipped due to: {exception.Message}"), token);
+
+            return true;
         }, ct);
     }
 
@@ -216,7 +218,7 @@ public sealed class ArchiveService(
                 Status = FileStatus.Skipped,
                 SkipReason = exception.Message
             };
-            return Task.CompletedTask;
+            return Task.FromResult(true);
         }, cancellationToken);
     }
 
@@ -229,7 +231,7 @@ public sealed class ArchiveService(
         await UpdateFileMetaData(run.RunId, localFilePath, (_, _, _) =>
         {
             logger.LogDebug("RecordLocalFile: {Run}/{File}", run, localFilePath);
-            return Task.CompletedTask;
+            return Task.FromResult(false);
         }, ct);
     }
 
@@ -259,7 +261,7 @@ public sealed class ArchiveService(
                 Status = FileStatus.Added,
                 SkipReason = string.Empty
             };
-            return Task.CompletedTask;
+            return Task.FromResult(true);
         }, ct);
     }
 
@@ -275,11 +277,11 @@ public sealed class ArchiveService(
                 logger.LogWarning("Skipping {FilePath} Chunk {ChunkKey} not found for file in run {RunId}",
                     localFilePath, chunkKey, runId);
                 meta.Status = FileStatus.Skipped;
-                return Task.CompletedTask;
+                return Task.FromResult(true);
             }
 
             existingChunk.Status = ChunkStatus.Uploaded;
-            return Task.CompletedTask;
+            return Task.FromResult(true);
         }, ct);
     }
 
@@ -290,7 +292,7 @@ public sealed class ArchiveService(
         {
             logger.LogDebug("AddChunkToFile: {Run}/{File}", runId, localFilePath);
             var chunkKey = new ByteArrayKey(chunkDetails.HashKey);
-            if (meta.Chunks.TryAdd(chunkKey, chunkDetails)) return Task.CompletedTask;
+            if (meta.Chunks.TryAdd(chunkKey, chunkDetails)) return Task.FromResult(true);
             logger.LogWarning("Chunk {ChunkKey} already exists for file {FilePath} in run {RunId}",
                 chunkKey, localFilePath, runId);
             meta.Chunks[chunkKey] = meta.Chunks[chunkKey] with
@@ -301,7 +303,7 @@ public sealed class ArchiveService(
                 Size = chunkDetails.Size,
                 Status = ChunkStatus.Added
             };
-            return Task.CompletedTask;
+            return Task.FromResult(true);
         }, cancellationToken);
     }
 
@@ -329,7 +331,7 @@ public sealed class ArchiveService(
                 SkipReason = skipReason
             };
 
-            return Task.CompletedTask;
+            return Task.FromResult(true);
         }, cancellationToken);
     }
 
@@ -339,9 +341,10 @@ public sealed class ArchiveService(
     }
 
     private async Task UpdateFileMetaData(
-        string runId, string localFilePath, Func<ArchiveRun, FileMetaData, CancellationToken, Task> updateFunc,
+        string runId, string localFilePath, Func<ArchiveRun, FileMetaData, CancellationToken, Task<bool>> updateFunc,
         CancellationToken ct)
     {
+        var changesMade = false;
         var lockSlim = _runLocks.GetOrAdd(runId, _ => new SemaphoreSlim(1, 1));
         await lockSlim.WaitAsync(ct);
         try
@@ -350,12 +353,13 @@ public sealed class ArchiveService(
 
             if (!run.Files.TryGetValue(localFilePath, out var meta))
             {
+                changesMade = true;
                 meta = new FileMetaData(localFilePath) { Status = FileStatus.Added };
                 run.Files.TryAdd(localFilePath, meta);
             }
 
-            await updateFunc(run, meta, ct);
-            await SaveAndFinalizeIfComplete(run, ct);
+            changesMade |= await updateFunc(run, meta, ct);
+            await SaveAndFinalizeIfComplete(run, changesMade, ct);
         }
         finally
         {
@@ -363,7 +367,7 @@ public sealed class ArchiveService(
         }
     }
 
-    private async Task SaveAndFinalizeIfComplete(ArchiveRun run, CancellationToken ct)
+    private async Task SaveAndFinalizeIfComplete(ArchiveRun run, bool changesMade, CancellationToken ct)
     {
         foreach (var (key, meta) in run.Files)
         {
@@ -391,6 +395,8 @@ public sealed class ArchiveService(
             }
 
             if (hasAnAdd || !hasAnElement) continue;
+
+            changesMade = true;
             if (hasAnError && string.IsNullOrWhiteSpace(meta.SkipReason))
                 meta.SkipReason = "File skipped due to chunk failing to upload";
 
@@ -405,7 +411,8 @@ public sealed class ArchiveService(
         }
 
         // persist current state
-        await runMed.SaveArchiveRun(run, ct);
+        if (changesMade)
+            await runMed.SaveArchiveRun(run, ct);
 
         // check for completion
         if (run.Files.Values.All(f => f.Status is FileStatus.UploadComplete or FileStatus.Skipped))
