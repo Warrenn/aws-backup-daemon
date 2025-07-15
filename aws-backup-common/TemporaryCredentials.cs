@@ -87,11 +87,10 @@ public sealed class RolesAnywhere : ITemporaryCredentialsServer
         const string algorithm = "AWS4-X509-RSA-SHA256";
         var credentialScope = $"{dateStamp}/{region}/rolesanywhere/aws4_request";
         var stringToSign = new StringBuilder()
-            .AppendLine(algorithm)
-            .AppendLine(amzDate)
-            .AppendLine(credentialScope)
-            .Append(canonicalRequestHash)
-            .ToString();
+            .Append(algorithm).Append('\n')
+            .Append(amzDate).Append('\n')
+            .Append(credentialScope).Append('\n')
+            .Append(canonicalRequestHash).ToString();
 
         var sig = rsa.SignData(
             Encoding.UTF8.GetBytes(stringToSign),

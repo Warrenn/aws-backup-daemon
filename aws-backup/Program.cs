@@ -122,7 +122,7 @@ builder
     .AddSingleton<IRestoreService, RestoreService>()
     .AddSingleton<IS3ChunkedFileReconstructor, S3ChunkedFileReconstructor>()
     .AddSingleton<IS3Service, S3Service>()
-    .AddSingleton<TimeProvider>(_ => TimeProvider.System)
+    .AddSingleton(_ => TimeProvider.System)
     .AddSingleton<CurrentArchiveRuns>()
     .AddHostedService<CronJobActor>()
     .AddHostedService<ArchiveFilesActor>()

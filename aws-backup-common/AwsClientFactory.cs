@@ -153,9 +153,7 @@ public sealed class AwsClientFactory(
                     var credentials = await factory(cancellationToken);
 
                     if (credentials == null) continue;
-                    // Test credentials by attempting to get caller identity
-                    if (!await ValidateCredentialsAsync(credentials, cancellationToken)) continue;
-
+                    
                     logger.LogInformation("Successfully resolved AWS credentials using {CredentialSource}", name);
                     var settingsExpiry = timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(expiresIn)).DateTime;
                     var credExpiry = GetUniversalTime(credentials.Expiration);
