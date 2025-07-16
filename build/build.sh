@@ -16,3 +16,4 @@ docker create --name temp aws-backup-builder
 docker cp temp:/app ./output
 docker rm temp
 docker system prune -af
+ls -ahl ./output
