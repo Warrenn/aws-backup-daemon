@@ -21,7 +21,9 @@ jobs:
         run: ./build/build.sh
         
       - name: Create release files tar.gz
-        run: tar -czf ./aot.tar.gz ./output
+        run: |
+          cd ./output/publish
+          tar -czf ../../aot.tar.gz .
           
       - name: Upload binaries to GitHub release
         uses: softprops/action-gh-release@v2

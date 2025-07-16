@@ -13,7 +13,8 @@ mkdir -p output
 
 # Copy binary from container to host
 docker create --name temp aws-backup-aot
-docker cp temp:/app ./output
+docker cp temp:/app/aws-backup/bin/Release/net9.0/linux-x64/publish ./output
+docker cp temp:/app/aws-backup-commands/bin/Release/net9.0/linux-x64/publish ./output
+docker cp temp:/app/cert-gen/bin/Release/net9.0/linux-x64/publish ./output
 docker rm temp
 docker system prune -af
-ls -ahl ./output
