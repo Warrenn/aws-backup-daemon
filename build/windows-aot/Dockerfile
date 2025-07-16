@@ -10,11 +10,4 @@ WORKDIR /app
 COPY . .
 
 # Publish as AOT, self-contained, single file
-RUN dotnet publish ./app/aws-backup.sln -c Release -r win-x64 `
-    -p:PublishAot=true `
-    -p:SelfContained=true `
-    -p:PublishSingleFile=true `
-    -p:DebugType=None `
-    -p:DebugSymbols=false `
-    -p:EnableCompressionInSingleFile=true `
-    -p:IncludeAllContentForSelfExtract=true
+RUN dotnet publish /app/aws-backup.sln -c Release -r win-x64 -p:PublishAot=true -p:SelfContained=true -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -p:EnableCompressionInSingleFile=true -p:IncludeAllContentForSelfExtract=true
