@@ -1,4 +1,3 @@
-using Amazon.S3;
 using Amazon.S3.Model;
 using Amazon.S3.Transfer;
 using aws_backup_common;
@@ -79,7 +78,7 @@ public sealed class UploadChunkDataActor(
             {
                 logger.LogInformation("Uploading chunk {ChunkIndex} for file {LocalFilePath} parent {ParentFile}",
                     chunk.ChunkIndex, chunk.LocalFilePath, parentFile);
-
+                
                 var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
                 var bucketName = awsConfiguration.BucketName;
                 var storageClass = contextResolver.ColdStorage();
@@ -87,20 +86,16 @@ public sealed class UploadChunkDataActor(
                 var s3PartSize = contextResolver.S3PartSize();
                 var key = contextResolver.ChunkS3Key(chunk.HashKey);
 
-                var localCheckSum = Convert.ToBase64String(chunk.CompressedHashKey);
-
                 // upload the chunk file to S3
                 var transferUtil = new TransferUtility(s3Client);
                 var uploadReq = new TransferUtilityUploadRequest
                 {
-                    ChecksumSHA256 = localCheckSum,
                     BucketName = bucketName,
                     Key = key,
                     FilePath = chunk.LocalFilePath,
                     PartSize = s3PartSize,
                     StorageClass = storageClass,
                     ServerSideEncryptionMethod = serverSideEncryptionMethod,
-                    ChecksumAlgorithm = ChecksumAlgorithm.SHA256,
                     TagSet =
                     [
                         new Tag { Key = "storage-class", Value = "cold" },
@@ -116,7 +111,6 @@ public sealed class UploadChunkDataActor(
                         }
                     ]
                 };
-
                 await transferUtil.UploadAsync(uploadReq, cancellationToken);
 
                 logger.LogInformation("Upload complete for chunk {ChunkIndex} for file {ParentFile} chunk file {LocalFilePath} chunk key {Key}",

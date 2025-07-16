@@ -21,8 +21,7 @@ public sealed record DataChunkDetails(
     int ChunkIndex,
     long ChunkSize,
     byte[] HashKey,
-    long Size,
-    byte[] CompressedHashKey)
+    long Size)
 {
     public ChunkStatus Status { get; set; } = ChunkStatus.Added;
 }

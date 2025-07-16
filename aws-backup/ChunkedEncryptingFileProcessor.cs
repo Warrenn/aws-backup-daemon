@@ -163,7 +163,6 @@ public sealed class ChunkedEncryptingFileProcessor(
                 await cryptoStream.DisposeAsync(); // closes CryptoStream
                 await chunkFileFs.DisposeAsync(); // closes file stream
 
-                var compressedHash = await SHA256.HashDataAsync(File.OpenRead(chunkFileFs.Name), cancellationToken);
                 var fileInfo = new FileInfo(chunkFileFs.Name);
 
                 var chunkData = new DataChunkDetails(
@@ -171,8 +170,7 @@ public sealed class ChunkedEncryptingFileProcessor(
                     chunkIndex,
                     chunkSize,
                     chunkHasher.Hash ?? [],
-                    fileInfo.Length,
-                    compressedHash
+                    fileInfo.Length
                 )
                 {
                     Status =

@@ -89,11 +89,16 @@ public sealed class SqsPollingActor(
                     var messageString = msg.Body;
                     var command = commandAttribute.StringValue;
                     if (string.IsNullOrWhiteSpace(messageString) ||
-                        string.IsNullOrWhiteSpace(command)) continue;
+                        string.IsNullOrWhiteSpace(command))
+                    {
+                        await sqs.DeleteMessageAsync(queueUrl, msg.ReceiptHandle, cancellationToken);
+                        continue;
+                    }
 
                     if (contextResolver.EncryptSqs() && !isEncrypted)
                     {
                         logger.LogWarning("Message encryption expected but message {Id} was not encrypted", msg.MessageId);
+                        await sqs.DeleteMessageAsync(queueUrl, msg.ReceiptHandle, cancellationToken);
                         continue;
                     }
                     
