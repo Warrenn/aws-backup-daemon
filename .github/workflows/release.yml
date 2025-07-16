@@ -20,7 +20,7 @@ jobs:
       - name: Build linux binaries from docker image
         run: |
           ./build/build.sh
-          tar -czf ../aot.tar.gz .
+          tar -czf aot.tar.gz .
           
       - name: Upload binaries to GitHub release
         uses: softprops/action-gh-release@v2
