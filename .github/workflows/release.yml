@@ -18,12 +18,8 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build linux binaries from docker image
-        run: ./build/build.sh
-        
-      - name: Create release files tar.gz
         run: |
-          cd ./output
-
+          ./build/build.sh
           tar -czf ../aot.tar.gz .
           
       - name: Upload binaries to GitHub release
