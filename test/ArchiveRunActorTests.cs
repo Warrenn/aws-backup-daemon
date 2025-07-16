@@ -51,13 +51,7 @@ public class ArchiveRunActorTests : IDisposable
             .Returns(SingleRunAsync(runId, path));
         archiveServiceMock.Setup(a => a.LookupArchiveRun(runId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((ArchiveRun)null!);
-        archiveServiceMock.Setup(a =>
-                a.RecordLocalFile(It.IsAny<ArchiveRun>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Callback<ArchiveRun, string, CancellationToken>((a, f, c) =>
-            {
-                a.Files[f] = new FileMetaData(f) { Status = FileStatus.Added };
-            })
-            .Returns(Task.CompletedTask);
+
         var newRun = new ArchiveRun
         {
             RunId = runId,
@@ -91,8 +85,6 @@ public class ArchiveRunActorTests : IDisposable
         // Assert
         archiveServiceMock.Verify(a => a.StartNewArchiveRun(It.IsAny<RunRequest>(), It.IsAny<CancellationToken>()),
             Times.Once);
-        archiveServiceMock.Verify(a => a.RecordLocalFile(newRun, "fileA", It.IsAny<CancellationToken>()), Times.Once);
-        archiveServiceMock.Verify(a => a.RecordLocalFile(newRun, "fileB", It.IsAny<CancellationToken>()), Times.Once);
         archiveFileMediatorMock.Verify(m => m.ProcessFile(
                 It.Is<ArchiveFileRequest>(r => r.RunId == runId && r.FilePath == "fileA"),
                 It.IsAny<CancellationToken>()),
@@ -143,9 +135,6 @@ public class ArchiveRunActorTests : IDisposable
         archiveServiceMock.Verify(a => a.StartNewArchiveRun(It.IsAny<RunRequest>(), It.IsAny<CancellationToken>()),
             Times.Never);
         fileListerMock.Verify(f => f.GetAllFiles(It.IsAny<string>(), It.IsAny<string[]>()), Times.Never);
-        archiveServiceMock.Verify(
-            a => a.RecordLocalFile(It.IsAny<ArchiveRun>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
-            Times.Never);
         fileMediatorMock.Verify(m => m.ProcessFile(It.IsAny<ArchiveFileRequest>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -169,13 +158,6 @@ public class ArchiveRunActorTests : IDisposable
             .Returns(SingleRunAsync(runId, path));
         archiveServiceMock.Setup(a => a.LookupArchiveRun(runId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((ArchiveRun)null!);
-        archiveServiceMock.Setup(a =>
-                a.RecordLocalFile(It.IsAny<ArchiveRun>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Callback<ArchiveRun, string, CancellationToken>((a, f, c) =>
-            {
-                a.Files[f] = new FileMetaData(f) { Status = FileStatus.Added };
-            })
-            .Returns(Task.CompletedTask);
 
         var newRun = new ArchiveRun
         {
@@ -204,8 +186,6 @@ public class ArchiveRunActorTests : IDisposable
         await orchestrator.ExecuteTask;
 
         // Assert only keep.txt processed
-        archiveServiceMock.Verify(a => a.RecordLocalFile(newRun, "keep.txt", It.IsAny<CancellationToken>()),
-            Times.Once);
         archiveFileMediatorMock.Verify(
             m => m.ProcessFile(It.Is<ArchiveFileRequest>(r => r.RunId == runId && r.FilePath == "keep.txt"),
                 It.IsAny<CancellationToken>()), Times.Once);
@@ -258,6 +238,8 @@ public class ArchiveRunActorTests : IDisposable
         await orchestrator.ExecuteTask;
 
         // Assert fileX processed
-        archiveServiceMock.Verify(a => a.RecordLocalFile(newRun, "fileX", It.IsAny<CancellationToken>()), Times.Once);
+        fileMock.Verify(
+            m => m.ProcessFile(It.Is<ArchiveFileRequest>(r => r.RunId == runId && r.FilePath == "fileX"),
+                It.IsAny<CancellationToken>()), Times.Once);
     }
 }

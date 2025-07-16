@@ -117,10 +117,10 @@ public class RestoreRunActorTests
         _archiveService.Verify(a =>
             a.LookupArchiveRun(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
 
-        // 3) And we never initiated a new restore
+        // 3) Since it is still Processing we need to initiate a restore run
         _restoreService.Verify(r =>
             r.InitiateRestoreRun(It.IsAny<RestoreRequest>(), It.IsAny<RestoreRun>(),
-                It.IsAny<CancellationToken>()), Times.Never);
+                It.IsAny<CancellationToken>()), Times.Once);
     }
 
 

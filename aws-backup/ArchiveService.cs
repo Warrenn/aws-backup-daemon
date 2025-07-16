@@ -38,8 +38,6 @@ public interface IArchiveService
 
     Task RecordFailedChunk(string archiveRunId, string filePath, byte[] chunkHash, Exception exception,
         CancellationToken cancellationToken);
-
-    Task RecordLocalFile(ArchiveRun run, string filePath, CancellationToken cancellationToken);
     bool IsTheFileSkipped(string archiveRunId, string parentFile);
     Task TryRemove(string archiveRunId, CancellationToken cancellationToken);
     Task ResetFileStatus(string runId, string inputPath, CancellationToken cancellationToken);
@@ -220,19 +218,6 @@ public sealed class ArchiveService(
             };
             return Task.FromResult(true);
         }, cancellationToken);
-    }
-
-    public async Task RecordLocalFile(
-        ArchiveRun run, string localFilePath,
-        CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(localFilePath)) return;
-
-        await UpdateFileMetaData(run.RunId, localFilePath, (_, _, _) =>
-        {
-            logger.LogDebug("RecordLocalFile: {Run}/{File}", run, localFilePath);
-            return Task.FromResult(false);
-        }, ct);
     }
 
     public bool IsTheFileSkipped(string runId, string localFilePath)

@@ -1,6 +1,6 @@
+using aws_backup_common;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using aws_backup_common;
 
 namespace aws_backup;
 
@@ -57,9 +57,6 @@ public sealed class ArchiveRunActor(
                     }
 
                 foreach (var filePath in fileLister.GetAllFiles(runRequest.PathsToArchive, ignorePatterns))
-                    await archiveService.RecordLocalFile(archiveRun, filePath, cancellationToken);
-
-                foreach (var filePath in archiveRun.Files.Keys)
                 {
                     var archiveFileRequest = new ArchiveFileRequest(archiveRun.RunId, filePath);
                     await archiveFileMediator.ProcessFile(archiveFileRequest, cancellationToken);

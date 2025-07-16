@@ -11,20 +11,23 @@ namespace test;
 
 public class SqsPollingActorTests
 {
-    private readonly byte[] _aesKey = new byte[32]; // dummy key for AES
-    private readonly Mock<IContextResolver> _ctx = new();
-    private readonly Mock<IAwsClientFactory> _factory = new();
-    private readonly TestLoggerClass<SqsPollingActor> _logger = new();
-    private readonly Mock<IRestoreRequestsMediator> _mediator = new();
-    private readonly Mock<IAmazonSQS> _sqs = new();
     private readonly Mock<IAesContextResolver> _aes = new();
+    private readonly byte[] _aesKey = new byte[32]; // dummy key for AES
+
     private readonly AwsConfiguration _config = new(
         16,
         "sqs-enc", "file-enc",
         "bucket-name", "region",
         "https://queue", "queue-out",
         "arn:aws:sns:us-east-1:123456789012:archive-complete", "arn:aws:sns:us-east-1:123456789012:archive-error",
-        "arn:aws:sns:us-east-1:123456789012:restore-complete", "arn:aws:sns:us-east-1:123456789012:restore-error", "arn:aws:sns:us-east-1:123456789012:exception");
+        "arn:aws:sns:us-east-1:123456789012:restore-complete", "arn:aws:sns:us-east-1:123456789012:restore-error",
+        "arn:aws:sns:us-east-1:123456789012:exception");
+
+    private readonly Mock<IContextResolver> _ctx = new();
+    private readonly Mock<IAwsClientFactory> _factory = new();
+    private readonly TestLoggerClass<SqsPollingActor> _logger = new();
+    private readonly Mock<IRestoreRequestsMediator> _mediator = new();
+    private readonly Mock<IAmazonSQS> _sqs = new();
 
 
     private SqsPollingActor CreateOrch()
@@ -60,19 +63,23 @@ public class SqsPollingActorTests
         var cts = new CancellationTokenSource();
 
         // Prepare JSON body
-        var body = JsonSerializer.Serialize(new
+        var body = JsonSerializer.Serialize(new RestoreRequest("runX", "/p", DateTimeOffset.UtcNow));
+        var response = new ReceiveMessageResponse
         {
-            command = "restore-backup",
-            body = new RestoreRequest("runX", "/p", DateTimeOffset.UtcNow)
-        });
-
+            Messages = [new Message { MessageId = "m1", Body = body, ReceiptHandle = "rh1" }]
+        };
+        response.Messages[0].MessageAttributes = new Dictionary<string, MessageAttributeValue>
+        {
+            ["command"] = new()
+            {
+                StringValue = "restore-backup",
+                DataType = "String"
+            }
+        };
         // Setup SQS Receive: first a message, then cancel
         var seq = _sqs.SetupSequence(s => s.ReceiveMessageAsync(
             It.IsAny<ReceiveMessageRequest>(), It.IsAny<CancellationToken>()));
-        seq.ReturnsAsync(new ReceiveMessageResponse
-        {
-            Messages = [new Message { MessageId = "m1", Body = body, ReceiptHandle = "rh1" }]
-        });
+        seq.ReturnsAsync(response);
         seq.ThrowsAsync(new OperationCanceledException());
 
         // Spy DeleteMessageAsync
@@ -166,20 +173,34 @@ public class SqsPollingActorTests
         var orch = CreateOrch();
         _ctx.Setup(c => c.EncryptSqs()).Returns(true);
         // Fake AES decrypt: just reverse the string
-        var raw = JsonSerializer.Serialize(new
-        {
-            command = "restore-backup",
-            body = new RestoreRequest("r5", "/p5", DateTimeOffset.UtcNow)
-        });
+        var raw = JsonSerializer.Serialize(
+            new RestoreRequest("r5", "/p5", DateTimeOffset.UtcNow)
+        );
         var enc = AesHelper.EncryptString(raw, _aesKey);
-
+        var response = new ReceiveMessageResponse
+        {
+            Messages =
+            [
+                new Message
+                {
+                    MessageId = "m5",
+                    Body = enc,
+                    ReceiptHandle = "rh5"
+                }
+            ]
+        };
+        response.Messages[0].MessageAttributes = new Dictionary<string, MessageAttributeValue>
+        {
+            ["command"] = new()
+            {
+                StringValue = "restore-backup",
+                DataType = "String"
+            }
+        };
         var cts = new CancellationTokenSource();
         var seq = _sqs.SetupSequence(s => s.ReceiveMessageAsync(
             It.IsAny<ReceiveMessageRequest>(), It.IsAny<CancellationToken>()));
-        seq.ReturnsAsync(new ReceiveMessageResponse
-        {
-            Messages = [new Message { MessageId = "m5", Body = enc, ReceiptHandle = "rh5" }]
-        });
+        seq.ReturnsAsync(response);
         seq.ThrowsAsync(new OperationCanceledException());
 
         _sqs.Setup(s => s.DeleteMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))

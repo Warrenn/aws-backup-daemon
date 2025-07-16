@@ -237,7 +237,7 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
 
     public int NoOfConcurrentDownloadsPerFile()
     {
-        return _configOptions.NoOfConcurrentDownloadsPerFile ?? 4;
+        return _configOptions.NoOfConcurrentDownloadsPerFile ?? 8;
     }
 
     public int NoOfS3FilesToDownloadConcurrently()
@@ -252,7 +252,7 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
 
     public int NoOfConcurrentFileUploads()
     {
-        return _configOptions.NoOfConcurrentFileUploads ?? 4;
+        return _configOptions.NoOfConcurrentFileUploads ?? 8;
     }
 
     public int AwsTimeoutSeconds()
@@ -472,7 +472,7 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
 
     public int AwsCredentialsTimeoutSeconds()
     {
-        return Math.Max(_configOptions.AwsCredentialsTimeoutSeconds ?? 900, 900); // 15 minutes minimum default
+        return _configOptions.AwsCredentialsTimeoutSeconds ?? 600; // 10 minutes default
     }
 
     public long CacheFolderSizeLimitBytes()

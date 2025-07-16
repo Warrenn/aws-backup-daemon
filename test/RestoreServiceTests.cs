@@ -123,7 +123,8 @@ public class RestoreServiceTests
         // prepare chunk manifest + initial restoreManifest
         var hash = new byte[] { 9 };
         var key = new ByteArrayKey(hash);
-        _chunkMan[key] = new CloudChunkDetails("k", "b", hash.Length, hash);
+        var s3Key = Base64Url.Encode(hash);
+        _chunkMan[key] = new CloudChunkDetails(s3Key, "b", hash.Length, hash);
         _restoreMan[key] = S3ChunkRestoreStatus.PendingDeepArchiveRestore;
 
         // seed run
@@ -142,7 +143,7 @@ public class RestoreServiceTests
         await sut.LookupRestoreRun("R2", CancellationToken.None);
 
         // now simulate object moving to STANDARD
-        await sut.ReportS3Storage("b", "k", S3StorageClass.Standard, CancellationToken.None);
+        await sut.ReportS3Storage("b", s3Key, S3StorageClass.Standard, CancellationToken.None);
 
         // manifest flipped
         Assert.Equal(S3ChunkRestoreStatus.ReadyToRestore, _restoreMan[key]);
@@ -165,35 +166,39 @@ public class RestoreServiceTests
         // prepare chunk manifest + initial restoreManifest
         var hash = new byte[] { 8 };
         var key = new ByteArrayKey(hash);
-        _chunkMan[key] = new CloudChunkDetails("kx", "bx", hash.Length, hash);
+        var s3Key = Base64Url.Encode(hash);
+        _chunkMan[key] = new CloudChunkDetails(s3Key, "bx", hash.Length, hash);
         _restoreMan[key] = S3ChunkRestoreStatus.ReadyToRestore;
 
         // seed run
         var run = new RestoreRun
         {
             RestoreId = "R3", RestorePaths = "/p", Status = RestoreRunStatus.Processing,
-            RequestedAt = DateTimeOffset.Now, ArchiveRunId = "ar"
+            RequestedAt = DateTimeOffset.Now, ArchiveRunId = "ar",
+            RequestedFiles =
+            {
+                [s3Key] = new RestoreFileMetaData([key], s3Key, 1)
+            }
         };
-        run.RequestedFiles["f3"] = new RestoreFileMetaData(new[] { key }, "f3", 1);
         _s3Service.Setup(s => s.RestoreExists("R3", It.IsAny<CancellationToken>())).ReturnsAsync(true);
         _s3Service.Setup(s => s.GetRestoreRun("R3", It.IsAny<CancellationToken>()))
             .ReturnsAsync(run);
         await sut.LookupRestoreRun("R3", CancellationToken.None);
 
         // stub ScheduleDeepArchiveRecovery
-        _s3Service.Setup(s => s.ScheduleDeepArchiveRecovery("kx", It.IsAny<CancellationToken>()))
+        _s3Service.Setup(s => s.ScheduleDeepArchiveRecovery(s3Key, It.IsAny<CancellationToken>()))
             .ReturnsAsync(S3ChunkRestoreStatus.PendingDeepArchiveRestore);
 
-        await sut.ReportS3Storage("bx", "kx", S3StorageClass.DeepArchive, CancellationToken.None);
+        await sut.ReportS3Storage("bx", s3Key, S3StorageClass.DeepArchive, CancellationToken.None);
 
         // manifest flipped
         Assert.Equal(S3ChunkRestoreStatus.PendingDeepArchiveRestore, _restoreMan[key]);
         // recovery scheduled
-        _s3Service.Verify(s => s.ScheduleDeepArchiveRecovery("kx", It.IsAny<CancellationToken>()), Times.Once);
+        _s3Service.Verify(s => s.ScheduleDeepArchiveRecovery(s3Key, It.IsAny<CancellationToken>()), Times.Once);
         // run persisted
         _runMed.Verify(r => r.SaveRestoreRun(run, It.IsAny<CancellationToken>()), Times.Once);
         // fileMeta status updated
-        Assert.Equal(FileRestoreStatus.PendingDeepArchiveRestore, run.RequestedFiles["f3"].Status);
+        Assert.Equal(FileRestoreStatus.PendingDeepArchiveRestore, run.RequestedFiles[s3Key].Status);
     }
 
     [Fact]
