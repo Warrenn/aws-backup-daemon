@@ -48,7 +48,7 @@ public sealed class SqsPollingActor(
                     WaitTimeSeconds = waitTimeSeconds, // long poll
                     MaxNumberOfMessages = maxNumberOfMessages, // batch up to 10
                     VisibilityTimeout = visibilityTimeout,
-                    MessageAttributeNames = ["command"]
+                    MessageAttributeNames = ["command", "encrypted"]
                 }, cancellationToken);
             }
             catch (AmazonSQSException ex) when (ex.Message.Contains("Signature expired"))
@@ -80,10 +80,24 @@ public sealed class SqsPollingActor(
                         !msg.MessageAttributes.TryGetValue("command", out var commandAttribute) ||
                         commandAttribute is null) continue;
 
+                    var isEncrypted =
+                        msg.MessageAttributes.TryGetValue("encrypted", out var encryptedAttribute) &&
+                        encryptedAttribute is not null &&
+                        bool.TryParse(encryptedAttribute.StringValue, out var encrypted) &&
+                        encrypted;
+
                     var messageString = msg.Body;
                     var command = commandAttribute.StringValue;
-                    if (string.IsNullOrWhiteSpace(messageString) || string.IsNullOrWhiteSpace(command)) continue;
-                    if (contextResolver.EncryptSqs())
+                    if (string.IsNullOrWhiteSpace(messageString) ||
+                        string.IsNullOrWhiteSpace(command)) continue;
+
+                    if (contextResolver.EncryptSqs() && !isEncrypted)
+                    {
+                        logger.LogWarning("Message encryption expected but message {Id} was not encrypted", msg.MessageId);
+                        continue;
+                    }
+                    
+                    if (isEncrypted)
                         messageString = AesHelper.DecryptString(msg.Body, sqsDecryptionKey);
 
                     switch (command)

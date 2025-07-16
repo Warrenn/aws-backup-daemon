@@ -18,8 +18,6 @@ public interface IContextResolver
     string LocalRestoreFolder(string requestRestoreId);
     string ArchiveRunId(DateTimeOffset utcNow);
     DateTimeOffset NextRetryTime(int attemptCount);
-
-    // s3
     S3StorageClass ColdStorage();
     S3StorageClass HotStorage();
     S3StorageClass LowCostStorage();

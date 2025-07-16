@@ -195,6 +195,11 @@ public class SqsPollingActorTests
             {
                 StringValue = "restore-backup",
                 DataType = "String"
+            },
+            ["encrypted"] = new()
+            {
+                StringValue = bool.TrueString,
+                DataType = "String"
             }
         };
         var cts = new CancellationTokenSource();

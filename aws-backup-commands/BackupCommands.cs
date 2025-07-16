@@ -58,10 +58,13 @@ public sealed class BackupCommands(
         using var streamReader = new StreamReader(ms, Encoding.UTF8);
         var messageBody = await streamReader.ReadToEndAsync(cancellationToken);
         
-        //todo: this must change to read the tags on queue and encrypt only if the tag is set
-        if(contextResolver.EncryptSqs())
+        var encryptedString = bool.FalseString;
+        if (contextResolver.EncryptSqs())
+        {
             messageBody = AesHelper.EncryptString(messageBody, sqsDecryptionKey);
-        
+            encryptedString = bool.TrueString;
+        }
+
         AWSConfigs.InitializeCollections = true;
         var restoreRequest = new SendMessageRequest
         {
@@ -73,6 +76,11 @@ public sealed class BackupCommands(
                 {
                     DataType = "String",
                     StringValue = "restore-backup"
+                },
+                ["encrypted"] = new MessageAttributeValue
+                {
+                    StringValue = encryptedString,
+                    DataType = "String"
                 }
             }
         };
