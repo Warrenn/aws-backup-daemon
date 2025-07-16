@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-COPY ../. .
+COPY ../ .
 
 RUN dotnet publish /app/aws-backup.sln -c Release -r linux-x64 \
     -p:PublishAot=true \
