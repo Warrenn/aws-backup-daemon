@@ -12,7 +12,7 @@ docker build -f build/Dockerfile --no-cache --platform=linux/amd64 -t aws-backup
 mkdir -p output
 
 # Copy binary from container to host
-docker create --name temp aws-backup-builder
+docker create --name temp aws-backup-aot
 docker cp temp:/app ./output
 docker rm temp
 docker system prune -af
