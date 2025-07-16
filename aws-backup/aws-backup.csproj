@@ -6,18 +6,15 @@
     <RootNamespace>aws_backup</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <TrimMode>full</TrimMode>
+    <StripSymbols>false</StripSymbols>
     <PublishAot>true</PublishAot>
     <Nullable>enable</Nullable>
     <PublishTrimmed>true</PublishTrimmed>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
     <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="..\.dockerignore">
-      <Link>.dockerignore</Link>
-    </Content>
     <Content Include="appsettings.json">
       <Link>appsettings.json</Link>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>

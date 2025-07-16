@@ -6,6 +6,7 @@
     <RootNamespace>aws_backup_commands</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <StripSymbols>false</StripSymbols>
     <TrimMode>full</TrimMode>
     <PublishAot>true</PublishAot>
     <InvariantGlobalization>true</InvariantGlobalization>
