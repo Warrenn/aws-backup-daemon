@@ -11,8 +11,7 @@ WORKDIR /app
 
 COPY . .
 
-RUN ls && \
-    dotnet publish /app/aws-backup.sln -c Release -r linux-x64 \
+RUN dotnet publish /app/aws-backup.sln -c Release -r linux-x64 \
     -p:PublishAot=true \
     -p:SelfContained=true \
     -p:IlcUseLld=true \
