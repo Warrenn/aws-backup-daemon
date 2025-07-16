@@ -116,10 +116,10 @@ public class ArchiveServiceTests
         await sut.DoesFileRequireProcessing(runId, "a", CancellationToken.None);
         await sut.DoesFileRequireProcessing(runId, "b", CancellationToken.None);
 
-        var d1 = new DataChunkDetails("a", 0, 10, [1, 2, 3], 10, []);
-        var d2 = new DataChunkDetails("a", 1, 10, [4, 5, 6], 10, []);
-        var d3 = new DataChunkDetails("b", 0, 10, [7, 8, 9], 10, []);
-        var d4 = new DataChunkDetails("b", 1, 10, [10, 11, 12], 10, []);
+        var d1 = new DataChunkDetails("a", 0, 10, [1, 2, 3], 10);
+        var d2 = new DataChunkDetails("a", 1, 10, [4, 5, 6], 10);
+        var d3 = new DataChunkDetails("b", 0, 10, [7, 8, 9], 10);
+        var d4 = new DataChunkDetails("b", 1, 10, [10, 11, 12], 10);
 
         // Process first file
         await sut.ReportProcessingResult(runId, new FileProcessResult("a", 10, [1, 2, 3], 1),

@@ -284,7 +284,6 @@ public sealed class ArchiveService(
             {
                 ChunkIndex = chunkDetails.ChunkIndex,
                 ChunkSize = chunkDetails.ChunkSize,
-                CompressedHashKey = chunkDetails.CompressedHashKey,
                 Size = chunkDetails.Size,
                 Status = ChunkStatus.Added
             };

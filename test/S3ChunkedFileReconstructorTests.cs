@@ -40,7 +40,7 @@ public class HotStorageServiceIntegrationTests
                     Chunks =
                     {
                         [new ByteArrayKey([9, 10, 11])] =
-                            new DataChunkDetails("a.chunk0", 0, 3000, [9, 10, 11], 2000, [])
+                            new DataChunkDetails("a.chunk0", 0, 3000, [9, 10, 11], 2000)
                     },
                     LastModified = TimeProvider.System.GetUtcNow(),
                     Created = TimeProvider.System.GetUtcNow().AddDays(-1),
@@ -64,7 +64,7 @@ public class HotStorageServiceIntegrationTests
                     HashKey = [5, 6, 7, 8],
                     Chunks =
                     {
-                        [new ByteArrayKey([8, 9, 10])] = new DataChunkDetails("b.chunk0", 0, 3000, [8, 9, 10], 3000, [])
+                        [new ByteArrayKey([8, 9, 10])] = new DataChunkDetails("b.chunk0", 0, 3000, [8, 9, 10], 3000)
                     }
                 }
             }

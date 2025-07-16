@@ -191,8 +191,7 @@ public class RestoreRunActorTests
                 0,
                 1234,
                 hashKey,
-                1234,
-                []
+                1234
             );
 
             var meta = new FileMetaData(path)
