@@ -41,6 +41,7 @@ public sealed record RestoreFileMetaData(
     public string? Group { get; set; }
     public byte[]? Checksum { get; set; }
     public FileRestoreStatus Status { get; set; } = FileRestoreStatus.PendingDeepArchiveRestore;
+    public string? FailedMessage { get; set; }
 }
 
 public sealed record DownloadFileFromS3Request(
@@ -66,7 +67,6 @@ public sealed class RestoreRun
     public required DateTimeOffset RequestedAt { get; init; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? CompletedAt { get; set; }
     [JsonInclude] public ConcurrentDictionary<string, RestoreFileMetaData> RequestedFiles { get; init; } = new();
-    [JsonInclude] public ConcurrentDictionary<string, string> FailedFiles { get; init; } = new();
 }
 
 [JsonConverter(typeof(JsonDictionaryConverter<string, RestoreRequest, CurrentRestoreRequests>))]

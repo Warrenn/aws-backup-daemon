@@ -59,8 +59,8 @@ public class HotStorageServiceRestoreRunTests
         }
 
         // Populate FailedFiles
-        _original.FailedFiles["/tmp/data/file3.txt"] = "Network error";
-        _original.FailedFiles["/tmp/data/file4.txt"] = "Checksum mismatch";
+        _original.RequestedFiles["/tmp/data/file1.txt"].FailedMessage = "Network error";
+        _original.RequestedFiles["/tmp/data/file2.txt"].FailedMessage = "Checksum mismatch";
 
         // Mocks
         var ctxMock = new Mock<IContextResolver>();
@@ -105,6 +105,7 @@ public class HotStorageServiceRestoreRunTests
             Assert.Equal(orig.FilePath, dl.FilePath);
             Assert.Equal(orig.Size, dl.Size);
             Assert.Equal(orig.Status, dl.Status);
+            Assert.Equal(orig.FailedMessage, dl.FailedMessage);
 
             Assert.Equal(orig.Chunks.Length, dl.Chunks.Length);
             for (var i = 0; i < orig.Chunks.Length; i++)
@@ -123,8 +124,5 @@ public class HotStorageServiceRestoreRunTests
             Assert.True(orig.Checksum.AsSpan().SequenceEqual(dl.Checksum));
         }
 
-        Assert.Equal(_original.FailedFiles.Count, downloaded.FailedFiles.Count);
-        foreach (var kv in _original.FailedFiles)
-            Assert.Equal(kv.Value, downloaded.FailedFiles[kv.Key]);
     }
 }

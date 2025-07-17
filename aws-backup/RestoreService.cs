@@ -156,7 +156,7 @@ public sealed class RestoreService(
             if (!run.RequestedFiles.TryGetValue(req.FilePath, out var fileMeta)) return;
 
             fileMeta.Status = FileRestoreStatus.Failed;
-            run.FailedFiles[req.FilePath] = reason.Message;
+            fileMeta.FailedMessage = reason.Message;
             logger.LogWarning(reason, "File {File} in run {Run} failed", req.FilePath, req.RestoreId);
 
             await runMed.SaveRestoreRun(run, ct);

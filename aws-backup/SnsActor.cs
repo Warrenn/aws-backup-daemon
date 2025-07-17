@@ -111,8 +111,7 @@ public sealed class SnsActor(
         {
             builder.Append(
                 $"File: {filePath} Status: {metaData.Status} LastModified: {metaData.LastModified} ");
-            if (restoreRun.FailedFiles.TryGetValue(filePath, out var value))
-                builder.Append($"Failed Reason: {value} ");
+            builder.Append($"Failed Reason: {metaData.FailedMessage} ");
             builder.AppendLine();
         }
 
