@@ -50,7 +50,19 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Configuration.AddConfiguration(configuration);
 builder
     .Services
-    .AddSerilog(config => config.ReadFrom.Configuration(configuration))
+    .AddSerilog(config =>
+        config
+            .Enrich.FromLogContext()
+            .WriteTo.File(
+                // use {Date} to get YYYY-MM-DD in the filename:
+                "logs/log-.log",
+                outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}",
+                rollingInterval: RollingInterval.Day,
+                retainedFileCountLimit: 1, // keep the last 31 days of logs
+                rollOnFileSizeLimit: true,
+                fileSizeLimitBytes: 10 * 1024 * 1024 // 10 MB per file
+            )
+            .ReadFrom.Configuration(configuration).MinimumLevel.Debug())
     .AddWindowsService()
     .AddSystemd()
     .AddSingleton<Mediator>()
