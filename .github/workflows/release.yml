@@ -56,9 +56,9 @@ jobs:
         shell: pwsh
         run: |
           mkdir -Force out\cfn
-          Copy-Item ./aws-backup/bin/Release/win-x64/publish/aws-backup.exe out/
-          Copy-Item ./cert-gen/bin/Release/win-x64/publish/cert-gen.exe out/
-          Copy-Item ./aws-backup-commands/bin/Release/win-x64/publish/aws-backup-commands.exe out/
+          Copy-Item ./aws-backup/publish/aws-backup.exe out/
+          Copy-Item ./cert-gen/publish/cert-gen.exe out/
+          Copy-Item ./aws-backup-commands/publish/aws-backup-commands.exe out/
           Copy-Item ./aws-backup/cfn/* out/cfn/ -Recurse -Force
 
       - name: Create release files for windows aot zip
