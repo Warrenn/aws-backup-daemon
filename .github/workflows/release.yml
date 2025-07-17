@@ -25,19 +25,19 @@ jobs:
           cd ./linux-aot-output/publish
           tar -czf ../../linux-aot.tar.gz .
 
-      - name: Build aot windows binaries from docker image
-        run: ./build/windows-aot/build.sh
+      - name: Build aot linux binaries from docker image
+        run: ./build/linux/build.sh
         
-      - name: Create release files for windows aot tar.gz
+      - name: Create release files for linux aot tar.gz
         run: |
-          cd ./windows-aot-output/publish
-          tar -czf ../../windows-aot.tar.gz .
+          cd ./linux/publish
+          tar -czf ../../linux.tar.gz .
 
       - name: Upload binaries to GitHub release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             ./linux-aot.tar.gz
-            ./windows-aot.tar.gz
+            ./linux.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
