@@ -55,14 +55,10 @@ jobs:
       - name: Copy outputs to structured layout
         shell: pwsh
         run: |
+          Get-ChildItem -Directory -Recurse
           mkdir -Force out\cfn
-          Copy-Item ./aws-backup/publish/aws-backup.exe out/
-          Copy-Item ./cert-gen/publish/cert-gen.exe out/
-          Copy-Item ./aws-backup-commands/publish/aws-backup-commands.exe out/
+          Copy-Item ./publish/aws-backup.exe out/ -Recurse -Force
           Copy-Item ./aws-backup/cfn/* out/cfn/ -Recurse -Force
-
-      - name: Create release files for windows aot zip
-        run: Compress-Archive -Path ./aws-backup/cfn -DestinationPath ./windows-aot.zip
 
       - name: Compress to zip
         shell: pwsh

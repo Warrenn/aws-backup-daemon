@@ -14,8 +14,6 @@ mkdir -p linux-aot-output/publish
 # Copy binary from container to host
 docker create --name temp aws-backup-linux-aot
 cp -rf ./aws-backup/cfn ./linux-aot-output/publish
-docker cp temp:/app/aws-backup/publish ./linux-aot-output
-docker cp temp:/app/aws-backup-commands/publish ./linux-aot-output
-docker cp temp:/app/cert-gen/bin/publish ./linux-aot-output
+docker cp temp:/app/publish ./linux-aot-output
 docker rm temp
 docker system prune -af
