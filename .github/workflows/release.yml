@@ -55,9 +55,8 @@ jobs:
       - name: Copy outputs to structured layout
         shell: pwsh
         run: |
-          Get-ChildItem -Directory -Recurse
           mkdir -Force out\cfn
-          Copy-Item ./publish/aws-backup.exe out/ -Recurse -Force
+          Copy-Item ./publish/* out/ -Recurse -Force
           Copy-Item ./aws-backup/cfn/* out/cfn/ -Recurse -Force
 
       - name: Compress to zip
@@ -86,16 +85,16 @@ jobs:
         
       - name: Create release files for linux aot tar.gz
         run: |
-          cd ./linux-aot-output/publish
-          tar -czf ../../linux-aot.tar.gz .
+          cd ./linux-aot-output
+          tar -czf ../linux-aot.tar.gz .
 
       - name: Build linux binaries from docker image
         run: ./build/linux/build.sh
         
       - name: Create release files for linux tar.gz
         run: |
-          cd ./linux/publish
-          tar -czf ../../linux.tar.gz .
+          cd ./linux
+          tar -czf ../linux.tar.gz .
 
       - name: Upload binaries to GitHub release
         uses: softprops/action-gh-release@v2

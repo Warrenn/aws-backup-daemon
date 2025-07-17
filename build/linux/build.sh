@@ -9,11 +9,11 @@ cd ../../ || exit 1
 docker build -f build/linux/Dockerfile --no-cache --platform=linux/amd64 -t aws-backup-linux .
 
 # Create output folder
-mkdir -p linux-output/publish
+mkdir -p linux-output
 
 # Copy binary from container to host
 docker create --name temp aws-backup-linux
-cp -rf ./aws-backup/cfn ./linux-output/publish
+cp -rf ./aws-backup/cfn ./linux-output
 docker cp temp:/app/publish ./linux-output
 docker rm temp
 docker system prune -af
