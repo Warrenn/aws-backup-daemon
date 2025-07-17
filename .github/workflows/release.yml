@@ -9,8 +9,56 @@ permissions:
   contents: write
 
 jobs:
-  build-and-release:
-    name: Build using Docker and publish to GitHub Releases
+  build-and-release-windows:
+    name: Build Windows distro and publish to GitHub Releases
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Publish AOT win-x64 EXE
+        run: |
+          dotnet publish ./aws-backup/aws-backup.sln -c Release -r win-x64 `
+            -p:PublishAot=true `
+            -p:SelfContained=true `
+            -p:PublishSingleFile=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:DebugType=None `
+            -p:DebugSymbols=false
+
+      - name: Copy outputs to structured layout
+        shell: pwsh
+        run: |
+          mkdir -Force out\cfn
+          Copy-Item ./aws-backup/bin/Release/win-x64/publish/aws-backup.exe out/
+          Copy-Item ./cert-gen/bin/Release/win-x64/publish/cert-gen.exe out/
+          Copy-Item ./aws-backup-command/bin/Release/win-x64/publish/aws-backup-command.exe out/
+          Copy-Item ./aws-backup/cfn/* out/cfn/ -Recurse -Force
+
+      - name: Create release files for windows aot zip
+        run: Compress-Archive -Path ./aws-backup/cfn -DestinationPath ./windows-aot.zip
+
+      - name: Compress to zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path out\* -DestinationPath ./windows-aot.zip
+
+      - name: Upload binaries to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ./windows-aot.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+  build-and-release-linux:
+    name: Build Linux distro using Docker and publish to GitHub Releases
     runs-on: ubuntu-latest
 
     steps:
@@ -25,10 +73,10 @@ jobs:
           cd ./linux-aot-output/publish
           tar -czf ../../linux-aot.tar.gz .
 
-      - name: Build aot linux binaries from docker image
+      - name: Build linux binaries from docker image
         run: ./build/linux/build.sh
         
-      - name: Create release files for linux aot tar.gz
+      - name: Create release files for linux tar.gz
         run: |
           cd ./linux/publish
           tar -czf ../../linux.tar.gz .
