@@ -11,11 +11,32 @@ WORKDIR /app
 
 COPY . .
 
-RUN dotnet publish /app/aws-backup.sln -c Release -r linux-x64 \
+RUN dotnet publish /app/aws-backup/aws-backup.csproj -c Release -r linux-x64 \
     -p:PublishAot=true \
     -p:SelfContained=true \
     -p:IlcUseLld=true \
     -p:IlcUseLLVM=true \
     -p:DebugType=None \
     -p:DebugSymbols=false \
-    -p:EnableCompressionInSingleFile=true
+    -p:EnableCompressionInSingleFile=true \
+    -o publish
+
+RUN dotnet publish /app/cert-gen/cert-gen.csproj -c Release -r linux-x64 \
+    -p:PublishAot=true \
+    -p:SelfContained=true \
+    -p:IlcUseLld=true \
+    -p:IlcUseLLVM=true \
+    -p:DebugType=None \
+    -p:DebugSymbols=false \
+    -p:EnableCompressionInSingleFile=true \
+    -o publish
+
+RUN dotnet publish /app/aws-backup-commands/aws-backup-commands.csproj -c Release -r linux-x64 \
+    -p:PublishAot=true \
+    -p:SelfContained=true \
+    -p:IlcUseLld=true \
+    -p:IlcUseLLVM=true \
+    -p:DebugType=None \
+    -p:DebugSymbols=false \
+    -p:EnableCompressionInSingleFile=true \
+    -o publish

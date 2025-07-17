@@ -21,7 +21,7 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 9.0.x
-          
+
       - name: Publish aws-backup
         run: dotnet publish ./aws-backup/aws-backup.csproj -c Release -r win-x64 `
             -p:PublishAot=true `
@@ -43,7 +43,7 @@ jobs:
             -o publish
 
       - name: Publish aws-backup-command
-        run: dotnet publish ./aws-backup-command/aws-backup-command.csproj -c Release -r win-x64 `
+        run: dotnet publish ./aws-backup-commands/aws-backup-commands.csproj -c Release -r win-x64 `
             -p:PublishAot=true `
             -p:SelfContained=true `
             -p:PublishSingleFile=true `
@@ -58,7 +58,7 @@ jobs:
           mkdir -Force out\cfn
           Copy-Item ./aws-backup/bin/Release/win-x64/publish/aws-backup.exe out/
           Copy-Item ./cert-gen/bin/Release/win-x64/publish/cert-gen.exe out/
-          Copy-Item ./aws-backup-command/bin/Release/win-x64/publish/aws-backup-command.exe out/
+          Copy-Item ./aws-backup-commands/bin/Release/win-x64/publish/aws-backup-commands.exe out/
           Copy-Item ./aws-backup/cfn/* out/cfn/ -Recurse -Force
 
       - name: Create release files for windows aot zip
