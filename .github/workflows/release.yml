@@ -85,7 +85,7 @@ jobs:
         
       - name: Create release files for linux aot tar.gz
         run: |
-          cd ./linux-aot-output
+          cd ./linux-aot-output/publish
           tar -czf ../linux-aot.tar.gz .
 
       - name: Build linux binaries from docker image
@@ -93,7 +93,7 @@ jobs:
         
       - name: Create release files for linux tar.gz
         run: |
-          cd ./linux-output
+          cd ./linux-output/publish
           tar -czf ../linux.tar.gz .
 
       - name: Upload binaries to GitHub release
