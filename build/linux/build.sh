@@ -14,6 +14,6 @@ mkdir -p linux-output
 # Copy binary from container to host
 docker create --name temp aws-backup-linux
 cp -rf ./aws-backup/cfn ./linux-output
-docker cp temp:/app/publish ./linux-output
+docker cp temp:/app/publish ./linux-output/publish
 docker rm temp
 docker system prune -af
