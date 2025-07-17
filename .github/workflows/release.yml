@@ -21,16 +21,36 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 9.0.x
-
-      - name: Publish AOT win-x64 EXE
-        run: |
-          dotnet publish ./aws-backup.sln -c Release -r win-x64 `
+          
+      - name: Publish aws-backup
+        run: dotnet publish ./aws-backup/aws-backup.csproj -c Release -r win-x64 `
             -p:PublishAot=true `
             -p:SelfContained=true `
             -p:PublishSingleFile=true `
             -p:EnableCompressionInSingleFile=true `
             -p:DebugType=None `
-            -p:DebugSymbols=false
+            -p:DebugSymbols=false `
+            -o publish
+
+      - name: Publish cert-gen
+        run: dotnet publish ./cert-gen/cert-gen.csproj -c Release -r win-x64 `
+            -p:PublishAot=true `
+            -p:SelfContained=true `
+            -p:PublishSingleFile=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:DebugType=None `
+            -p:DebugSymbols=false `
+            -o publish
+
+      - name: Publish aws-backup-command
+        run: dotnet publish ./aws-backup-command/aws-backup-command.csproj -c Release -r win-x64 `
+            -p:PublishAot=true `
+            -p:SelfContained=true `
+            -p:PublishSingleFile=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:DebugType=None `
+            -p:DebugSymbols=false `
+            -o publish
 
       - name: Copy outputs to structured layout
         shell: pwsh
