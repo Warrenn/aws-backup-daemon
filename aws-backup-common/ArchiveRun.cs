@@ -6,6 +6,7 @@ namespace aws_backup_common;
 public enum ArchiveRunStatus
 {
     Processing,
+    AllFilesListed,
     Completed
 }
 

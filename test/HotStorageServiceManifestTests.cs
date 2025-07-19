@@ -30,6 +30,8 @@ public class HotStorageServiceManifestTests
                 $"chunk-{i}.gz",
                 _bucket,
                 3000,
+                0,
+                0,
                 hash
             );
             _manifest[baKey] = details;
@@ -73,7 +75,7 @@ public class HotStorageServiceManifestTests
             var origDetails = kv.Value;
             Assert.Equal(origDetails.S3Key, dlDetails.S3Key);
             Assert.Equal(origDetails.BucketName, dlDetails.BucketName);
-            Assert.True(origDetails.Hash.AsSpan().SequenceEqual(dlDetails.Hash));
+            Assert.True(origDetails.HashKey.AsSpan().SequenceEqual(dlDetails.HashKey));
         }
     }
 

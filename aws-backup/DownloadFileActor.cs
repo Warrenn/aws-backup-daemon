@@ -4,6 +4,14 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
+public interface IDownloadFileMediator
+{
+    Task DownloadFileFromS3(DownloadFileFromS3Request downloadFileFromS3Request,
+        CancellationToken cancellationToken);
+
+    IAsyncEnumerable<DownloadFileFromS3Request> GetDownloadFileRequests(CancellationToken cancellationToken);
+}
+
 public sealed class DownloadFileActor(
     IRetryMediator retryMediator,
     IDownloadFileMediator mediator,
@@ -46,7 +54,8 @@ public sealed class DownloadFileActor(
                 var keepAclEntries = contextResolver.KeepAclEntries();
 
                 logger.LogInformation("Processing download request {FilePath}", downloadFileRequest.FilePath);
-                var (localFilePath, error) = await reconstructor.ReconstructAsync(downloadFileRequest, cancellationToken);
+                var (localFilePath, error) =
+                    await reconstructor.ReconstructAsync(downloadFileRequest, cancellationToken);
                 if (error is not null || string.IsNullOrWhiteSpace(localFilePath))
                 {
                     logger.LogError(error, "Failed to reconstruct file {FilePath}", downloadFileRequest.FilePath);
@@ -90,7 +99,8 @@ public sealed class DownloadFileActor(
             }
             catch (Exception exception)
             {
-                logger.LogError(exception, "Error processing download request {FilePath}", downloadFileRequest.FilePath);
+                logger.LogError(exception, "Error processing download request {FilePath}",
+                    downloadFileRequest.FilePath);
                 //queue to the failed queue;
                 downloadFileRequest.Exception = exception;
                 await retryMediator.RetryAttempt(downloadFileRequest, cancellationToken);
@@ -99,7 +109,7 @@ public sealed class DownloadFileActor(
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        // Signal no more items
+        // SignalCronScheduleChange no more items
         // (Producer side should call sharedChannel.Writer.Complete())
         await base.StopAsync(cancellationToken);
 

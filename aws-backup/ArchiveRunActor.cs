@@ -13,6 +13,7 @@ public interface IRunRequestMediator
 public sealed class ArchiveRunActor(
     IRunRequestMediator mediator,
     IArchiveFileMediator archiveFileMediator,
+    IUploadChunksMediator uploadChunksMediator,
     IArchiveService archiveService,
     IContextResolver contextResolver,
     IFileLister fileLister,
@@ -23,6 +24,7 @@ public sealed class ArchiveRunActor(
     {
         await LoadArchiveRunsFromCloud(cancellationToken);
         logger.LogInformation("ArchiveRunActor started");
+
         await foreach (var runRequest in mediator.GetRunRequests(cancellationToken))
             try
             {
@@ -61,6 +63,11 @@ public sealed class ArchiveRunActor(
                     var archiveFileRequest = new ArchiveFileRequest(archiveRun.RunId, filePath);
                     await archiveFileMediator.ProcessFile(archiveFileRequest, cancellationToken);
                 }
+
+                logger.LogInformation("All files processed for archive run {RunId}", runRequest.RunId);
+                
+                await archiveService.ReportAllFilesListed(archiveRun, cancellationToken);
+                await uploadChunksMediator.WaitForAllChunksProcessed(cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

@@ -16,7 +16,9 @@ public sealed class Mediator(
     IRestoreManifestMediator,
     IRestoreRunMediator,
     IUploadChunksMediator,
-    ISnsMessageMediator
+    ISnsMessageMediator,
+    IUploadBatchMediator,
+    ICronScheduleMediator
 {
     private readonly Channel<ArchiveFileRequest> _archiveFileRequestChannel =
         Channel.CreateUnbounded<ArchiveFileRequest>(
@@ -33,6 +35,14 @@ public sealed class Mediator(
                 FullMode = BoundedChannelFullMode.DropOldest,
                 SingleReader = true,
                 SingleWriter = false
+            });
+
+    private readonly Channel<string> _cronScheduleChannel =
+        Channel.CreateUnbounded<string>(
+            new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = true
             });
 
     private readonly Channel<CurrentArchiveRunRequests> _currentArchiveRunRequestsChannel =
@@ -120,13 +130,20 @@ public sealed class Mediator(
                 SingleWriter = false
             });
 
-    private readonly Channel<UploadChunkRequest> _uploadChunksChannel =
-        Channel.CreateBounded<UploadChunkRequest>(
-            new BoundedChannelOptions(resolver.NoOfS3FilesToUploadConcurrently())
+    private readonly Channel<UploadBatch> _uploadBatchChannel =
+        Channel.CreateBounded<UploadBatch>(
+            new BoundedChannelOptions(resolver.NoOfConcurrentS3Uploads())
             {
                 SingleReader = false,
                 SingleWriter = false
             });
+
+    private readonly ChannelManager<UploadChunkRequest> _uploadChunksChannelManager =
+        new(new BoundedChannelOptions(resolver.NoOfConcurrentS3Uploads())
+        {
+            SingleReader = false,
+            SingleWriter = false
+        });
 
     IAsyncEnumerable<ArchiveFileRequest> IArchiveFileMediator.GetArchiveFiles(CancellationToken cancellationToken)
     {
@@ -181,6 +198,21 @@ public sealed class Mediator(
         CancellationToken cancellationToken)
     {
         await _dataChunksManifestChannel.Writer.WriteAsync(manifest, cancellationToken);
+    }
+
+    public ValueTask<string> WaitForCronScheduleChangeAsync(CancellationToken cancellationToken = default)
+    {
+        return _cronScheduleChannel.Reader.ReadAsync(cancellationToken);
+    }
+
+    public ValueTask SignalCronScheduleChangeAsync(string value, CancellationToken cancellationToken = default)
+    {
+        return _cronScheduleChannel.Writer.WriteAsync(value, cancellationToken);
+    }
+
+    public bool SignalCronScheduleChange(string value)
+    {
+        return _cronScheduleChannel.Writer.TryWrite(value);
     }
 
     async Task IDownloadFileMediator.DownloadFileFromS3(DownloadFileFromS3Request downloadFileFromS3Request,
@@ -279,13 +311,40 @@ public sealed class Mediator(
         await _snsMessageChannel.Writer.WriteAsync(message, cancellationToken);
     }
 
+    IAsyncEnumerable<UploadBatch> IUploadBatchMediator.GetUploadBatches(CancellationToken cancellationToken)
+    {
+        return _uploadBatchChannel.Reader.ReadAllAsync(cancellationToken);
+    }
+
+    async Task IUploadBatchMediator.ProcessBatch(UploadBatch batch, CancellationToken cancellationToken)
+    {
+        await _uploadBatchChannel.Writer.WriteAsync(batch, cancellationToken);
+    }
+
+    void IUploadChunksMediator.SignalReaderCompleted()
+    {
+        _uploadChunksChannelManager.Current.SignalReaderCompleted();
+    }
+
+    void IUploadChunksMediator.RegisterReader()
+    {
+        _uploadChunksChannelManager.Current.RegisterReader();
+    }
+
     IAsyncEnumerable<UploadChunkRequest> IUploadChunksMediator.GetChunks(CancellationToken cancellationToken)
     {
-        return _uploadChunksChannel.Reader.ReadAllAsync(cancellationToken);
+        return _uploadChunksChannelManager.Current.Channel.Reader.ReadAllAsync(cancellationToken);
     }
 
     async Task IUploadChunksMediator.ProcessChunk(UploadChunkRequest request, CancellationToken cancellationToken)
     {
-        await _uploadChunksChannel.Writer.WriteAsync(request, cancellationToken);
+        await _uploadChunksChannelManager.Current.Channel.Writer.WriteAsync(request, cancellationToken);
+    }
+
+    async Task IUploadChunksMediator.WaitForAllChunksProcessed(CancellationToken cancellationToken)
+    {
+        _uploadChunksChannelManager.Current.Channel.Writer.TryComplete();
+        await _uploadChunksChannelManager.Current.WaitForAllReadersAsync();
+        _uploadChunksChannelManager.Reset();
     }
 }

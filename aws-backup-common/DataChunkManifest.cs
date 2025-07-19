@@ -14,7 +14,9 @@ public sealed record CloudChunkDetails(
     string S3Key, // S3 key for the chunk
     string BucketName, // S3 bucket name
     long ChunkSize,
-    byte[] Hash);
+    long Offset,
+    long Size,
+    byte[] HashKey);
 
 public sealed record DataChunkDetails(
     string LocalFilePath,

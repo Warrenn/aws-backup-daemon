@@ -14,7 +14,7 @@ public interface IDataChunkService
 {
     bool ChunkAlreadyUploaded(DataChunkDetails chunk);
 
-    Task MarkChunkAsUploaded(DataChunkDetails chunk, string key, string bucketName,
+    Task MarkChunkAsUploaded(DataChunkDetails chunk, long byteIndex, string key, string bucketName,
         CancellationToken cancellationToken);
 }
 
@@ -29,7 +29,7 @@ public sealed class DataChunkService(
         return dataChunkManifest.ContainsKey(key);
     }
 
-    public async Task MarkChunkAsUploaded(DataChunkDetails chunk, string s3Key, string bucketName,
+    public async Task MarkChunkAsUploaded(DataChunkDetails chunk, long byteIndex, string s3Key, string bucketName,
         CancellationToken cancellationToken)
     {
         var hashKey = new ByteArrayKey(chunk.HashKey);
@@ -40,6 +40,8 @@ public sealed class DataChunkService(
             s3Key,
             bucketName,
             chunk.ChunkSize,
+            byteIndex,
+            chunk.Size,
             chunk.HashKey);
         dataChunkManifest.TryAdd(hashKey, cloudChunkDetails);
 

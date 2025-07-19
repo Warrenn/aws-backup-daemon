@@ -70,7 +70,7 @@ builder
         new ContextResolver(
             appSettingsPath,
             sp.GetRequiredService<IOptionsMonitor<Configuration>>(),
-            sp.GetRequiredService<ISignalHub<string>>(),
+            sp.GetRequiredService<ICronScheduleMediator>(),
             sp.GetRequiredService<ILogger<ContextResolver>>()))
     .AddSingleton<IUpdateConfiguration, ContextResolver>()
     .AddSingleton(sp =>
@@ -121,7 +121,7 @@ builder
     .AddSingleton<IRestoreManifestMediator>(sp => sp.GetRequiredService<Mediator>())
     .AddSingleton<IRestoreRunMediator>(sp => sp.GetRequiredService<Mediator>())
     .AddSingleton<IUploadChunksMediator>(sp => sp.GetRequiredService<Mediator>())
-    .AddSingleton<ISignalHub<string>, SignalHub<string>>()
+    .AddSingleton<ICronScheduleMediator>(sp => sp.GetRequiredService<Mediator>())
     .AddSingleton<ITemporaryCredentialsServer, RolesAnywhere>()
     .AddSingleton<IAwsClientFactory, AwsClientFactory>()
     .AddSingleton<IAesContextResolver, AesContextResolver>()

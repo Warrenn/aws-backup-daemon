@@ -95,7 +95,6 @@ builder
             .DownloadCompressedObject<S3RestoreChunkManifest>(resolver.RestoreManifestBucketKey(),
                 CancellationToken.None).GetAwaiter().GetResult() ?? new S3RestoreChunkManifest();
     })
-    .AddSingleton<ISignalHub<string>, SignalHub<string>>()
     .AddSingleton<ITemporaryCredentialsServer, RolesAnywhere>()
     .AddSingleton<IAwsClientFactory, AwsClientFactory>()
     .AddSingleton<IAesContextResolver, AesContextResolver>()
@@ -105,8 +104,10 @@ builder
 
 var host = builder.Build();
 host.AddCommand((
-    [Option("client-id", ['c'], Description = "The client ID for the restore operation")] string? clientId,
-    [Option("app-settings", ['a'], Description = "Path to the application settings file")] string? appSettings,
+    [Option("client-id", ['c'], Description = "The client ID for the restore operation")]
+    string? clientId,
+    [Option("app-settings", ['a'], Description = "Path to the application settings file")]
+    string? appSettings,
     [FromService] ICoconaHelpMessageBuilder helpMessageBuilder) =>
 {
     Console.WriteLine(helpMessageBuilder.BuildAndRenderForCurrentContext());

@@ -49,6 +49,7 @@ public interface IArchiveService
         CancellationToken cancellationToken);
 
     Task ReportProcessingResult(string runId, FileProcessResult result, CancellationToken cancellationToken);
+    Task ReportAllFilesListed(ArchiveRun archiveRun, CancellationToken cancellationToken);
 }
 
 public sealed class ArchiveService(
@@ -285,7 +286,8 @@ public sealed class ArchiveService(
                 ChunkIndex = chunkDetails.ChunkIndex,
                 ChunkSize = chunkDetails.ChunkSize,
                 Size = chunkDetails.Size,
-                Status = ChunkStatus.Added
+                Status = ChunkStatus.Added,
+                LocalFilePath = localFilePath
             };
             return Task.FromResult(true);
         }, cancellationToken);
@@ -317,6 +319,12 @@ public sealed class ArchiveService(
 
             return Task.FromResult(true);
         }, cancellationToken);
+    }
+
+    public async Task ReportAllFilesListed(ArchiveRun archiveRun, CancellationToken cancellationToken)
+    {
+        archiveRun.Status = ArchiveRunStatus.AllFilesListed;
+        await SaveAndFinalizeIfComplete(archiveRun, true, cancellationToken);
     }
 
     public void Dispose()

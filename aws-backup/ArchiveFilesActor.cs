@@ -29,7 +29,7 @@ public sealed class ArchiveFilesActor(
     protected override Task ExecuteAsync(CancellationToken cancellationToken)
     {
         logger.LogInformation("ArchiveFilesActor started");
-        var concurrency = contextResolver.NoOfConcurrentFileUploads();
+        var concurrency = contextResolver.NoOfFilesToBackupConcurrently();
 
         _workers = new Task[concurrency];
         for (var i = 0; i < _workers.Length; i++)
@@ -140,7 +140,7 @@ public sealed class ArchiveFilesActor(
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        // Signal no more items
+        // SignalCronScheduleChange no more items
         // (Producer side should call sharedChannel.Writer.Complete())
         await base.StopAsync(cancellationToken);
 

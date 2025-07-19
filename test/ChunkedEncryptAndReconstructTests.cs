@@ -100,6 +100,8 @@ public class ChunkedEncryptAndReconstructTests
             Path.GetFileName(ch.LocalFilePath),
             bucket,
             ch.ChunkSize,
+            0,
+            0,
             ch.HashKey.ToArray()
         )).ToArray();
 
@@ -219,6 +221,8 @@ public class ChunkedEncryptAndReconstructTests
             Path.GetFileName(ch.LocalFilePath),
             bucket,
             ch.ChunkSize,
+            0,
+            0,
             ch.HashKey.ToArray()
         )).ToArray();
 

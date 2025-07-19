@@ -19,10 +19,10 @@ public record CommonConfiguration
     public int? AwsCredentialsTimeoutSeconds { get; set; }
     public int? ReadBufferSize { get; set; }
     public long? S3PartSize { get; set; }
-    public int? NoOfConcurrentFileUploads { get; set; }
+    public int? NoOfFilesToBackupConcurrently { get; set; }
     public int? NoOfConcurrentDownloadsPerFile { get; set; }
     public int? NoOfS3FilesToDownloadConcurrently { get; set; }
-    public int? NoOfS3FilesToUploadConcurrently { get; set; }
+    public int? NoOfConcurrentS3Uploads { get; set; }
     public int? ShutdownTimeoutSeconds { get; set; }
     public int? RetryCheckIntervalMs { get; set; }
     public int? StorageCheckDelaySeconds { get; set; }

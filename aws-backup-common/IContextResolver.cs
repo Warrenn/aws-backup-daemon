@@ -7,7 +7,7 @@ namespace aws_backup_common;
 
 public interface IContextResolver
 {
-    string ChunkS3Key(byte[] hashKey);
+    string BatchS3Key(string batchFileName);
 
     string RestoreId(
         string archiveRunId,
@@ -32,8 +32,8 @@ public interface IContextResolver
     string? LocalIgnoreFile();
     int NoOfConcurrentDownloadsPerFile();
     int NoOfS3FilesToDownloadConcurrently();
-    int NoOfS3FilesToUploadConcurrently();
-    int NoOfConcurrentFileUploads();
+    int NoOfConcurrentS3Uploads();
+    int NoOfFilesToBackupConcurrently();
     int ShutdownTimeoutSeconds();
     int RetryCheckIntervalMs();
     int StorageCheckDelaySeconds();
@@ -240,17 +240,17 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
 
     public int NoOfS3FilesToDownloadConcurrently()
     {
-        return _configOptions.NoOfS3FilesToDownloadConcurrently ?? 10;
+        return _configOptions.NoOfS3FilesToDownloadConcurrently ?? 8;
     }
 
-    public int NoOfS3FilesToUploadConcurrently()
+    public int NoOfConcurrentS3Uploads()
     {
-        return _configOptions.NoOfS3FilesToUploadConcurrently ?? 10;
+        return _configOptions.NoOfConcurrentS3Uploads ?? 8;
     }
 
-    public int NoOfConcurrentFileUploads()
+    public int NoOfFilesToBackupConcurrently()
     {
-        return _configOptions.NoOfConcurrentFileUploads ?? 8;
+        return _configOptions.NoOfFilesToBackupConcurrently ?? 16;
     }
 
     public int AwsTimeoutSeconds()
@@ -352,11 +352,10 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
     }
 
     // ID generation methods
-    public string ChunkS3Key(byte[] hashKey)
+    public string BatchS3Key(string batchFileName)
     {
-        var hash = Base64Url.Encode(hashKey); // Use first 8 chars of hash
         var prefix = S3DataPrefix();
-        return $"{prefix}/{hash}";
+        return $"{prefix}/{batchFileName}";
     }
 
     public string RestoreId(string archiveRunId, string restorePaths, DateTimeOffset requestedAt)

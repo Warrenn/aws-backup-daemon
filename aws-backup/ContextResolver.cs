@@ -19,7 +19,7 @@ public sealed class ContextResolver : ContextResolverBase, IContextResolver, IUp
     public ContextResolver(
         string appSettingsPath,
         IOptionsMonitor<Configuration> configOptions,
-        ISignalHub<string> signalHub,
+        ICronScheduleMediator cronScheduleMediator,
         ILogger<ContextResolver> logger) : base(configOptions.CurrentValue, configOptions.CurrentValue.ClientId)
     {
         _appSettingsPath = appSettingsPath;
@@ -32,7 +32,7 @@ public sealed class ContextResolver : ContextResolverBase, IContextResolver, IUp
             _configOptions = newConfig;
             ResetCache();
             logger.LogInformation("Configuration updated in ContextResolver.");
-            signalHub.Signal(((Configuration)_configOptions).CronSchedule);
+            cronScheduleMediator.SignalCronScheduleChange(((Configuration)_configOptions).CronSchedule);
         });
     }
 

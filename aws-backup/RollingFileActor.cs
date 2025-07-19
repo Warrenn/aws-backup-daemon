@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
+//todo:update to use the rolling size
 public sealed class RollingFileActor(
     IContextResolver contextResolver,
     IS3Service s3Service,

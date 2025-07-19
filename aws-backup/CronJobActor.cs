@@ -5,6 +5,12 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
+public interface ICronScheduleMediator
+{
+    ValueTask<string> WaitForCronScheduleChangeAsync(CancellationToken cancellationToken = default);
+    ValueTask SignalCronScheduleChangeAsync(string cronSchedule, CancellationToken cancellationToken = default);
+    bool SignalCronScheduleChange(string cronSchedule);
+}
 public interface ICronScheduler
 {
     /// <summary>
@@ -43,7 +49,7 @@ public sealed class CronJobActor(
     ILogger<CronJobActor> logger,
     TimeProvider timeProvider,
     ISnsMessageMediator snsMessageMediator,
-    ISignalHub<string> signalHub)
+    ICronScheduleMediator cronScheduleMediator)
     : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
@@ -65,7 +71,7 @@ public sealed class CronJobActor(
                 if (delayTime.TotalMilliseconds <= 0)
                     continue;
 
-                var waitForSignal = signalHub.WaitAsync(cancellationToken).AsTask();
+                var waitForSignal = cronScheduleMediator.WaitForCronScheduleChangeAsync(cancellationToken).AsTask();
                 var delay = Task.Delay(delayTime, cancellationToken);
 
                 // Whichever completes first…
@@ -75,7 +81,7 @@ public sealed class CronJobActor(
                 {
                     cronSchedule = await waitForSignal;
                     scheduler = cronSchedulerFactory.Create(cronSchedule);
-                    logger.LogInformation("Cron schedule changed {cronSchedule}.", cronSchedule); // Signal arrived
+                    logger.LogInformation("Cron schedule changed {cronSchedule}.", cronSchedule); // SignalCronScheduleChange arrived
                     continue;
                 }
 

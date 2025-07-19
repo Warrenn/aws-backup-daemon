@@ -57,9 +57,9 @@ public class CronJobActorTests
             .Setup(f => f.Create(It.IsAny<string>()))
             .Returns((string _) => scheduler);
 
-        var signalHubMock = new Mock<ISignalHub<string>>();
+        var signalHubMock = new Mock<ICronScheduleMediator>();
         signalHubMock
-            .Setup(h => h.WaitAsync(It.IsAny<CancellationToken>()))
+            .Setup(h => h.WaitForCronScheduleChangeAsync(It.IsAny<CancellationToken>()))
             .Returns(() => channel.Reader.ReadAsync());
 
         // job just records invocation times
@@ -104,9 +104,9 @@ public class CronJobActorTests
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var channel = Channel.CreateUnbounded<string>();
-        var signalHubMock = new Mock<ISignalHub<string>>();
+        var signalHubMock = new Mock<ICronScheduleMediator>();
         signalHubMock
-            .Setup(h => h.WaitAsync(It.IsAny<CancellationToken>()))
+            .Setup(h => h.WaitForCronScheduleChangeAsync(It.IsAny<CancellationToken>()))
             .Returns(() => channel.Reader.ReadAsync());
         
         var resolverMock = new Mock<IContextResolver>();
@@ -202,7 +202,7 @@ public class CronJobActorTests
             NullLogger<CronJobActor>.Instance,
             clock,
             Mock.Of<ISnsMessageMediator>(),
-            Mock.Of<ISignalHub<string>>());
+            Mock.Of<ICronScheduleMediator>());
 
         // Act
         await orchestrator.StartAsync(CancellationToken.None);

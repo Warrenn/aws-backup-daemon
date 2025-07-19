@@ -39,13 +39,13 @@ public class UploadChunkDataActorTests
             .Returns(chan.Reader.ReadAllAsync());
 
         // concurrency = 1 so we only spin up one worker
-        _ctx.Setup(c => c.NoOfS3FilesToUploadConcurrently()).Returns(1);
+        _ctx.Setup(c => c.NoOfConcurrentS3Uploads()).Returns(1);
         _ctx.Setup(c => c.UploadAttemptLimit()).Returns(3);
 
         return new UploadChunkDataActor(
             _mediator.Object,
+            Mock.Of<IUploadBatchMediator>(),
             _logger.Object,
-            _awsFactory.Object,
             _ctx.Object,
             _chunkSvc.Object,
             _archiveSvc.Object,
@@ -122,7 +122,7 @@ public class UploadChunkDataActorTests
         _ctx.Setup(c => c.ColdStorage()).Returns("REDUCED_REDUNDANCY");
         _ctx.Setup(c => c.ServerSideEncryption()).Returns(ServerSideEncryptionMethod.AES256);
         _ctx.Setup(c => c.S3PartSize()).Returns(5);
-        _ctx.Setup(c => c.ChunkS3Key(It.IsAny<byte[]>()))
+        _ctx.Setup(c => c.BatchS3Key(It.IsAny<string>()))
             .Returns("the-key");
 
         var orch = CreateOrch(chan);
@@ -132,7 +132,7 @@ public class UploadChunkDataActorTests
         await (Task)worker.Invoke(orch, new object[] { CancellationToken.None });
 
         // Verify MarkChunkAsUploaded called
-        _chunkSvc.Verify(s => s.MarkChunkAsUploaded(chunk, "the-key", "bucket", It.IsAny<CancellationToken>()),
+        _chunkSvc.Verify(s => s.MarkChunkAsUploaded(chunk,0, "the-key", "bucket", It.IsAny<CancellationToken>()),
             Times.Once);
         // file deleted
         Assert.False(File.Exists(temp));
@@ -170,7 +170,7 @@ public class UploadChunkDataActorTests
         _ctx.Setup(c => c.ColdStorage()).Returns("CLASS");
         _ctx.Setup(c => c.ServerSideEncryption()).Returns(ServerSideEncryptionMethod.AES256);
         _ctx.Setup(c => c.S3PartSize()).Returns(5);
-        _ctx.Setup(c => c.ChunkS3Key(It.IsAny<byte[]>()))
+        _ctx.Setup(c => c.BatchS3Key(It.IsAny<string>()))
             .Returns("k3");
 
         bool retryCalled = false, limitExceededCalled = false;

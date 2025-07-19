@@ -90,8 +90,8 @@ public class RestoreServiceTests
         run.RequestedFiles["f2"] = new RestoreFileMetaData(new[] { chunk2 }, "f2", 200);
 
         // populate chunk manifest
-        _chunkMan[chunk1] = new CloudChunkDetails("k1", "b", chunk1.ToArray().Length, chunk1.ToArray());
-        _chunkMan[chunk2] = new CloudChunkDetails("k2", "b", chunk2.ToArray().Length, chunk2.ToArray());
+        _chunkMan[chunk1] = new CloudChunkDetails("k1", "b", chunk1.ToArray().Length, 0, 0, chunk1.ToArray());
+        _chunkMan[chunk2] = new CloudChunkDetails("k2", "b", chunk2.ToArray().Length, 0, 0, chunk2.ToArray());
 
         // make S3Service return initial statuses
         _s3Service.Setup(s => s.ScheduleDeepArchiveRecovery("k1", It.IsAny<CancellationToken>()))
@@ -124,7 +124,7 @@ public class RestoreServiceTests
         var hash = new byte[] { 9 };
         var key = new ByteArrayKey(hash);
         var s3Key = Base64Url.Encode(hash);
-        _chunkMan[key] = new CloudChunkDetails(s3Key, "b", hash.Length, hash);
+        _chunkMan[key] = new CloudChunkDetails(s3Key, "b", hash.Length, 0, 0, hash);
         _restoreMan[key] = S3ChunkRestoreStatus.PendingDeepArchiveRestore;
 
         // seed run
@@ -167,7 +167,7 @@ public class RestoreServiceTests
         var hash = new byte[] { 8 };
         var key = new ByteArrayKey(hash);
         var s3Key = Base64Url.Encode(hash);
-        _chunkMan[key] = new CloudChunkDetails(s3Key, "bx", hash.Length, hash);
+        _chunkMan[key] = new CloudChunkDetails(s3Key, "bx", hash.Length, 0, 0, hash);
         _restoreMan[key] = S3ChunkRestoreStatus.ReadyToRestore;
 
         // seed run

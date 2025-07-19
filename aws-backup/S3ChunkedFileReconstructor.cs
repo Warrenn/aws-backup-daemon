@@ -64,15 +64,18 @@ public sealed class S3ChunkedFileReconstructor(
 
             var tasks = Enumerable.Range(0, request.CloudChunkDetails.Length).Select(async idx =>
             {
-                var (key, bucketName, chunkSize, _) = request.CloudChunkDetails[idx];
+                var (key, bucketName, chunkSize, offset, size, _) = request.CloudChunkDetails[idx];
                 await sem.WaitAsync(cancellationToken);
                 try
                 {
                     var s3 = await awsClientFactory.CreateS3Client(cancellationToken);
+                    var range = new ByteRange(offset, offset + size);
+                    
                     var resp = await s3.GetObjectAsync(new GetObjectRequest
                     {
                         BucketName = bucketName,
-                        Key = key
+                        Key = key,
+                        ByteRange = range
                     }, cancellationToken);
 
                     await using var respStream = resp.ResponseStream;

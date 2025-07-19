@@ -72,6 +72,7 @@ public class ArchiveRunActorTests : IDisposable
         var orchestrator = new ArchiveRunActor(
             mediatorMock.Object,
             archiveFileMediatorMock.Object,
+            Mock.Of<IUploadChunksMediator>(),
             archiveServiceMock.Object,
             ctxMock.Object,
             fileListerMock.Object,
@@ -121,6 +122,7 @@ public class ArchiveRunActorTests : IDisposable
         var orchestrator = new ArchiveRunActor(
             mediatorMock.Object,
             fileMediatorMock.Object,
+            Mock.Of<IUploadChunksMediator>(),
             archiveServiceMock.Object,
             ctxMock.Object,
             fileListerMock.Object,
@@ -175,6 +177,7 @@ public class ArchiveRunActorTests : IDisposable
         var orchestrator = new ArchiveRunActor(
             mediatorMock.Object,
             archiveFileMediatorMock.Object,
+            Mock.Of<IUploadChunksMediator>(),
             archiveServiceMock.Object,
             ctxMock.Object,
             fileListerMock.Object,
@@ -227,6 +230,7 @@ public class ArchiveRunActorTests : IDisposable
         var orchestrator = new ArchiveRunActor(
             mediatorMock.Object,
             fileMock.Object,
+            Mock.Of<IUploadChunksMediator>(),
             archiveServiceMock.Object,
             ctxMock.Object,
             fileListerMock.Object,

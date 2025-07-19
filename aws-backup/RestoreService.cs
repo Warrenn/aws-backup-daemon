@@ -32,14 +32,6 @@ public interface IRestoreRunMediator
     Task SaveRestoreRun(RestoreRun restoreRun, CancellationToken cancellationToken);
 }
 
-public interface IDownloadFileMediator
-{
-    Task DownloadFileFromS3(DownloadFileFromS3Request downloadFileFromS3Request,
-        CancellationToken cancellationToken);
-
-    IAsyncEnumerable<DownloadFileFromS3Request> GetDownloadFileRequests(CancellationToken cancellationToken);
-}
-
 public sealed class RestoreService(
     IDownloadFileMediator mediator,
     IRestoreRunMediator runMed,
