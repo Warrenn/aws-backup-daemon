@@ -1253,7 +1253,7 @@ public class DynamoDbDataStore(
         await dynamoDbClient.PutItemAsync(putReq, cancellationToken);
     }
 
-    public async IAsyncEnumerable<RestoreRequest> GetRestoreRequests(CancellationToken cancellationToken)
+    public async IAsyncEnumerable<RestoreRequest> GetRestoreRequests([EnumeratorCancellation] CancellationToken cancellationToken)
     {
         
         var tableName = awsConfiguration.DynamoDbTableName;
