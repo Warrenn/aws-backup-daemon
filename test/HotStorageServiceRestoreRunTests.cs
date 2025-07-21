@@ -42,9 +42,7 @@ public class HotStorageServiceRestoreRunTests
                 .ToArray();
 
             var meta = new RestoreFileMetaData(
-                chunkHashes,
-                $"/tmp/data/file{i}.txt",
-                i * 1000L
+                $"/tmp/data/file{i}.txt"
             )
             {
                 Created = DateTimeOffset.UtcNow.AddDays(-i),
@@ -52,7 +50,7 @@ public class HotStorageServiceRestoreRunTests
                 AclEntries = new[] { new AclEntry("user", "r--", "Allow") },
                 Owner = $"user{i}",
                 Group = $"group{i}",
-                Checksum = [1, 2, 3, 4, 5],
+                Sha256Checksum = [1, 2, 3, 4, 5],
                 Status = FileRestoreStatus.PendingS3Download
             };
             _original.RequestedFiles[meta.FilePath] = meta;
@@ -60,7 +58,7 @@ public class HotStorageServiceRestoreRunTests
 
         // Populate FailedFiles
         _original.RequestedFiles["/tmp/data/file1.txt"].FailedMessage = "Network error";
-        _original.RequestedFiles["/tmp/data/file2.txt"].FailedMessage = "Checksum mismatch";
+        _original.RequestedFiles["/tmp/data/file2.txt"].FailedMessage = "Sha256Checksum mismatch";
 
         // Mocks
         var ctxMock = new Mock<IContextResolver>();
@@ -106,11 +104,7 @@ public class HotStorageServiceRestoreRunTests
             Assert.Equal(orig.Size, dl.Size);
             Assert.Equal(orig.Status, dl.Status);
             Assert.Equal(orig.FailedMessage, dl.FailedMessage);
-
-            Assert.Equal(orig.Chunks.Length, dl.Chunks.Length);
-            for (var i = 0; i < orig.Chunks.Length; i++)
-                Assert.Equal(orig.Chunks[i], dl.Chunks[i]);
-
+            
             Assert.Equal(orig.Created, dl.Created);
             Assert.Equal(orig.LastModified, dl.LastModified);
 
@@ -121,7 +115,7 @@ public class HotStorageServiceRestoreRunTests
             for (var i = 0; i < orig.AclEntries.Length; i++)
                 Assert.Equal(orig.AclEntries[i], dl.AclEntries[i]);
 
-            Assert.True(orig.Checksum.AsSpan().SequenceEqual(dl.Checksum));
+            Assert.True(orig.Sha256Checksum.AsSpan().SequenceEqual(dl.Sha256Checksum));
         }
 
     }

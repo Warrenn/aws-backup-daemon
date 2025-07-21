@@ -68,14 +68,11 @@ public interface IContextResolver
     int DaysToKeepRestoredCopy();
     string S3DataPrefix();
     string S3LogFolder();
-    int StoragePageDelayMilliseconds();
     string PathsToArchive();
     string ClientId();
     string RollingLogFolder();
     string CronSchedule();
     int AwsCredentialsTimeoutSeconds();
-    long CacheFolderSizeLimitBytes();
-    long CacheSizeCheckTimeoutSeconds();
     CompressionLevel ZipCompressionLevel();
     int AwsTimeoutSeconds();
 }
@@ -448,11 +445,6 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
         return $"{_clientId}/logs";
     }
 
-    public int StoragePageDelayMilliseconds()
-    {
-        return _configOptions.StoragePageDelayMilliseconds ?? 5;
-    }
-
     public abstract string PathsToArchive();
 
     public string ClientId()
@@ -470,16 +462,6 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
     public int AwsCredentialsTimeoutSeconds()
     {
         return _configOptions.AwsCredentialsTimeoutSeconds ?? 600; // 10 minutes default
-    }
-
-    public long CacheFolderSizeLimitBytes()
-    {
-        return _configOptions.CacheFolderSizeLimitBytes ?? 0;
-    }
-
-    public long CacheSizeCheckTimeoutSeconds()
-    {
-        return _configOptions.CacheSizeCheckTimeoutSeconds ?? 300; // 5 minutes default
     }
 
     public CompressionLevel ZipCompressionLevel()

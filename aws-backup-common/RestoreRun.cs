@@ -6,6 +6,7 @@ namespace aws_backup_common;
 public enum RestoreRunStatus
 {
     Processing,
+    AllFilesListed,
     Completed
 }
 
@@ -23,39 +24,62 @@ public enum FileRestoreStatus
     Failed
 }
 
+public enum RestorePathStrategy
+{
+    Flatten,
+    Nested
+}
+
+public sealed record RestoreChunkDetails(
+    string S3Key, // S3 key for the chunk
+    string BucketName, // S3 bucket name
+    long ChunkSize,
+    long Offset,
+    long Size,
+    byte[] HashKey,
+    int Index) : CloudChunkDetails(S3Key, BucketName, ChunkSize, Offset, Size, HashKey)
+{
+    public S3ChunkRestoreStatus Status { get; set; } = S3ChunkRestoreStatus.PendingDeepArchiveRestore;
+}
+
 public sealed record RestoreRequest(
     string ArchiveRunId,
     string RestorePaths,
-    DateTimeOffset RequestedAt);
+    DateTimeOffset RequestedAt,
+    RestorePathStrategy RestorePathStrategy = RestorePathStrategy.Flatten,
+    string? RestoreFolder = null);
 
 public sealed record RestoreFileMetaData(
-    ByteArrayKey[] Chunks,
-    string FilePath,
-    long Size
-)
+    string FilePath)
 {
+    public FileRestoreStatus Status { get; set; } = FileRestoreStatus.PendingDeepArchiveRestore;
+    public string? FailedMessage { get; set; }
+    public long Size { get; set; }
+    public ConcurrentDictionary<ByteArrayKey, RestoreChunkDetails> CloudChunkDetails { get; set; } = [];
     public DateTimeOffset? LastModified { get; set; }
     public DateTimeOffset? Created { get; set; }
     public AclEntry[]? AclEntries { get; set; }
     public string? Owner { get; set; }
     public string? Group { get; set; }
-    public byte[]? Checksum { get; set; }
-    public FileRestoreStatus Status { get; set; } = FileRestoreStatus.PendingDeepArchiveRestore;
-    public string? FailedMessage { get; set; }
+    public byte[]? Sha256Checksum { get; set; }
+    public RestorePathStrategy RestorePathStrategy { get; set; }
+    public string? RestoreFolder { get; set; }
 }
 
 public sealed record DownloadFileFromS3Request(
     string RestoreId,
     string FilePath,
-    CloudChunkDetails[] CloudChunkDetails,
-    long Size) : RetryState
+    RestoreChunkDetails[] CloudChunkDetails,
+    long Size,
+    RestorePathStrategy RestorePathStrategy = RestorePathStrategy.Flatten,
+    string? RestoreFolder = null) : RetryState
 {
     public DateTimeOffset? LastModified { get; init; }
     public DateTimeOffset? Created { get; init; }
     public AclEntry[]? AclEntries { get; init; }
     public string? Owner { get; init; }
     public string? Group { get; init; }
-    public byte[]? Checksum { get; init; }
+    public byte[]? Sha256Checksum { get; init; }
 }
 
 public sealed class RestoreRun
@@ -68,7 +92,3 @@ public sealed class RestoreRun
     public DateTimeOffset? CompletedAt { get; set; }
     [JsonInclude] public ConcurrentDictionary<string, RestoreFileMetaData> RequestedFiles { get; init; } = new();
 }
-
-[JsonConverter(typeof(JsonDictionaryConverter<string, RestoreRequest, CurrentRestoreRequests>))]
-public class CurrentRestoreRequests : ConcurrentDictionary<string, RestoreRequest>;
-public sealed class S3RestoreChunkManifest : ConcurrentDictionary<ByteArrayKey, S3ChunkRestoreStatus>;

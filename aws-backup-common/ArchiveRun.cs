@@ -35,9 +35,7 @@ public sealed record FileMetaData(
     public DateTimeOffset? LastModified { get; set; }
     public long? OriginalSize { get; set; }
     public string? Owner { get; set; }
-
     public FileStatus Status { get; set; } = FileStatus.Added;
-
     public ConcurrentDictionary<ByteArrayKey, DataChunkDetails> Chunks { get; set; } = [];
     public string SkipReason { get; set; } = "";
 }
@@ -54,7 +52,6 @@ public sealed class ArchiveRun
     public required string CronSchedule { get; init; }
     public required ArchiveRunStatus Status { get; set; } = ArchiveRunStatus.Processing;
     public required DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
-
     public DateTimeOffset? CompletedAt { get; set; }
     public long? CompressedSize { get; set; }
     public long? OriginalSize { get; set; }
@@ -65,7 +62,3 @@ public sealed class ArchiveRun
     [JsonInclude]
     public ConcurrentDictionary<string, FileMetaData> Files { get; init; } = new();
 }
-
-public sealed class CurrentArchiveRuns : ConcurrentDictionary<string, ArchiveRun>;
-
-public class CurrentArchiveRunRequests : ConcurrentDictionary<string, RunRequest>;

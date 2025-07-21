@@ -4,10 +4,17 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
+public interface IS3StorageClassMediator
+{
+    IAsyncEnumerable<string> GetStorageClassesRequests(CancellationToken cancellationToken);
+    Task QueryStorageClass(string key, CancellationToken cancellationToken);
+}
+
 public sealed class S3StorageClassActor(
     IS3Service s3Service,
     IRestoreService restoreService,
     IContextResolver resolver,
+    IS3StorageClassMediator mediator,
     ILogger<S3StorageClassActor> logger
 ) : BackgroundService
 {
@@ -18,17 +25,14 @@ public sealed class S3StorageClassActor(
         while (!cancellationToken.IsCancellationRequested)
             try
             {
-                await foreach (var s3StorageInfo in s3Service.GetStorageClasses(cancellationToken))
+                await foreach (var s3Key in mediator.GetStorageClassesRequests(cancellationToken))
                 {
-                    await restoreService.ReportS3Storage(s3StorageInfo.BucketName, s3StorageInfo.Key,
-                        s3StorageInfo.StorageClass, cancellationToken);
-                    var storagePageDelay = resolver.StoragePageDelayMilliseconds();
-                    await Task.Delay(storagePageDelay,
-                        cancellationToken); // small delay to avoid overwhelming the service
+                    var storage = await s3Service.GetStorageClass(s3Key, cancellationToken);
+                    await restoreService.ReportS3Storage(s3Key, storage, cancellationToken);
+                    storageCheckDelay = resolver.StorageCheckDelaySeconds();
+                    var timespan = TimeSpan.FromSeconds(storageCheckDelay);
+                    await Task.Delay(timespan, cancellationToken);
                 }
-
-                storageCheckDelay = resolver.StorageCheckDelaySeconds();
-                await Task.Delay(storageCheckDelay, cancellationToken);
             }
             catch (OperationCanceledException)
             {

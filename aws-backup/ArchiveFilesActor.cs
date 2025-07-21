@@ -20,6 +20,7 @@ public sealed class ArchiveFilesActor(
     IRetryMediator retryMediator,
     IChunkedEncryptingFileProcessor processor,
     IArchiveService archiveService,
+    IArchiveDataStore archiveDataStore,
     ILogger<ArchiveFilesActor> logger,
     IContextResolver contextResolver)
     : BackgroundService
@@ -66,22 +67,6 @@ public sealed class ArchiveFilesActor(
                     continue;
                 }
 
-                while (true)
-                {
-                    var cacheFolderSizeLimit = contextResolver.CacheFolderSizeLimitBytes();
-                    if (cacheFolderSizeLimit <= 0) break; // no limit, skip cleanup
-
-                    var cacheFolder = contextResolver.LocalCacheFolder();
-                    var cacheSize = FileHelper.FolderSize(cacheFolder);
-                    var checkTimeSpan = TimeSpan.FromSeconds(contextResolver.CacheSizeCheckTimeoutSeconds());
-                    if (cacheSize < cacheFolderSizeLimit) break;
-
-                    logger.LogWarning(
-                        "Cache folder {cacheFolder} with size {cacheSize} exceeds limit {Limit}, waiting {checkTimeSpan} ",
-                        cacheFolder, cacheSize, cacheFolderSizeLimit, checkTimeSpan);
-                    await Task.Delay(checkTimeSpan, cancellationToken);
-                }
-
                 logger.LogInformation("Processing {File} for {ArchiveRunId}", filePath, runId);
                 var task = processor.ProcessFileAsync(runId, filePath, cancellationToken);
 
@@ -90,20 +75,20 @@ public sealed class ArchiveFilesActor(
                     if (keepTimeStamps)
                     {
                         FileHelper.GetTimestamps(filePath, out var created, out var modified);
-                        await archiveService.UpdateTimeStamps(runId, filePath, created, modified,
+                        await archiveDataStore.UpdateTimeStamps(runId, filePath, created, modified,
                             cancellationToken);
                     }
 
                     if (keepOwnerGroup)
                     {
                         var (owner, group) = await FileHelper.GetOwnerGroupAsync(filePath, cancellationToken);
-                        await archiveService.UpdateOwnerGroup(runId, filePath, owner, group, cancellationToken);
+                        await archiveDataStore.UpdateOwnerGroup(runId, filePath, owner, group, cancellationToken);
                     }
 
                     if (keepAclEntries)
                     {
                         var aclEntries = FileHelper.GetFileAcl(filePath);
-                        await archiveService.UpdateAclEntries(runId, filePath, aclEntries, cancellationToken);
+                        await archiveDataStore.UpdateAclEntries(runId, filePath, aclEntries, cancellationToken);
                     }
                 }
                 catch (Exception ex)

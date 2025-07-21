@@ -127,7 +127,7 @@ public sealed class ChunkedEncryptingFileProcessor(
                     Directory.CreateDirectory(cacheFolder);
 
                 var fileNameHash = Base64Url.ComputeSimpleHash(inputPath);
-                var outPath = $"{Path.Combine(cacheFolder, fileNameHash)}.chunk{chunkIndex:D4}.br.aes";
+                var outPath = $"{Path.Combine(cacheFolder, fileNameHash)}.chunk{chunkIndex:D8}.br.aes";
                 if (File.Exists(outPath)) File.Delete(outPath);
                 removableFiles.Add(outPath);
 

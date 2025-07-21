@@ -1,6 +1,3 @@
-using System.Collections.Concurrent;
-using System.Text.Json.Serialization;
-
 namespace aws_backup_common;
 
 public enum ChunkStatus
@@ -10,7 +7,7 @@ public enum ChunkStatus
     Failed
 }
 
-public sealed record CloudChunkDetails(
+public record CloudChunkDetails(
     string S3Key, // S3 key for the chunk
     string BucketName, // S3 bucket name
     long ChunkSize,
@@ -27,7 +24,3 @@ public sealed record DataChunkDetails(
 {
     public ChunkStatus Status { get; set; } = ChunkStatus.Added;
 }
-
-[JsonConverter(
-    typeof(JsonDictionaryConverter<ByteArrayKey, CloudChunkDetails, DataChunkManifest>))]
-public sealed class DataChunkManifest : ConcurrentDictionary<ByteArrayKey, CloudChunkDetails>;

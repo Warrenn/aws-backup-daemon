@@ -18,6 +18,7 @@ public class ArchiveFilesActorTests
         Mock<IChunkedEncryptingFileProcessor> processorMock,
         Mock<IArchiveService> archiveServiceMock,
         Mock<IArchiveFileMediator> mediatorMock,
+        Mock<IArchiveDataStore> dataStoreMock,
         Mock<IContextResolver> ctxMock)
     {
         mediatorMock.Setup(m => m.GetArchiveFiles(It.IsAny<CancellationToken>()))
@@ -39,6 +40,7 @@ public class ArchiveFilesActorTests
             retryMediatorMock.Object,
             processorMock.Object,
             archiveServiceMock.Object,
+            dataStoreMock.Object,
             loggerMock.Object,
             ctxMock.Object);
     }
@@ -56,6 +58,7 @@ public class ArchiveFilesActorTests
         var processorMock = new Mock<IChunkedEncryptingFileProcessor>();
         var archiveServiceMock = new Mock<IArchiveService>();
         var ctxMock = new Mock<IContextResolver>();
+        var dataStoreMock = new Mock<IArchiveDataStore>();
 
         var orch = CreateOrchestrator(
             channel.Reader.ReadAllAsync(),
@@ -67,6 +70,7 @@ public class ArchiveFilesActorTests
             processorMock,
             archiveServiceMock,
             mediatorMock,
+            dataStoreMock,
             ctxMock);
 
         // Act
@@ -95,6 +99,7 @@ public class ArchiveFilesActorTests
 
         var mediatorMock = new Mock<IArchiveFileMediator>();
         var processorMock = new Mock<IChunkedEncryptingFileProcessor>();
+        var dataStoreMock = new Mock<IArchiveDataStore>();
         var retryMock = new Mock<IRetryMediator>();
         processorMock.Setup(p => p.ProcessFileAsync("run2", "file2", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new FileProcessResult("file2", 0, [], 0));
@@ -116,6 +121,7 @@ public class ArchiveFilesActorTests
             processorMock,
             archiveServiceMock,
             mediatorMock,
+            dataStoreMock,
             ctxMock);
 
         // Stub FileHelper static calls via real file
@@ -137,15 +143,15 @@ public class ArchiveFilesActorTests
             Times.Once);
 
         // UpdateTimeStamps
-        archiveServiceMock.Verify(
+        dataStoreMock.Verify(
             a => a.UpdateTimeStamps("run2", "file2", It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(),
                 It.IsAny<CancellationToken>()), Times.Once);
         // UpdateOwnerGroup
-        archiveServiceMock.Verify(
+        dataStoreMock.Verify(
             a => a.UpdateOwnerGroup("run2", "file2", It.IsAny<string>(), It.IsAny<string>(),
                 It.IsAny<CancellationToken>()), Times.Once);
         // UpdateAclEntries
-        archiveServiceMock.Verify(
+        dataStoreMock.Verify(
             a => a.UpdateAclEntries("run2", "file2", It.IsAny<AclEntry[]>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -161,6 +167,7 @@ public class ArchiveFilesActorTests
         var mediatorMock = new Mock<IArchiveFileMediator>();
         var processorMock = new Mock<IChunkedEncryptingFileProcessor>();
         var retryMediatorMock = new Mock<IRetryMediator>();
+        var dataStoreMock = new Mock<IArchiveDataStore>();
         retryMediatorMock
             .Setup(m => m.RetryAttempt(It.IsAny<RetryState>(), It.IsAny<CancellationToken>()))
             .Callback((RetryState state, CancellationToken token) =>
@@ -188,6 +195,7 @@ public class ArchiveFilesActorTests
             processorMock,
             archiveServiceMock,
             mediatorMock,
+            dataStoreMock,
             ctxMock);
 
         // Act

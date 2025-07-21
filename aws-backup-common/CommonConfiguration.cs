@@ -26,7 +26,6 @@ public record CommonConfiguration
     public int? ShutdownTimeoutSeconds { get; set; }
     public int? RetryCheckIntervalMs { get; set; }
     public int? StorageCheckDelaySeconds { get; set; }
-    public int? StoragePageDelayMilliseconds { get; set; }
     public int? DelayBetweenUploadsSeconds { get; set; }
     public int? DownloadAttemptLimit { get; set; }
     public int? UploadAttemptLimit { get; set; }
@@ -48,8 +47,6 @@ public record CommonConfiguration
     public bool? NotifyOnException { get; set; }
     public int? DaysToKeepRestoredCopy { get; set; }
     public string? RollingLogFolder { get; set; }
-    public long? CacheFolderSizeLimitBytes { get; set; }
-    public long? CacheSizeCheckTimeoutSeconds { get; set; }
     public string? CompressionLevel { get; set; }
     public int? AwsTimeoutSeconds { get; set; }
 }

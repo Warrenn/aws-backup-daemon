@@ -82,44 +82,12 @@ builder
         var awsConfig = iamClient.GetAwsConfigurationAsync(clientId).GetAwaiter().GetResult();
         return awsConfig;
     })
-    .AddSingleton(provider =>
-    {
-        var resolver = provider.GetRequiredService<IContextResolver>();
-        return provider.GetRequiredService<IS3Service>()
-            .DownloadCompressedObject<CurrentArchiveRunRequests>(resolver.CurrentArchiveRunsBucketKey(),
-                CancellationToken.None).GetAwaiter().GetResult() ?? new CurrentArchiveRunRequests();
-    })
-    .AddSingleton(provider =>
-    {
-        var resolver = provider.GetRequiredService<IContextResolver>();
-        return provider.GetRequiredService<IS3Service>()
-            .DownloadCompressedObject<DataChunkManifest>(resolver.ChunkManifestBucketKey(),
-                CancellationToken.None).GetAwaiter().GetResult() ?? new DataChunkManifest();
-    })
-    .AddSingleton(provider =>
-    {
-        var resolver = provider.GetRequiredService<IContextResolver>();
-        return provider.GetRequiredService<IS3Service>()
-            .DownloadCompressedObject<CurrentRestoreRequests>(resolver.CurrentRestoreBucketKey(),
-                CancellationToken.None).GetAwaiter().GetResult() ?? new CurrentRestoreRequests();
-    })
-    .AddSingleton(provider =>
-    {
-        var resolver = provider.GetRequiredService<IContextResolver>();
-        return provider.GetRequiredService<IS3Service>()
-            .DownloadCompressedObject<S3RestoreChunkManifest>(resolver.RestoreManifestBucketKey(),
-                CancellationToken.None).GetAwaiter().GetResult() ?? new S3RestoreChunkManifest();
-    })
     .AddSingleton<ISnsMessageMediator>(sp => sp.GetRequiredService<Mediator>())
     .AddSingleton<IArchiveFileMediator>(sp => sp.GetRequiredService<Mediator>())
     .AddSingleton<IRunRequestMediator>(sp => sp.GetRequiredService<Mediator>())
-    .AddSingleton<IArchiveRunMediator>(sp => sp.GetRequiredService<Mediator>())
-    .AddSingleton<IChunkManifestMediator>(sp => sp.GetRequiredService<Mediator>())
     .AddSingleton<IDownloadFileMediator>(sp => sp.GetRequiredService<Mediator>())
     .AddSingleton<IRetryMediator>(sp => sp.GetRequiredService<Mediator>())
     .AddSingleton<IRestoreRequestsMediator>(sp => sp.GetRequiredService<Mediator>())
-    .AddSingleton<IRestoreManifestMediator>(sp => sp.GetRequiredService<Mediator>())
-    .AddSingleton<IRestoreRunMediator>(sp => sp.GetRequiredService<Mediator>())
     .AddSingleton<IUploadChunksMediator>(sp => sp.GetRequiredService<Mediator>())
     .AddSingleton<ICronScheduleMediator>(sp => sp.GetRequiredService<Mediator>())
     .AddSingleton<ITemporaryCredentialsServer, RolesAnywhere>()
@@ -135,7 +103,6 @@ builder
     .AddSingleton<IS3ChunkedFileReconstructor, S3ChunkedFileReconstructor>()
     .AddSingleton<IS3Service, S3Service>()
     .AddSingleton(_ => TimeProvider.System)
-    .AddSingleton<CurrentArchiveRuns>()
     .AddHostedService<CronJobActor>()
     .AddHostedService<ArchiveFilesActor>()
     .AddHostedService<ArchiveRunActor>()
@@ -144,8 +111,7 @@ builder
     .AddHostedService<RetryActor>()
     .AddHostedService<S3StorageClassActor>()
     .AddHostedService<SqsPollingActor>()
-    .AddHostedService<UploadChunkDataActor>()
-    .AddHostedService<UploadActor>()
+    .AddHostedService<ChunkDataActor>()
     .AddHostedService<SnsActor>()
     .AddHostedService<RollingFileActor>()
     .AddOptions<Configuration>()

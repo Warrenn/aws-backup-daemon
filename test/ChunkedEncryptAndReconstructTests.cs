@@ -96,13 +96,14 @@ public class ChunkedEncryptAndReconstructTests
             aesMock.Object);
 
         // 6) Build the DownloadFileFromS3Request
-        var cloudDetails = chunks.Select(ch => new CloudChunkDetails(
+        var cloudDetails = chunks.Select(ch => new RestoreChunkDetails(
             Path.GetFileName(ch.LocalFilePath),
             bucket,
             ch.ChunkSize,
             0,
             0,
-            ch.HashKey.ToArray()
+            ch.HashKey.ToArray(),
+            0
         )).ToArray();
 
         var request = new DownloadFileFromS3Request(
@@ -112,7 +113,7 @@ public class ChunkedEncryptAndReconstructTests
             result.OriginalSize
         )
         {
-            Checksum = result.FullFileHash
+            Sha256Checksum = result.FullFileHash
         };
 
         // 7) Reconstruct
@@ -217,13 +218,14 @@ public class ChunkedEncryptAndReconstructTests
             aesMock.Object);
 
         // 6) Build the DownloadFileFromS3Request
-        var cloudDetails = chunks.Select(ch => new CloudChunkDetails(
+        var cloudDetails = chunks.Select(ch => new RestoreChunkDetails(
             Path.GetFileName(ch.LocalFilePath),
             bucket,
             ch.ChunkSize,
             0,
             0,
-            ch.HashKey.ToArray()
+            ch.HashKey.ToArray(),
+            0
         )).ToArray();
 
         var request = new DownloadFileFromS3Request(
@@ -233,7 +235,7 @@ public class ChunkedEncryptAndReconstructTests
             result.OriginalSize
         )
         {
-            Checksum = result.FullFileHash
+            Sha256Checksum = result.FullFileHash
         };
 
         // 7) Reconstruct

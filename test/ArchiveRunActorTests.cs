@@ -44,6 +44,7 @@ public class ArchiveRunActorTests : IDisposable
         var ctxMock = new Mock<IContextResolver>();
         var fileListerMock = new Mock<IFileLister>();
         var loggerMock = new Mock<ILogger<ArchiveRunActor>>();
+        var dataMock = new Mock<IArchiveDataStore>();
 
         var runId = "run1";
         var path = _tempDir;
@@ -74,10 +75,10 @@ public class ArchiveRunActorTests : IDisposable
             archiveFileMediatorMock.Object,
             Mock.Of<IUploadChunksMediator>(),
             archiveServiceMock.Object,
+            dataMock.Object,
             ctxMock.Object,
             fileListerMock.Object,
-            loggerMock.Object,
-            Mock.Of<CurrentArchiveRunRequests>());
+            loggerMock.Object);
 
         // Act
         await orchestrator.StartAsync(CancellationToken.None);
@@ -101,7 +102,7 @@ public class ArchiveRunActorTests : IDisposable
     {
         // Arrange
         var mediatorMock = new Mock<IRunRequestMediator>();
-        var fileMediatorMock = new Mock<IArchiveFileMediator>();
+        var archiveFileMock = new Mock<IArchiveFileMediator>();
         var archiveServiceMock = new Mock<IArchiveService>();
         var ctxMock = new Mock<IContextResolver>();
         var fileListerMock = new Mock<IFileLister>();
@@ -121,13 +122,13 @@ public class ArchiveRunActorTests : IDisposable
 
         var orchestrator = new ArchiveRunActor(
             mediatorMock.Object,
-            fileMediatorMock.Object,
+            archiveFileMock.Object,
             Mock.Of<IUploadChunksMediator>(),
             archiveServiceMock.Object,
+            Mock.Of<IArchiveDataStore>(),
             ctxMock.Object,
             fileListerMock.Object,
-            loggerMock.Object,
-            Mock.Of<CurrentArchiveRunRequests>());
+            loggerMock.Object);
 
         // Act
         await orchestrator.StartAsync(CancellationToken.None);
@@ -137,7 +138,7 @@ public class ArchiveRunActorTests : IDisposable
         archiveServiceMock.Verify(a => a.StartNewArchiveRun(It.IsAny<RunRequest>(), It.IsAny<CancellationToken>()),
             Times.Never);
         fileListerMock.Verify(f => f.GetAllFiles(It.IsAny<string>(), It.IsAny<string[]>()), Times.Never);
-        fileMediatorMock.Verify(m => m.ProcessFile(It.IsAny<ArchiveFileRequest>(), It.IsAny<CancellationToken>()),
+        archiveFileMock.Verify(m => m.ProcessFile(It.IsAny<ArchiveFileRequest>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -179,10 +180,10 @@ public class ArchiveRunActorTests : IDisposable
             archiveFileMediatorMock.Object,
             Mock.Of<IUploadChunksMediator>(),
             archiveServiceMock.Object,
+            Mock.Of<IArchiveDataStore>(),
             ctxMock.Object,
             fileListerMock.Object,
-            loggerMock.Object,
-            Mock.Of<CurrentArchiveRunRequests>());
+            loggerMock.Object);
 
         // Act
         await orchestrator.StartAsync(CancellationToken.None);
@@ -232,10 +233,10 @@ public class ArchiveRunActorTests : IDisposable
             fileMock.Object,
             Mock.Of<IUploadChunksMediator>(),
             archiveServiceMock.Object,
+            Mock.Of<IArchiveDataStore>(),
             ctxMock.Object,
             fileListerMock.Object,
-            loggerMock.Object,
-            Mock.Of<CurrentArchiveRunRequests>());
+            loggerMock.Object);
 
         // Act
         await orchestrator.StartAsync(CancellationToken.None);

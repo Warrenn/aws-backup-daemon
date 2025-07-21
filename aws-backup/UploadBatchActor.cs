@@ -53,7 +53,7 @@ public sealed class UploadBatchActor(
                 var s3PartSize = contextResolver.S3PartSize();
                 var key = contextResolver.BatchS3Key(batch.LocalFilePath);
 
-                // upload the chunk file to S3
+                // upload the batch file to S3
                 var transferUtil = new TransferUtility(s3Client);
                 var uploadReq = new TransferUtilityUploadRequest
                 {
@@ -68,6 +68,7 @@ public sealed class UploadBatchActor(
                     [
                         new Tag { Key = "storage-class", Value = "cold" },
                         new Tag { Key = "archive-run-id", Value = S3Service.ScrubTagValue(batch.ArchiveRunId) },
+                        new Tag { Key = "compression", Value = "brotli" },
                         new Tag
                         {
                             Key = "chunk-size",

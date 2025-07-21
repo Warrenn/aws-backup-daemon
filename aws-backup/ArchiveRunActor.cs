@@ -15,10 +15,10 @@ public sealed class ArchiveRunActor(
     IArchiveFileMediator archiveFileMediator,
     IUploadChunksMediator uploadChunksMediator,
     IArchiveService archiveService,
+    IArchiveDataStore archiveDataStore,
     IContextResolver contextResolver,
     IFileLister fileLister,
-    ILogger<ArchiveRunActor> logger,
-    CurrentArchiveRunRequests currentArchiveRequests) : BackgroundService
+    ILogger<ArchiveRunActor> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
@@ -40,7 +40,7 @@ public sealed class ArchiveRunActor(
                 {
                     logger.Log(LogLevel.Information, "Archive run {ArchiveRunId} is already completed",
                         runRequest.RunId);
-                    await archiveService.TryRemove(runRequest.RunId, cancellationToken);
+                    await archiveService.ClearCache(runRequest.RunId, cancellationToken);
                     continue;
                 }
 
@@ -65,9 +65,9 @@ public sealed class ArchiveRunActor(
                 }
 
                 logger.LogInformation("All files processed for archive run {RunId}", runRequest.RunId);
-                
+
                 await archiveService.ReportAllFilesListed(archiveRun, cancellationToken);
-                await uploadChunksMediator.WaitForAllChunksProcessed(cancellationToken);
+                await uploadChunksMediator.WaitForAllChunksProcessed();
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -81,7 +81,7 @@ public sealed class ArchiveRunActor(
 
     private async Task LoadArchiveRunsFromCloud(CancellationToken cancellationToken)
     {
-        foreach (var (_, archiveRequest) in currentArchiveRequests)
+        await foreach (var archiveRequest in archiveDataStore.GetRunRequests(cancellationToken))
             await mediator.ScheduleRunRequest(archiveRequest, cancellationToken);
     }
 }

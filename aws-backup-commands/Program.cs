@@ -67,40 +67,11 @@ builder
         var awsConfig = iamClient.GetAwsConfigurationAsync(configuration.ClientId).GetAwaiter().GetResult();
         return awsConfig;
     })
-    .AddSingleton(provider =>
-    {
-        var resolver = provider.GetRequiredService<IContextResolver>();
-        return provider.GetRequiredService<IS3Service>()
-            .DownloadCompressedObject<CurrentArchiveRunRequests>(resolver.CurrentArchiveRunsBucketKey(),
-                CancellationToken.None).GetAwaiter().GetResult() ?? new CurrentArchiveRunRequests();
-    })
-    .AddSingleton(provider =>
-    {
-        var resolver = provider.GetRequiredService<IContextResolver>();
-        return provider.GetRequiredService<IS3Service>()
-            .DownloadCompressedObject<DataChunkManifest>(resolver.ChunkManifestBucketKey(),
-                CancellationToken.None).GetAwaiter().GetResult() ?? new DataChunkManifest();
-    })
-    .AddSingleton(provider =>
-    {
-        var resolver = provider.GetRequiredService<IContextResolver>();
-        return provider.GetRequiredService<IS3Service>()
-            .DownloadCompressedObject<CurrentRestoreRequests>(resolver.CurrentRestoreBucketKey(),
-                CancellationToken.None).GetAwaiter().GetResult() ?? new CurrentRestoreRequests();
-    })
-    .AddSingleton(provider =>
-    {
-        var resolver = provider.GetRequiredService<IContextResolver>();
-        return provider.GetRequiredService<IS3Service>()
-            .DownloadCompressedObject<S3RestoreChunkManifest>(resolver.RestoreManifestBucketKey(),
-                CancellationToken.None).GetAwaiter().GetResult() ?? new S3RestoreChunkManifest();
-    })
     .AddSingleton<ITemporaryCredentialsServer, RolesAnywhere>()
     .AddSingleton<IAwsClientFactory, AwsClientFactory>()
     .AddSingleton<IAesContextResolver, AesContextResolver>()
     .AddSingleton<IS3Service, S3Service>()
-    .AddSingleton<TimeProvider>(_ => TimeProvider.System)
-    .AddSingleton<CurrentArchiveRuns>();
+    .AddSingleton<TimeProvider>(_ => TimeProvider.System);
 
 var host = builder.Build();
 host.AddCommand((

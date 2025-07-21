@@ -1,7 +1,6 @@
 using System.IO.Compression;
 using System.IO.Pipelines;
 using System.Net;
-using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
@@ -10,12 +9,6 @@ using Amazon.S3.Model;
 using Amazon.S3.Transfer;
 
 namespace aws_backup_common;
-
-public sealed record S3StorageInfo(
-    string BucketName,
-    string Key,
-    S3StorageClass StorageClass
-);
 
 public enum StorageTemperature
 {
@@ -26,15 +19,8 @@ public enum StorageTemperature
 
 public interface IS3Service
 {
-    Task<bool> RunExists(string runId, CancellationToken cancellationToken);
-    Task<ArchiveRun> GetArchive(string runId, CancellationToken cancellationToken);
-    Task<bool> RestoreExists(string restoreId, CancellationToken cancellationToken);
-    Task<RestoreRun> GetRestoreRun(string restoreId, CancellationToken cancellationToken);
-
     Task<S3ChunkRestoreStatus> ScheduleDeepArchiveRecovery(string chunkS3Key,
         CancellationToken cancellationToken);
-
-    IAsyncEnumerable<S3StorageInfo> GetStorageClasses(CancellationToken cancellationToken);
 
     Task UploadCompressedObject<T>(string key, T obj, StorageTemperature temp, CancellationToken cancellationToken);
 
@@ -43,7 +29,7 @@ public interface IS3Service
 
     Task<T?> DownloadCompressedObject<T>(string key, CancellationToken cancellationToken);
 
-    Task<bool> S3ObjectExistsAsync(IAmazonS3 s3, string bucket, string key, CancellationToken ct);
+    Task<S3StorageClass> GetStorageClass(string s3Key, CancellationToken cancellationToken);
 }
 
 public sealed class S3Service(
@@ -53,34 +39,6 @@ public sealed class S3Service(
 ) : IS3Service
 {
     private const int _maxTagValueLength = 256;
-
-    public async Task<bool> RunExists(string runId, CancellationToken cancellationToken)
-    {
-        var bucketId = awsConfiguration.BucketName;
-        var key = contextResolver.RunIdBucketKey(runId);
-        var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
-        return await S3ObjectExistsAsync(s3Client, bucketId, key, cancellationToken);
-    }
-
-    public async Task<ArchiveRun> GetArchive(string runId, CancellationToken cancellationToken)
-    {
-        var key = contextResolver.RunIdBucketKey(runId);
-        return (await DownloadCompressedObject<ArchiveRun>(key, cancellationToken))!;
-    }
-
-    public async Task<bool> RestoreExists(string restoreId, CancellationToken cancellationToken)
-    {
-        var bucketId = awsConfiguration.BucketName;
-        var key = contextResolver.RestoreIdBucketKey(restoreId);
-        var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
-        return await S3ObjectExistsAsync(s3Client, bucketId, key, cancellationToken);
-    }
-
-    public async Task<RestoreRun> GetRestoreRun(string restoreId, CancellationToken cancellationToken)
-    {
-        var key = contextResolver.RestoreIdBucketKey(restoreId);
-        return (await DownloadCompressedObject<RestoreRun>(key, cancellationToken))!;
-    }
 
     public async Task<S3ChunkRestoreStatus> ScheduleDeepArchiveRecovery(string chunkS3Key,
         CancellationToken cancellationToken)
@@ -104,39 +62,6 @@ public sealed class S3Service(
         await s3Client.RestoreObjectAsync(restoreRequest, cancellationToken);
 
         return S3ChunkRestoreStatus.PendingDeepArchiveRestore;
-    }
-
-    public async IAsyncEnumerable<S3StorageInfo> GetStorageClasses(
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        var bucketName = awsConfiguration.BucketName;
-        var prefix = contextResolver.S3DataPrefix();
-        var request = new ListObjectsV2Request
-        {
-            BucketName = bucketName,
-            Prefix = prefix
-            // You can also set MaxKeys if you want smaller pages
-        };
-
-        ListObjectsV2Response response;
-        do
-        {
-            var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
-            response = await s3Client.ListObjectsV2Async(request, cancellationToken);
-
-            if ((response.KeyCount ?? 0) <= 0)
-                yield break; // No objects found
-
-            foreach (var s3Object in response.S3Objects)
-                yield return new S3StorageInfo(
-                    s3Object.BucketName,
-                    s3Object.Key,
-                    s3Object.StorageClass
-                );
-
-            // If the response is truncated, set the token to get the next page
-            request.ContinuationToken = response.NextContinuationToken;
-        } while (response.IsTruncated ?? false);
     }
 
     public async Task UploadCompressedFile(string key, string localFilePath, StorageTemperature temp,
@@ -173,7 +98,11 @@ public sealed class S3Service(
                 StorageClass = storageClass,
                 AutoCloseStream = true,
                 ServerSideEncryptionMethod = encryptionMethod,
-                TagSet = [new Tag { Key = "storage-class", Value = tag }]
+                TagSet =
+                [
+                    new Tag { Key = "storage-class", Value = tag },
+                    new Tag { Key = "compression", Value = "brotli" } // Indicate compression type
+                ]
             };
 
             await transferUtil.UploadAsync(uploadRequest, cancellationToken);
@@ -206,6 +135,17 @@ public sealed class S3Service(
         await using var gzip = new BrotliStream(resp.ResponseStream, CompressionMode.Decompress, false);
         return await JsonSerializer.DeserializeAsync(gzip, (JsonTypeInfo<T>)GetTypeInfo<T>(),
             cancellationToken);
+    }
+
+    public async Task<S3StorageClass> GetStorageClass(string s3Key, CancellationToken cancellationToken)
+    {
+        var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
+        var bucketName = awsConfiguration.BucketName;
+
+        var (storageClass, _) =
+            await GetStorageClass(s3Client, bucketName, s3Key, cancellationToken);
+
+        return storageClass;
     }
 
     public async Task UploadCompressedObject<T>(string key, T obj, StorageTemperature temp,
@@ -241,7 +181,11 @@ public sealed class S3Service(
                 StorageClass = storageClass,
                 AutoCloseStream = true,
                 ServerSideEncryptionMethod = encryptionMethod,
-                TagSet = [new Tag { Key = "storage-class", Value = tag }]
+                TagSet =
+                [
+                    new Tag { Key = "storage-class", Value = tag },
+                    new Tag { Key = "compression", Value = "brotli" } // Indicate compression type
+                ]
             };
             await transfer.UploadAsync(req, cancellationToken);
         }, cancellationToken);
@@ -282,7 +226,7 @@ public sealed class S3Service(
         return SourceGenerationContext.Default.GetTypeInfo(typeof(T))!;
     }
 
-    private static async Task<(S3StorageClass storageClass, bool restoreInProgress)> GetStorageClass(IAmazonS3 s3Client,
+    private async Task<(S3StorageClass storageClass, bool restoreInProgress)> GetStorageClass(IAmazonS3 s3Client,
         string bucketName, string s3Key,
         CancellationToken cancellationToken)
     {

@@ -47,7 +47,7 @@ public class DownloadFileActorTests
     {
         // Arrange a channel with one stub request lacking delegates
         var chan = Channel.CreateUnbounded<DownloadFileFromS3Request>();
-        var req = new DownloadFileFromS3Request("r", "f", Array.Empty<CloudChunkDetails>(), 0);
+        var req = new DownloadFileFromS3Request("r", "f", [], 0);
         chan.Writer.TryWrite(req);
         chan.Writer.Complete();
 
@@ -84,7 +84,7 @@ public class DownloadFileActorTests
     public async Task SuccessfulDownload_CallsReportComplete()
     {
         var chan = Channel.CreateUnbounded<DownloadFileFromS3Request>();
-        var req = new DownloadFileFromS3Request("r", "f", Array.Empty<CloudChunkDetails>(), 0);
+        var req = new DownloadFileFromS3Request("r", "f", [], 0);
         chan.Writer.TryWrite(req);
         chan.Writer.Complete();
 
@@ -109,7 +109,7 @@ public class DownloadFileActorTests
     public async Task HashFailure_TriggersRetryAttemptAndSetsException()
     {
         var chan = Channel.CreateUnbounded<DownloadFileFromS3Request>();
-        var req = new DownloadFileFromS3Request("r", "f", Array.Empty<CloudChunkDetails>(), 0);
+        var req = new DownloadFileFromS3Request("r", "f", [], 0);
         chan.Writer.TryWrite(req);
         chan.Writer.Complete();
 

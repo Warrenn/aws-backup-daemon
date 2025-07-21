@@ -18,13 +18,13 @@ public interface IUploadChunksMediator
     void RegisterReader();
     IAsyncEnumerable<UploadChunkRequest> GetChunks(CancellationToken cancellationToken);
     Task ProcessChunk(UploadChunkRequest request, CancellationToken cancellationToken);
-    Task WaitForAllChunksProcessed(CancellationToken cancellationToken);
+    Task WaitForAllChunksProcessed();
 }
 
-public sealed class UploadChunkDataActor(
+public sealed class ChunkDataActor(
     IUploadChunksMediator mediator,
     IUploadBatchMediator batchMediator,
-    ILogger<UploadChunkDataActor> logger,
+    ILogger<ChunkDataActor> logger,
     IContextResolver contextResolver,
     IDataChunkService dataChunkService,
     IArchiveService archiveService,
@@ -62,7 +62,7 @@ public sealed class UploadChunkDataActor(
         while (!cancellationToken.IsCancellationRequested)
         {
             mediator.RegisterReader();
-            
+
             //this should block the producer side due to bounded channel
             await foreach (var request in mediator.GetChunks(cancellationToken))
             {
@@ -79,8 +79,8 @@ public sealed class UploadChunkDataActor(
                         state.Exception ?? new Exception("Exceeded limit"),
                         token);
 
-                if (dataChunkService.ChunkAlreadyUploaded(chunk) ||
-                    archiveService.IsTheFileSkipped(request.ArchiveRunId, parentFile))
+                if (await dataChunkService.ChunkAlreadyUploaded(chunk, cancellationToken) ||
+                    await archiveService.IsTheFileSkipped(request.ArchiveRunId, parentFile, cancellationToken))
                 {
                     logger.LogInformation("Skipping chunk {ChunkIndex} for file {LocalFilePath} - already uploaded",
                         chunk.ChunkIndex, chunk.LocalFilePath);
@@ -100,11 +100,14 @@ public sealed class UploadChunkDataActor(
 
                     var dataSize = chunk.Size;
 
-                    if ((batch is not null && batch.FileSize + dataSize > chunkSize) || batchFileStream is null)
-                        // If the batch is not null and the file size exceeds the chunk size, flush the current batch
-                        await FlushToS3(false, cancellationToken);
+                    if (batch is null || batchFileStream is null || batch.FileSize + dataSize > chunkSize)
+                        // If the batch is null or the file size exceeds the chunk size, flush the current batch
+                        await FlushToS3(true, cancellationToken);
 
                     batch ??= new UploadBatch(batchFileStream!.Name, archiveRunId);
+
+                    logger.LogInformation("Adding chunk {ChunkIndex} of {ParentFile} to batch {BatchFileName}",
+                        chunk.ChunkIndex, request.ParentFile, batch.LocalFilePath);
 
                     await using var src = new FileStream(
                         chunk.LocalFilePath,
@@ -139,10 +142,10 @@ public sealed class UploadChunkDataActor(
                     await retryMediator.RetryAttempt(request, cancellationToken);
                 }
             }
-            
+
             mediator.SignalReaderCompleted();
             if (batch is null) continue;
-            
+
             logger.LogInformation("Flushing remaining batch data to S3");
             // Flush any remaining data to S3
             await FlushToS3(true, cancellationToken);

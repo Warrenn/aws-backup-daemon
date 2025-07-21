@@ -24,7 +24,7 @@ public sealed class BackupCommands(
     IContextResolver contextResolver,
     IAesContextResolver aesContextResolver,
     IAwsClientFactory awsClientFactory,
-    IS3Service s3Service
+    IArchiveDataStore archiveDataStore
 )
 {
     [Command("restore-archive", Description = "Restore an archive from AWS Backup")]
@@ -100,7 +100,12 @@ public sealed class BackupCommands(
     {
         Console.WriteLine("Listing all paths in the archive...");
 
-        var runArchive = await s3Service.GetArchive(archiveId, cancellationToken);
+        var runArchive = await archiveDataStore.GetArchiveRun(archiveId, cancellationToken);
+        if (runArchive is null)
+        {
+            Console.WriteLine($"No archive found with ID: {archiveId}");
+            return;
+        }
 
         foreach (var filePath in runArchive.Files.Keys) Console.WriteLine(filePath);
     }

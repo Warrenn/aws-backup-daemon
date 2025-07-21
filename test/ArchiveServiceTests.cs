@@ -7,23 +7,16 @@ namespace test;
 
 public class ArchiveServiceTests
 {
-    private readonly CurrentArchiveRunRequests _currentReqs = new();
-    private readonly CurrentArchiveRuns _currentRuns = new();
+    private readonly Mock<IArchiveDataStore> _dataStore = new();
     private readonly Mock<ILogger<ArchiveService>> _loggerMock = new();
-    private readonly Mock<IArchiveRunMediator> _runMed = new();
-    private readonly Mock<IS3Service> _s3Service = new();
     private readonly Mock<ISnsMessageMediator> _snsMed = new();
 
     private ArchiveService CreateSut()
     {
         return new ArchiveService(
-            _s3Service.Object,
-            _runMed.Object,
             _snsMed.Object,
-            _currentRuns,
-            _currentReqs,
-            _loggerMock.Object
-        );
+            _loggerMock.Object,
+            _dataStore.Object);
     }
 
     [Fact]
@@ -37,23 +30,20 @@ public class ArchiveServiceTests
             CreatedAt = DateTimeOffset.Now
         };
 
-        _s3Service.Setup(s => s.RunExists(runId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
-        _s3Service.Setup(s => s.GetArchive(runId, It.IsAny<CancellationToken>()))
+        _dataStore.Setup(s => s.GetArchiveRun(runId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(run);
-
         // first lookup: hits S3
         var got1 = await sut.LookupArchiveRun(runId, CancellationToken.None);
         Assert.Equal(run, got1);
 
         // should have saved requests
-        _runMed.Verify(m => m.SaveCurrentArchiveRunRequests(_currentReqs, It.IsAny<CancellationToken>()), Times.Once);
+        _dataStore.Verify(m => m.SaveArchiveRun(run, It.IsAny<CancellationToken>()), Times.Once);
 
         // second lookup: uses cache, no new S3 calls
-        _s3Service.Invocations.Clear();
+        _dataStore.Invocations.Clear();
         var got2 = await sut.LookupArchiveRun(runId, CancellationToken.None);
         Assert.Equal(run, got2);
-        _s3Service.VerifyNoOtherCalls();
+        _dataStore.VerifyNoOtherCalls();
     }
 
     [Fact]
@@ -67,8 +57,7 @@ public class ArchiveServiceTests
         Assert.Equal(ArchiveRunStatus.Processing, run.Status);
 
         // Should have persisted both requests and the new run
-        _runMed.Verify(m => m.SaveCurrentArchiveRunRequests(_currentReqs, It.IsAny<CancellationToken>()), Times.Once);
-        _runMed.Verify(m => m.SaveArchiveRun(run, It.IsAny<CancellationToken>()), Times.Once);
+        _dataStore.Verify(m => m.SaveArchiveRun(run, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -82,7 +71,7 @@ public class ArchiveServiceTests
         var need1 = await sut.DoesFileRequireProcessing("r3", "f.txt", CancellationToken.None);
         Assert.True(need1);
         Assert.Contains("f.txt", (await sut.LookupArchiveRun("r3", CancellationToken.None))!.Files.Keys);
-        _runMed.Verify(m => m.SaveArchiveRun(It.IsAny<ArchiveRun>(), It.IsAny<CancellationToken>()), Times.AtLeastOnce);
+        _dataStore.Verify(m => m.SaveArchiveRun(It.IsAny<ArchiveRun>(), It.IsAny<CancellationToken>()), Times.AtLeastOnce);
 
         // Mark file processed
         var run = await sut.LookupArchiveRun("r3", CancellationToken.None);
@@ -103,9 +92,7 @@ public class ArchiveServiceTests
             CreatedAt = DateTimeOffset.Now
         };
 
-        _s3Service.Setup(s => s.RunExists(runId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
-        _s3Service.Setup(s => s.GetArchive(runId, It.IsAny<CancellationToken>()))
+        _dataStore.Setup(s => s.GetArchiveRun(runId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(run);
 
         var sut = CreateSut();
@@ -130,7 +117,7 @@ public class ArchiveServiceTests
 
         // Should not yet finalize
         _snsMed.VerifyNoOtherCalls();
-        
+
         //add the chunks from processor
         await sut.AddChunkToFile("r4", "a", d1, CancellationToken.None);
         await sut.AddChunkToFile("r4", "a", d2, CancellationToken.None);
@@ -139,7 +126,7 @@ public class ArchiveServiceTests
 
         // Should not yet finalize
         _snsMed.VerifyNoOtherCalls();
-        
+
         await sut.RecordChunkUpload("r4", "a", d1.HashKey, CancellationToken.None);
         await sut.RecordChunkUpload("r4", "b", d3.HashKey, CancellationToken.None);
 
@@ -160,19 +147,16 @@ public class ArchiveServiceTests
         var req = new RunRequest("r5", "/p", "* * * * *");
         await sut.StartNewArchiveRun(req, CancellationToken.None);
         ArchiveRun? savedRun = null;
-        _runMed
+        _dataStore
             .Setup(m => m.SaveArchiveRun(It.IsAny<ArchiveRun>(), It.IsAny<CancellationToken>()))
             .Callback<ArchiveRun, CancellationToken>((m, _) =>
             {
                 // Ensure we save the run after adding files
                 savedRun = m;
             });
-        _s3Service
-            .Setup(s => s.RunExists("r5", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => savedRun is not null);
 
-        _s3Service
-            .Setup(s => s.GetArchive("r5", It.IsAny<CancellationToken>()))
+        _dataStore
+            .Setup(s => s.GetArchiveRun("r5", It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => savedRun!);
 
         // Add one file

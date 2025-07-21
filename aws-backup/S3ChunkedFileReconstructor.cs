@@ -33,8 +33,23 @@ public sealed class S3ChunkedFileReconstructor(
         var outputFilePath = "";
         try
         {
-            var destinationFolder = contextResolver.LocalRestoreFolder(request.RestoreId);
-            outputFilePath = Path.Combine(destinationFolder, Path.GetFileName(request.FilePath));
+            var destinationFolder = string.IsNullOrWhiteSpace(request.RestoreFolder)
+                ? contextResolver.LocalRestoreFolder(request.RestoreId)
+                : request.RestoreFolder;
+
+            destinationFolder = destinationFolder.TrimEnd('/', '\\');
+            var filePath = request.FilePath.Trim('/', '\\');
+
+            if (!Directory.Exists(destinationFolder))
+                Directory.CreateDirectory(destinationFolder);
+
+            outputFilePath = request.RestorePathStrategy switch
+            {
+                RestorePathStrategy.Flatten => $"{destinationFolder}/{Path.GetFileName(filePath)}",
+                RestorePathStrategy.Nested => $"{destinationFolder}/{filePath}",
+                _ => $"{destinationFolder}/{Path.GetFileName(filePath)}"
+            };
+
             var bufferSize = contextResolver.ReadBufferSize();
             var maxDownloadConcurrency = contextResolver.NoOfConcurrentDownloadsPerFile();
             var originalFileSize = request.Size;
@@ -45,10 +60,14 @@ public sealed class S3ChunkedFileReconstructor(
                 if (fileIsVerified)
                     // File already exists and matches checksum, no need to download again
                     return new ReconstructResult(outputFilePath, null);
-                File.Delete(outputFilePath);
+                var directory = Path.GetDirectoryName(outputFilePath) ?? "";
+                var fileName = Path.GetFileNameWithoutExtension(outputFilePath);
+                var extension = Path.GetExtension(outputFilePath);
+                var counter = 1;
+                while (File.Exists(outputFilePath)) outputFilePath = $"{directory}/{fileName}.{counter++}{extension}";
+                // If the file already exists, we will rename it to avoid overwriting
             }
 
-            // Ensure output file exists and is sized (optional)
             await using (var pre = new FileStream(
                              outputFilePath,
                              FileMode.Create,
@@ -61,16 +80,17 @@ public sealed class S3ChunkedFileReconstructor(
             }
 
             var sem = new SemaphoreSlim(maxDownloadConcurrency);
+            var chunkDetails = request.CloudChunkDetails.OrderBy(d => d.Index).ToArray();
 
-            var tasks = Enumerable.Range(0, request.CloudChunkDetails.Length).Select(async idx =>
+            var tasks = Enumerable.Range(0, chunkDetails.Length).Select(async idx =>
             {
-                var (key, bucketName, chunkSize, offset, size, _) = request.CloudChunkDetails[idx];
+                var (key, bucketName, chunkSize, offset, size, _) = chunkDetails[idx];
                 await sem.WaitAsync(cancellationToken);
                 try
                 {
                     var s3 = await awsClientFactory.CreateS3Client(cancellationToken);
                     var range = new ByteRange(offset, offset + size);
-                    
+
                     var resp = await s3.GetObjectAsync(new GetObjectRequest
                     {
                         BucketName = bucketName,
@@ -155,6 +175,6 @@ public sealed class S3ChunkedFileReconstructor(
     {
         await using var stream = File.OpenRead(localFilePath);
         var hash = await SHA256.HashDataAsync(stream, cancellationToken);
-        return hash.AsSpan().SequenceEqual(downloadRequest.Checksum ?? []);
+        return hash.AsSpan().SequenceEqual(downloadRequest.Sha256Checksum ?? []);
     }
 }
