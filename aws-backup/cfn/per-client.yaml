@@ -102,6 +102,8 @@ Resources:
           Value: !Ref RestoreCompleteErrorsTopic
         - Key: exception-topic-arn
           Value: !Ref ExceptionTopic
+        - Key: dynamo-db-table
+          Value: !Ref ArchiveDataTable
       Policies:
         - PolicyName: !Sub "${ClientId}-AccessPolicy"
           PolicyDocument:
@@ -186,6 +188,27 @@ Resources:
                   - !Sub
                     - "${BucketArn}/${ClientId}/*"
                     - BucketArn: !ImportValue aws-backup-initial-bucket-arn
+
+  ArchiveDataTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      TableName: !Sub "archive-data-${ClientId}"
+      BillingMode: PAY_PER_REQUEST # on‑demand mode, no need to manage RCU/WCU
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH # partition key = RunId
+        - AttributeName: SK
+          KeyType: RANGE # sort key = discriminator (FILE#, CHUNK#, RESTORE_…)
+      Tags:
+        - Key: client-id
+          Value: !Ref ClientId
 
   ClientQueueInbox:
     Type: AWS::SQS::Queue
@@ -324,7 +347,7 @@ Outputs:
   ParamBasePath:
     Description: Base path for SSM parameters
     Value: !Ref ParamBasePath
-  
+
   ChunkSize:
     Description: Chunk size for file chunks in bytes
     Value: !Ref ChunkSize

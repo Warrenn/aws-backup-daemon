@@ -26,7 +26,6 @@ public record CommonConfiguration
     public int? ShutdownTimeoutSeconds { get; set; }
     public int? RetryCheckIntervalMs { get; set; }
     public int? StorageCheckDelaySeconds { get; set; }
-    public int? DelayBetweenUploadsSeconds { get; set; }
     public int? DownloadAttemptLimit { get; set; }
     public int? UploadAttemptLimit { get; set; }
     public int? SqsWaitTimeSeconds { get; set; }

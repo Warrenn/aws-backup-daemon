@@ -21,7 +21,7 @@ public class SnsActorTests
         "queue-in", "queue-out",
         "arn:aws:sns:us-east-1:123456789012:archive-complete", "arn:aws:sns:us-east-1:123456789012:archive-error",
         "arn:aws:sns:us-east-1:123456789012:restore-complete", "arn:aws:sns:us-east-1:123456789012:restore-error",
-        "arn:aws:sns:us-east-1:123456789012:exception");
+        "arn:aws:sns:us-east-1:123456789012:exception","dynamo-table");
 
     private readonly Mock<IContextResolver> _contextResolver;
     private readonly TestLoggerClass<SnsActor> _logger;

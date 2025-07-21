@@ -13,4 +13,5 @@ public sealed record AwsConfiguration(
     string ArchiveCompleteErrorsTopicArn,
     string RestoreCompleteTopicArn,
     string RestoreCompleteErrorsTopicArn,
-    string ExceptionTopicArn);
+    string ExceptionTopicArn,
+    string DynamoDbTableName);

@@ -43,7 +43,8 @@ public static class IamExtensions
             tags.GetValueOrDefault("archive-complete-errors-topic-arn", string.Empty),
             tags.GetValueOrDefault("restore-complete-topic-arn", string.Empty),
             tags.GetValueOrDefault("restore-complete-errors-topic-arn", string.Empty),
-            tags.GetValueOrDefault("exception-topic-arn", string.Empty)
+            tags.GetValueOrDefault("exception-topic-arn", string.Empty),
+            tags.GetValueOrDefault("dynamo-db-table", string.Empty)
         );
     }
 }

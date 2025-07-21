@@ -1,4 +1,5 @@
 using System.Globalization;
+using Amazon.DynamoDBv2;
 using Amazon.IdentityManagement;
 using Amazon.Runtime;
 using Amazon.Runtime.CredentialManagement;
@@ -19,6 +20,7 @@ public interface IAwsClientFactory
     Task<IAmazonSQS> CreateSqsClient(CancellationToken cancellationToken);
     Task<IAmazonSimpleNotificationService> CreateSnsClient(CancellationToken cancellationToken);
     Task<AmazonIdentityManagementServiceClient> CreateIamClient(CancellationToken cancellationToken = default);
+    Task<AmazonDynamoDBClient> CreateDynamoDbClient(CancellationToken cancellationToken = default);
     void ResetCachedCredentials();
 }
 
@@ -88,6 +90,22 @@ public sealed class AwsClientFactory(
             : new AmazonIdentityManagementServiceClient(config);
     }
 
+    public async Task<AmazonDynamoDBClient> CreateDynamoDbClient(CancellationToken cancellationToken = default)
+    {
+        var config = new AmazonDynamoDBConfig
+        {
+            MaxErrorRetry = resolver.GeneralRetryLimit(),
+            RetryMode = resolver.GetAwsRetryMode(),
+            Timeout = TimeSpan.FromSeconds(resolver.ShutdownTimeoutSeconds()),
+            RegionEndpoint = resolver.GetAwsRegion()
+        };
+
+        var credentials = await GetCredentialsAsync(cancellationToken);
+        return credentials != null
+            ? new AmazonDynamoDBClient(credentials, config)
+            : new AmazonDynamoDBClient(config);
+    }
+
     public void ResetCachedCredentials()
     {
         _cachedCredentials = null;
@@ -153,7 +171,7 @@ public sealed class AwsClientFactory(
                     var credentials = await factory(cancellationToken);
 
                     if (credentials == null) continue;
-                    
+
                     logger.LogInformation("Successfully resolved AWS credentials using {CredentialSource}", name);
                     var settingsExpiry = timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(expiresIn)).DateTime;
                     var credExpiry = GetUniversalTime(credentials.Expiration);

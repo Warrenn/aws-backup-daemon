@@ -34,6 +34,7 @@ public sealed class RestoreService(
     : IRestoreService
 {
     private readonly ConcurrentDictionary<string, RestoreRun> _restoreRunsCache = new();
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _runLocks = new();
     private readonly ConcurrentDictionary<string, ByteArrayKey[]> _s3KeysToChunks = new();
 
     public async Task<RestoreRun?> LookupRestoreRun(string restoreId, CancellationToken cancellationToken)
@@ -147,13 +148,11 @@ public sealed class RestoreService(
             logger.LogInformation("File {File} in run {RunId} marked Completed",
                 req.FilePath, req.RestoreId);
 
-            await restoreDataStore.SaveRestoreFileMetaData(req.RestoreId, fileMeta, cancellationToken);
+            await restoreDataStore.SaveRestoreFileStatus(req.RestoreId, fileMeta.FilePath, FileRestoreStatus.Completed,
+                "", cancellationToken);
 
             // if *all* files done → finalize
-            if (run.Status is RestoreRunStatus.AllFilesListed &&
-                run.RequestedFiles.Values
-                    .All(f => f.Status is FileRestoreStatus.Completed or FileRestoreStatus.Failed))
-                await FinalizeRun(run, cancellationToken);
+            await SaveAndFinalizeIfComplete(run, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -179,12 +178,10 @@ public sealed class RestoreService(
             await snsMed.PublishMessage(
                 new SnsMessage($"Download failed: {req}", reason.ToString()), cancellationToken);
 
-            await restoreDataStore.SaveRestoreFileMetaData(req.RestoreId, fileMeta, cancellationToken);
+            await restoreDataStore.SaveRestoreFileStatus(req.RestoreId, fileMeta.FilePath, FileRestoreStatus.Failed,
+                reason.Message, cancellationToken);
 
-            if (run.Status is RestoreRunStatus.AllFilesListed &&
-                run.RequestedFiles.Values
-                    .All(f => f.Status is FileRestoreStatus.Completed or FileRestoreStatus.Failed))
-                await FinalizeRun(run, cancellationToken);
+            await SaveAndFinalizeIfComplete(run, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -250,6 +247,12 @@ public sealed class RestoreService(
             foreach (var (key, dataChunk) in fileMetaData.Chunks)
             {
                 var cloudChunk = await cloudChunkStorage.GetCloudChunkDetails(key, cancellationToken);
+                if(cloudChunk is null)
+                {
+                    logger.LogWarning("No cloud chunk found for {Key} in file {File}", key, filePath);
+                    continue;
+                }
+                
                 var chunkRestoreStatus = _s3KeysToChunks.ContainsKey(cloudChunk.S3Key) ||
                                          deepArchiveFiles.ContainsKey(cloudChunk.S3Key)
                     ? S3ChunkRestoreStatus.PendingDeepArchiveRestore
@@ -342,6 +345,23 @@ public sealed class RestoreService(
         {
             logger.LogError(ex, "Error scheduling file recovery for {File} in run {RunId}",
                 fileMetaData.LocalFilePath, restoreRun.RestoreId);
+        }
+    }
+
+    private async Task SaveAndFinalizeIfComplete(RestoreRun run, CancellationToken cancellationToken)
+    {
+        var semaphore = _runLocks.GetOrAdd(run.RestoreId, _ => new SemaphoreSlim(1, 1));
+        await semaphore.WaitAsync(cancellationToken);
+        try
+        {
+            if (run.Status is RestoreRunStatus.AllFilesListed &&
+                run.RequestedFiles.Values
+                    .All(f => f.Status is FileRestoreStatus.Completed or FileRestoreStatus.Failed))
+                await FinalizeRun(run, cancellationToken);
+        }
+        finally
+        {
+            semaphore.Release();
         }
     }
 

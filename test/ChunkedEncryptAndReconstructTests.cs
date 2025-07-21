@@ -29,7 +29,7 @@ public class ChunkedEncryptAndReconstructTests
         var aesMock = new Mock<IAesContextResolver>();
         aesMock.Setup(a => a.FileEncryptionKey(It.IsAny<CancellationToken>()))
             .ReturnsAsync(aesKey);
-        
+
         var archiveServiceMock = new Mock<IArchiveService>();
         List<DataChunkDetails> chunks = [];
         archiveServiceMock
@@ -37,7 +37,7 @@ public class ChunkedEncryptAndReconstructTests
                 It.IsAny<CancellationToken>()))
             .Callback<string, string, DataChunkDetails, CancellationToken>((_, _, c, _) => chunks.Add(c))
             .Returns(Task.CompletedTask);
-        
+
         // A no‐op mediator is fine; we’ll upload manually in the test
         var mediatorMock = new Mock<IUploadChunksMediator>();
         mediatorMock
@@ -50,7 +50,7 @@ public class ChunkedEncryptAndReconstructTests
             "test-bucket", "region",
             "queue-in", "queue-out",
             "complete", "complete-errors",
-            "restore", "restore-errors", "exception");
+            "restore", "restore-errors", "exception", "dynamo-table");
 
         var processor = new ChunkedEncryptingFileProcessor(
             ctxProc.Object,
@@ -151,7 +151,7 @@ public class ChunkedEncryptAndReconstructTests
         var aesMock = new Mock<IAesContextResolver>();
         aesMock.Setup(a => a.FileEncryptionKey(It.IsAny<CancellationToken>()))
             .ReturnsAsync(aesKey);
-        
+
         var archiveServiceMock = new Mock<IArchiveService>();
         List<DataChunkDetails> chunks = [];
         archiveServiceMock
@@ -172,7 +172,7 @@ public class ChunkedEncryptAndReconstructTests
             "test-bucket", "region",
             "queue-in", "queue-out",
             "complete", "complete-errors",
-            "restore", "restore-errors", "exception");
+            "restore", "restore-errors", "exception", "dynamo-table");
 
         var processor = new ChunkedEncryptingFileProcessor(
             ctxProc.Object,

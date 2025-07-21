@@ -105,7 +105,7 @@ public sealed class ArchiveService(
             $"File Skipped: {localFilePath} in run {runId}",
             $"Skipped due to: {exception.Message}"), cancellationToken);
 
-        await FinalizeRun(run, cancellationToken);
+        await SaveAndFinalizeIfComplete(run, cancellationToken);
     }
 
     public async Task RecordFailedChunk(string runId, string localFilePath, byte[] chunkHash, Exception exception,
@@ -123,7 +123,7 @@ public sealed class ArchiveService(
         fileStatusData.Status = FileStatus.Skipped;
         fileStatusData.SkipReason = exception.Message;
 
-        await FinalizeRun(run, cancellationToken);
+        await SaveAndFinalizeIfComplete(run, cancellationToken);
     }
 
     public async Task<bool> IsTheFileSkipped(string runId, string localFilePath, CancellationToken cancellationToken)
@@ -217,8 +217,7 @@ public sealed class ArchiveService(
         _runCache.TryAdd(runId, run!);
         return run!;
     }
-
-
+    
     private async Task<FileMetaData> GetFileMetaData(string runId, string filePath,
         CancellationToken cancellationToken)
     {

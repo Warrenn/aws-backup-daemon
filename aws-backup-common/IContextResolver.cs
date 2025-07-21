@@ -37,7 +37,6 @@ public interface IContextResolver
     int ShutdownTimeoutSeconds();
     int RetryCheckIntervalMs();
     int StorageCheckDelaySeconds();
-    int DelayBetweenUploadsSeconds();
     int DownloadAttemptLimit();
     int UploadAttemptLimit();
     int SqsWaitTimeSeconds();
@@ -54,17 +53,11 @@ public interface IContextResolver
     string RolesAnyWhereTrustAnchorArn();
     string RolesAnyWhereCertificateFileName();
     string RolesAnyWherePrivateKeyFileName();
-    string CurrentRestoreBucketKey();
-    string CurrentArchiveRunsBucketKey();
-    string ChunkManifestBucketKey();
-    string RestoreManifestBucketKey();
     bool NotifyOnArchiveComplete();
     bool NotifyOnArchiveCompleteErrors();
     bool NotifyOnRestoreComplete();
     bool NotifyOnRestoreCompleteErrors();
     bool NotifyOnException();
-    string RunIdBucketKey(string runId);
-    string RestoreIdBucketKey(string restoreId);
     int DaysToKeepRestoredCopy();
     string S3DataPrefix();
     string S3LogFolder();
@@ -271,11 +264,6 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
         return _configOptions.StorageCheckDelaySeconds ?? 300;
     }
 
-    public int DelayBetweenUploadsSeconds()
-    {
-        return _configOptions.DelayBetweenUploadsSeconds ?? 60;
-    }
-
     public int DownloadAttemptLimit()
     {
         return _configOptions.DownloadAttemptLimit ?? 3;
@@ -375,26 +363,6 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
         return DateTimeOffset.UtcNow.AddSeconds(delaySeconds);
     }
 
-    public string CurrentRestoreBucketKey()
-    {
-        return $"{_clientId}/restores.json.tar.br";
-    }
-
-    public string CurrentArchiveRunsBucketKey()
-    {
-        return $"{_clientId}/archive-requests.json.tar.br";
-    }
-
-    public string ChunkManifestBucketKey()
-    {
-        return $"{_clientId}/chunk-manifest.json.tar.br";
-    }
-
-    public string RestoreManifestBucketKey()
-    {
-        return $"{_clientId}/restore-manifest.json.tar.br";
-    }
-
     public bool NotifyOnArchiveComplete()
     {
         return _configOptions.NotifyOnArchiveComplete ?? false;
@@ -418,16 +386,6 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
     public bool NotifyOnException()
     {
         return _configOptions.NotifyOnException ?? false;
-    }
-
-    public string RunIdBucketKey(string runId)
-    {
-        return $"{_clientId}/archive-runs/{runId}.json.br";
-    }
-
-    public string RestoreIdBucketKey(string restoreId)
-    {
-        return $"{_clientId}/restore-runs/{restoreId}.json.br";
     }
 
     public int DaysToKeepRestoredCopy()

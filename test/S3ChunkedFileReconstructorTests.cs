@@ -78,7 +78,7 @@ public class HotStorageServiceIntegrationTests
             _bucket, "region",
             "queue-in", "queue-out",
             "complete", "complete-errors",
-            "restore", "restore-errors", "exception");
+            "restore", "restore-errors", "exception", "dynamo-table");
 
         ctx.Setup(c => c.S3PartSize()).Returns(5 * 1024 * 1024);
         ctx.Setup(c => c.HotStorage()).Returns(S3StorageClass.Standard);

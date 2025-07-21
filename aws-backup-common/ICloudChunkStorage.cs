@@ -7,7 +7,7 @@ public interface ICloudChunkStorage
     Task AddCloudChunkDetails(ByteArrayKey hashKey, CloudChunkDetails cloudChunkDetails,
         CancellationToken cancellationToken);
     
-    Task<CloudChunkDetails> GetCloudChunkDetails(
+    Task<CloudChunkDetails?> GetCloudChunkDetails(
         ByteArrayKey hashKey,
         CancellationToken cancellationToken);
 }

@@ -27,6 +27,7 @@ namespace aws_backup_common;
 [JsonSerializable(typeof(DataChunkDetails))]
 [JsonSerializable(typeof(ByteArrayKey))]
 [JsonSerializable(typeof(AclEntry))]
+[JsonSerializable(typeof(AclEntry[]))]
 [JsonSerializable(typeof(S3ChunkRestoreStatus))]
 [JsonSerializable(typeof(RestoreFileMetaData))]
 [JsonSerializable(typeof(RestoreRun))]

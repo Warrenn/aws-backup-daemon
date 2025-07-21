@@ -45,7 +45,7 @@ public class ChunkedEncryptingFileProcessorTests : IDisposable
             "test-bucket", "region",
             "queue-in", "queue-out",
             "complete", "complete-errors",
-            "restore", "restore-errors", "exception");
+            "restore", "restore-errors", "exception", "dynamo-table");
 
         var aesMock = new Mock<IAesContextResolver>();
         aesMock.Setup(a => a.FileEncryptionKey(It.IsAny<CancellationToken>()))
@@ -109,7 +109,7 @@ public class ChunkedEncryptingFileProcessorTests : IDisposable
             "test-bucket", "region",
             "queue-in", "queue-out",
             "complete", "complete-errors",
-            "restore", "restore-errors", "exception");
+            "restore", "restore-errors", "exception","dynamo-table");
 
         // Mock context resolver
         var ctxMock = new Mock<IContextResolver>();

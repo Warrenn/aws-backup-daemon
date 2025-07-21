@@ -68,7 +68,7 @@ public class HotStorageServiceRestoreRunTests
             _bucket, "region",
             "queue-in", "queue-out",
             "complete", "complete-errors",
-            "restore", "restore-errors", "exception");
+            "restore", "restore-errors", "exception", "dynamo-table");
         ctxMock.Setup(c => c.S3PartSize()).Returns(5 * 1024 * 1024);
         ctxMock.Setup(c => c.HotStorage()).Returns("STANDARD");
 
