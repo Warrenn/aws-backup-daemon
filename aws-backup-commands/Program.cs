@@ -60,13 +60,12 @@ builder
     .Services
     .AddSingleton<IContextResolver>(_ => new ContextResolver(configuration))
     .AddSingleton(configuration)
-    .AddSingleton(sp =>
-    {
-        var factory = sp.GetRequiredService<IAwsClientFactory>();
-        var iamClient = factory.CreateIamClient().GetAwaiter().GetResult();
-        var awsConfig = iamClient.GetAwsConfigurationAsync(configuration.ClientId).GetAwaiter().GetResult();
-        return awsConfig;
-    })
+    .AddSingleton<IAwsConfigurationFactory, AwsConfigurationFactory>()
+    .AddSingleton<AwsConfiguration>(sp => sp
+        .GetService<IAwsConfigurationFactory>()!
+        .GetAwsConfiguration(CancellationToken.None)
+        .GetAwaiter()
+        .GetResult())
     .AddSingleton<ITemporaryCredentialsServer, RolesAnywhere>()
     .AddSingleton<IAwsClientFactory, AwsClientFactory>()
     .AddSingleton<IAesContextResolver, AesContextResolver>()
@@ -84,8 +83,7 @@ host.AddCommand((
     Console.WriteLine(helpMessageBuilder.BuildAndRenderForCurrentContext());
 });
 
-await host
-    .RunAsync<BackupCommands>();
+await host.RunAsync<BackupCommands>();
 return 0;
 
 static string? GetValueFromArgs(string key, string keyAlt, string[] args)

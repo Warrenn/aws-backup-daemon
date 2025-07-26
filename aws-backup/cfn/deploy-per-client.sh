@@ -21,7 +21,7 @@ if [[ ! -f "$PEM_FILE" ]]; then
   exit 1
 fi
 
-# Read and encode PEM content safely
+Read and encode PEM content safely
 CERTIFICATE_DATA=$(<"$PEM_FILE")
 
 # Template and stack info
@@ -116,11 +116,22 @@ else
   exit 1
 fi
 
-param_base_path=$(aws cloudformation describe-stacks \
+cfn_outputs=$(aws cloudformation describe-stacks \
   --stack-name "$STACK_NAME" \
   --region "$REGION" \
-  --query "Stacks[0].Outputs[?OutputKey=='ParamBasePath'].OutputValue" \
-  --output text)
+  --query "Stacks[0].Outputs" \
+  --output json)
+
+json_output=$(jq -r 'map({key: .OutputKey, value: .OutputValue}) | from_entries' <<< "$cfn_outputs")
+json_output=$(echo "$json_output" | jq '.ChunkSize |= tonumber')
+param_base_path=$(jq -r '.ParamBasePath' <<< "$json_output")
 
 ./generate-aes-ssm-key.sh "${param_base_path}/${CLIENT_ID}/aes-sqs-encryption"
 ./generate-aes-ssm-key.sh "${param_base_path}/${CLIENT_ID}/aes-file-encryption"
+
+aws ssm put-parameter \
+  --name "${param_base_path}/${CLIENT_ID}/aws-config" \
+  --value "${json_output}" \
+  --type String \
+  --overwrite \
+  --region "$REGION"

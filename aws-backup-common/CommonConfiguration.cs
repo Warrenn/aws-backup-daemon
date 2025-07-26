@@ -2,6 +2,7 @@ namespace aws_backup_common;
 
 public record CommonConfiguration
 {
+    public string? ParamBasePath { get; set; }
     public string? ColdStorage { get; set; }
     public string? HotStorage { get; set; }
     public string? LowCostStorage { get; set; }

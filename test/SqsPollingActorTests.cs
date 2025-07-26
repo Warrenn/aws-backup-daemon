@@ -17,18 +17,19 @@ public class SqsPollingActorTests
     private readonly AwsConfiguration _config = new(
         16,
         "sqs-enc", "file-enc",
-        "bucket-name", "region",
+        "bucket-name", 
         "https://queue", "queue-out",
-        "arn:aws:sns:us-east-1:123456789012:archive-complete", "arn:aws:sns:us-east-1:123456789012:archive-error",
-        "arn:aws:sns:us-east-1:123456789012:restore-complete", "arn:aws:sns:us-east-1:123456789012:restore-error",
-        "arn:aws:sns:us-east-1:123456789012:exception","dynamo-table");
+        "arn:aws:sns:us-east-1:123456789012:archive-complete",
+        "arn:aws:sns:us-east-1:123456789012:archive-error",
+        "arn:aws:sns:us-east-1:123456789012:restore-complete",
+        "arn:aws:sns:us-east-1:123456789012:restore-error",
+        "dynamo-table");
 
     private readonly Mock<IContextResolver> _ctx = new();
     private readonly Mock<IAwsClientFactory> _factory = new();
     private readonly TestLoggerClass<SqsPollingActor> _logger = new();
     private readonly Mock<IRestoreRequestsMediator> _mediator = new();
     private readonly Mock<IAmazonSQS> _sqs = new();
-
 
     private SqsPollingActor CreateOrch()
     {

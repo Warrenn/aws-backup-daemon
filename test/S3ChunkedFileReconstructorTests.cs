@@ -75,10 +75,9 @@ public class HotStorageServiceIntegrationTests
         var awsConfig = new AwsConfiguration(
             16,
             "sqs-enc", "file-enc",
-            _bucket, "region",
-            "queue-in", "queue-out",
-            "complete", "complete-errors",
-            "restore", "restore-errors", "exception", "dynamo-table");
+            "test-bucket", "queue-in", "queue-out",
+            "archive-complete","restore-complete", "restore-errors", "exception",
+            "dynamo-table");
 
         ctx.Setup(c => c.S3PartSize()).Returns(5 * 1024 * 1024);
         ctx.Setup(c => c.HotStorage()).Returns(S3StorageClass.Standard);

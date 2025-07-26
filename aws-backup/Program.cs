@@ -73,15 +73,12 @@ builder
             sp.GetRequiredService<ICronScheduleMediator>(),
             sp.GetRequiredService<ILogger<ContextResolver>>()))
     .AddSingleton<IUpdateConfiguration, ContextResolver>()
-    .AddSingleton(sp =>
-    {
-        var resolver = sp.GetRequiredService<IContextResolver>();
-        var factory = sp.GetRequiredService<IAwsClientFactory>();
-        var iamClient = factory.CreateIamClient(cancellationToken).GetAwaiter().GetResult();
-        var clientId = resolver.ClientId();
-        var awsConfig = iamClient.GetAwsConfigurationAsync(clientId).GetAwaiter().GetResult();
-        return awsConfig;
-    })
+    .AddSingleton<IAwsConfigurationFactory, AwsConfigurationFactory>()
+    .AddSingleton<AwsConfiguration>(sp => sp
+        .GetService<IAwsConfigurationFactory>()!
+        .GetAwsConfiguration(CancellationToken.None)
+        .GetAwaiter()
+        .GetResult())
     .AddSingleton<ISnsMessageMediator>(sp => sp.GetRequiredService<Mediator>())
     .AddSingleton<IArchiveFileMediator>(sp => sp.GetRequiredService<Mediator>())
     .AddSingleton<IRunRequestMediator>(sp => sp.GetRequiredService<Mediator>())

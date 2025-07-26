@@ -53,6 +53,7 @@ public interface IContextResolver
     string RolesAnyWhereTrustAnchorArn();
     string RolesAnyWhereCertificateFileName();
     string RolesAnyWherePrivateKeyFileName();
+    string ParamBasePath();
     bool NotifyOnArchiveComplete();
     bool NotifyOnArchiveCompleteErrors();
     bool NotifyOnRestoreComplete();
@@ -334,6 +335,11 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
     public bool UseS3Accelerate()
     {
         return _configOptions.UseS3Accelerate ?? false;
+    }
+    
+    public string ParamBasePath()
+    {
+        return _configOptions.ParamBasePath ?? "/backup-application";
     }
 
     // ID generation methods

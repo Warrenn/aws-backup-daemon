@@ -162,11 +162,8 @@ public sealed class UploadBatchActor(
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        // SignalCronScheduleChange no more items
-        // (Producer side should call sharedChannel.Writer.Complete())
         await base.StopAsync(cancellationToken);
 
-        // Wait for any in-flight work to finish (optional timeout)
         using var timeoutCts =
             new CancellationTokenSource(TimeSpan.FromSeconds(contextResolver.ShutdownTimeoutSeconds()));
         await Task.WhenAny(Task.WhenAll(_workers), Task.Delay(-1, timeoutCts.Token));

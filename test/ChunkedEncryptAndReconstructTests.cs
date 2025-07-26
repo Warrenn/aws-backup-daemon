@@ -47,10 +47,9 @@ public class ChunkedEncryptAndReconstructTests
         var awsConfig = new AwsConfiguration(
             3_000L,
             "sqs-enc", "file-enc",
-            "test-bucket", "region",
-            "queue-in", "queue-out",
-            "complete", "complete-errors",
-            "restore", "restore-errors", "exception", "dynamo-table");
+            "test-bucket", "queue-in", "queue-out",
+            "archive-complete","restore-complete", "restore-errors", "exception",
+            "dynamo-table");
 
         var processor = new ChunkedEncryptingFileProcessor(
             ctxProc.Object,
@@ -169,10 +168,9 @@ public class ChunkedEncryptAndReconstructTests
         var awsConfig = new AwsConfiguration(
             3_000L,
             "sqs-enc", "file-enc",
-            "test-bucket", "region",
-            "queue-in", "queue-out",
-            "complete", "complete-errors",
-            "restore", "restore-errors", "exception", "dynamo-table");
+            "test-bucket", "queue-in", "queue-out",
+            "archive-complete","restore-complete", "restore-errors", "exception",
+            "dynamo-table");
 
         var processor = new ChunkedEncryptingFileProcessor(
             ctxProc.Object,

@@ -65,10 +65,9 @@ public class HotStorageServiceRestoreRunTests
         var awsConfig = new AwsConfiguration(
             16,
             "sqs-enc", "file-enc",
-            _bucket, "region",
-            "queue-in", "queue-out",
-            "complete", "complete-errors",
-            "restore", "restore-errors", "exception", "dynamo-table");
+            "test-bucket", "queue-in", "queue-out",
+            "archive-complete","restore-complete", "restore-errors", "exception",
+            "dynamo-table");
         ctxMock.Setup(c => c.S3PartSize()).Returns(5 * 1024 * 1024);
         ctxMock.Setup(c => c.HotStorage()).Returns("STANDARD");
 

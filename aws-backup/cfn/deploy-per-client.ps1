@@ -1,12 +1,12 @@
 param (
     [string]$RawClientId,
-    [string]$PemFile
+    [string]$PemFile = ""
 )
 
 $ErrorActionPreference = "Stop"
 
 if (-not $RawClientId -or -not $PemFile) {
-    Write-Host "Usage: .\script.ps1 <client-id> <path-to-pem-file>"
+    Write-Host "Usage: .\deploy-per-client.ps1 <client-id> <path-to-pem-file>"
     exit 1
 }
 
@@ -133,12 +133,32 @@ if ($finalStatus -eq "CREATE_COMPLETE" -or $finalStatus -eq "UPDATE_COMPLETE") {
 }
 
 # Get ParamBasePath output
-$paramBasePath = aws cloudformation describe-stacks `
+$cfn_outputs = aws cloudformation describe-stacks `
     --stack-name $StackName `
     --region $Region `
-    --query "Stacks[0].Outputs[?OutputKey=='ParamBasePath'].OutputValue" `
-    --output text
+    --query "Stacks[0].Outputs" `
+    --output json
+    
+$jsonArray = $cfn_outputs | ConvertFrom-Json
+
+# Build key-value hashtable
+$flat = @{}
+foreach ($item in $jsonArray) {
+  $flat[$item.OutputKey] = $item.OutputValue
+}
+$flat.ChunkSize = [long]$flat.ChunkSize
+
+# Convert hashtable to JSON string
+$flattenedJson = $flat | ConvertTo-Json -Depth 2
+$paramBasePath = $flat["ParamBasePath"]
 
 # Call external script
 & ./generate-aes-ssm-key.ps1 -ParamName "$paramBasePath/$ClientId/aes-sqs-encryption"
 & ./generate-aes-ssm-key.ps1 -ParamName "$paramBasePath/$ClientId/aes-file-encryption"
+
+aws ssm put-parameter `
+  --name "$paramBasePath/$ClientId/aws-config" `
+  --value "$flattenedJson" `
+  --type String `
+  --overwrite `
+  --region "$Region"

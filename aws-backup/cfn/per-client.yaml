@@ -76,43 +76,13 @@ Resources:
       MaxSessionDuration: !Ref MaxSessionDuration
       Path: "/"
       Tags:
-        - Key: chunk-size-bytes
-          Value: !Ref ChunkSize
         - Key: client-id
           Value: !Ref ClientId
-        - Key: bucket-name
-          Value: !ImportValue aws-backup-initial-bucket-name
-        - Key: bucket-region
-          Value: !Ref AWS::Region
-        - Key: aes-sqs-encryption-path
-          Value: !Sub "${ParamBasePath}/${ClientId}/aes-sqs-encryption"
-        - Key: aes-file-encryption-path
-          Value: !Sub "${ParamBasePath}/${ClientId}/aes-file-encryption"
-        - Key: sqs-inbox-queue-url
-          Value: !Ref ClientQueueInbox
-        - Key: sqs-outbox-queue-url
-          Value: !Ref ClientQueueOutbox
-        - Key: archive-complete-topic-arn
-          Value: !Ref ArchiveCompleteTopic
-        - Key: restore-complete-topic-arn
-          Value: !Ref RestoreCompleteTopic
-        - Key: archive-complete-errors-topic-arn
-          Value: !Ref ArchiveCompleteErrorsTopic
-        - Key: restore-complete-errors-topic-arn
-          Value: !Ref RestoreCompleteErrorsTopic
-        - Key: exception-topic-arn
-          Value: !Ref ExceptionTopic
-        - Key: dynamo-db-table
-          Value: !Ref ArchiveDataTable
       Policies:
         - PolicyName: !Sub "${ClientId}-AccessPolicy"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              - Effect: Allow
-                Action:
-                  - iam:ListRoleTags
-                Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ClientId}"
               - Effect: Allow
                 Action:
                   - sts:GetCallerIdentity
@@ -195,7 +165,7 @@ Resources:
     UpdateReplacePolicy: Delete
     Properties:
       TableName: !Sub "archive-data-${ClientId}"
-      BillingMode: PAY_PER_REQUEST # on‑demand mode, no need to manage RCU/WCU
+      BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: PK
           AttributeType: S
@@ -203,9 +173,9 @@ Resources:
           AttributeType: S
       KeySchema:
         - AttributeName: PK
-          KeyType: HASH # partition key = RunId
+          KeyType: HASH
         - AttributeName: SK
-          KeyType: RANGE # sort key = discriminator (FILE#, CHUNK#, RESTORE_…)
+          KeyType: RANGE
       Tags:
         - Key: client-id
           Value: !Ref ClientId
@@ -216,18 +186,6 @@ Resources:
     UpdateReplacePolicy: Delete
     Properties:
       QueueName: !Sub "${ClientId}-inbox"
-      VisibilityTimeout: !Ref VisibilityTimeout
-      MessageRetentionPeriod: !Ref MessageRetentionPeriod
-      Tags:
-        - Key: client-id
-          Value: !Ref ClientId
-
-  ClientQueueOutbox:
-    Type: AWS::SQS::Queue
-    DeletionPolicy: Delete
-    UpdateReplacePolicy: Delete
-    Properties:
-      QueueName: !Sub "${ClientId}-outbox"
       VisibilityTimeout: !Ref VisibilityTimeout
       MessageRetentionPeriod: !Ref MessageRetentionPeriod
       Tags:
@@ -305,49 +263,58 @@ Resources:
           Value: !Ref ClientId
 
 Outputs:
-  InboxQueueUrl:
+  BucketName:
+    Description: Name of the initial S3 bucket for client data
+    Value: !ImportValue aws-backup-initial-bucket-name
+  
+  SqsInboxQueueUrl:
     Description: Client-specific Inbox SQS Queue URL
     Value: !Ref ClientQueueInbox
-
-  OutboxQueueUrl:
-    Description: Client-specific Outbox SQS Queue URL
-    Value: !Ref ClientQueueOutbox
-
-  InboxQueueArn:
+  
+  SqsInboxQueueArn:
     Description: Client-specific Inbox  SQS Queue ARN
     Value: !GetAtt ClientQueueInbox.Arn
-
-  OutboxQueueArn:
-    Description: Client-specific Outbox SQS Queue ARN
-    Value: !GetAtt ClientQueueOutbox.Arn
-
+  
   TrustAnchorArn:
     Description: ARN of the Roles Anywhere Trust Anchor
     Value: !Sub "arn:${AWS::Partition}:rolesanywhere:${AWS::Region}:${AWS::AccountId}:trust-anchor/${TrustAnchor}"
-
+  
   ProfileArn:
     Description: ARN of the Roles Anywhere Profile
     Value: !Sub "arn:${AWS::Partition}:rolesanywhere:${AWS::Region}:${AWS::AccountId}:profile/${RolesAnywhereProfile}"
-
+  
   RoleArn:
     Description: ARN of the IAM Role assumed via Roles Anywhere
     Value: !GetAtt RolesAnywhereAssumableRole.Arn
-
+  
   ArchiveCompleteTopicArn:
+    Description: ARN of the SNS topic for archive completion notifications
     Value: !Ref ArchiveCompleteTopic
+  
   RestoreCompleteTopicArn:
+    Description: ARN of the SNS topic for restore completion notifications
     Value: !Ref RestoreCompleteTopic
+  
   ArchiveCompleteErrorsTopicArn:
+    Description: ARN of the SNS topic for archive completion errors
     Value: !Ref ArchiveCompleteErrorsTopic
+  
   RestoreCompleteErrorsTopicArn:
+    Description: ARN of the SNS topic for restore completion errors
     Value: !Ref RestoreCompleteErrorsTopic
+  
   ExceptionTopicArn:
+    Description: ARN of the SNS topic for exceptions
     Value: !Ref ExceptionTopic
-
+  
+  DynamoDbTableName:
+    Description: Name of the DynamoDB table for archive data
+    Value: !Ref ArchiveDataTable
+  
   ParamBasePath:
     Description: Base path for SSM parameters
     Value: !Ref ParamBasePath
-
-  ChunkSize:
+  
+  ChunkSizeBytes:
     Description: Chunk size for file chunks in bytes
     Value: !Ref ChunkSize

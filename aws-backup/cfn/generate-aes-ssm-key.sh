@@ -20,7 +20,7 @@ if [[ "$DECODED_LENGTH" -ne 32 ]]; then
 fi
 
 if aws ssm get-parameter --name "$PARAM_NAME" --region "$REGION" --with-decryption >/dev/null 2>&1; then
-  echo "✅ AES Parameter found for $PARAM_NAME. No need to create a new one."
+  echo "AES Parameter found for $PARAM_NAME. No need to create a new one."
   exit 0
 fi
 
@@ -32,4 +32,4 @@ aws ssm put-parameter \
   --overwrite \
   --region "$REGION"
 
-echo "✅ AES key stored in SSM parameter: $PARAM_NAME"
+echo "AES key stored in SSM parameter: $PARAM_NAME"
