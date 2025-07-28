@@ -16,7 +16,6 @@ public class SnsActorTests
 
     private readonly AwsConfiguration _config = new(
         16,
-        "sqs-enc", "file-enc",
         "bucket-name", "queue-in",
         "arn:aws:sns:us-east-1:123456789012:archive-complete",
         "arn:aws:sns:us-east-1:123456789012:archive-error",

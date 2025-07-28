@@ -97,15 +97,6 @@ Resources:
                   - sqs:SendMessage
                   - sqs:GetQueueAttributes
                 Resource:
-                  - !GetAtt ClientQueueOutbox.Arn
-
-              - Effect: Allow
-                Action:
-                  - sqs:ReceiveMessage
-                  - sqs:DeleteMessage
-                  - sqs:SendMessage
-                  - sqs:GetQueueAttributes
-                Resource:
                   - !GetAtt ClientQueueInbox.Arn
 
               - Effect: Allow
@@ -158,6 +149,16 @@ Resources:
                   - !Sub
                     - "${BucketArn}/${ClientId}/*"
                     - BucketArn: !ImportValue aws-backup-initial-bucket-arn
+              
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !GetAtt ArchiveDataTable.Arn
 
   ArchiveDataTable:
     Type: AWS::DynamoDB::Table
@@ -197,7 +198,6 @@ Resources:
     Properties:
       Queues:
         - !Ref ClientQueueInbox
-        - !Ref ClientQueueOutbox
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -211,16 +211,6 @@ Resources:
               - sqs:SendMessage
             Resource:
               - !GetAtt ClientQueueInbox.Arn
-          - Effect: Allow
-            Principal:
-              AWS: !GetAtt RolesAnywhereAssumableRole.Arn
-            Action:
-              - sqs:ReceiveMessage
-              - sqs:DeleteMessage
-              - sqs:GetQueueAttributes
-              - sqs:SendMessage
-            Resource:
-              - !GetAtt ClientQueueOutbox.Arn
 
   ArchiveCompleteTopic:
     Type: AWS::SNS::Topic

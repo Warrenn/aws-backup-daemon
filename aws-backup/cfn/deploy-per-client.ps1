@@ -146,7 +146,7 @@ $flat = @{}
 foreach ($item in $jsonArray) {
   $flat[$item.OutputKey] = $item.OutputValue
 }
-$flat.ChunkSize = [long]$flat.ChunkSize
+$flat.ChunkSizeBytes = [long]$flat.ChunkSizeBytes
 
 # Convert hashtable to JSON string
 $flattenedJson = $flat | ConvertTo-Json -Depth 2

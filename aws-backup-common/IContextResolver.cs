@@ -84,6 +84,7 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
     protected string? _localCacheFolder;
     protected string? _localRestoreFolder;
     protected S3StorageClass? _lowCostStorage;
+    protected string? _paramBasePath;
     protected ServerSideEncryptionMethod? _serverSideEncryptionMethod;
 
     public S3StorageClass ColdStorage()
@@ -336,10 +337,11 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
     {
         return _configOptions.UseS3Accelerate ?? false;
     }
-    
+
     public string ParamBasePath()
     {
-        return _configOptions.ParamBasePath ?? "/backup-application";
+        _paramBasePath ??= (_configOptions.ParamBasePath ?? "/backup-application").TrimEnd('/', '\\');
+        return _paramBasePath;
     }
 
     // ID generation methods

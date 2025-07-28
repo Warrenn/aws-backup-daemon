@@ -14,8 +14,6 @@ public class UploadBatchActorTests
 
     private readonly AwsConfiguration _awsConfig = new(
         12345,
-        "sqs-path",
-        "file-path",
         "test-bucket",
         "sqs-url",
         "arn:archive-complete",

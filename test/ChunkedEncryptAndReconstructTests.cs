@@ -46,7 +46,6 @@ public class ChunkedEncryptAndReconstructTests
 
         var awsConfig = new AwsConfiguration(
             3_000L,
-            "sqs-enc", "file-enc",
             "test-bucket", "queue-in", "queue-out",
             "archive-complete","restore-complete", "restore-errors", "exception",
             "dynamo-table");
@@ -167,7 +166,6 @@ public class ChunkedEncryptAndReconstructTests
 
         var awsConfig = new AwsConfiguration(
             3_000L,
-            "sqs-enc", "file-enc",
             "test-bucket", "queue-in", "queue-out",
             "archive-complete","restore-complete", "restore-errors", "exception",
             "dynamo-table");

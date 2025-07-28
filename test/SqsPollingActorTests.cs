@@ -16,7 +16,6 @@ public class SqsPollingActorTests
 
     private readonly AwsConfiguration _config = new(
         16,
-        "sqs-enc", "file-enc",
         "bucket-name", 
         "https://queue", "queue-out",
         "arn:aws:sns:us-east-1:123456789012:archive-complete",

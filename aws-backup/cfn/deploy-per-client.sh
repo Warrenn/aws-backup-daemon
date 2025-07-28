@@ -21,8 +21,9 @@ if [[ ! -f "$PEM_FILE" ]]; then
   exit 1
 fi
 
-Read and encode PEM content safely
+# Read and encode PEM content safely
 CERTIFICATE_DATA=$(<"$PEM_FILE")
+
 
 # Template and stack info
 TEMPLATE_FILE="per-client.yaml"
@@ -123,7 +124,7 @@ cfn_outputs=$(aws cloudformation describe-stacks \
   --output json)
 
 json_output=$(jq -r 'map({key: .OutputKey, value: .OutputValue}) | from_entries' <<< "$cfn_outputs")
-json_output=$(echo "$json_output" | jq '.ChunkSize |= tonumber')
+json_output=$(echo "$json_output" | jq '.ChunkSizeBytes |= tonumber')
 param_base_path=$(jq -r '.ParamBasePath' <<< "$json_output")
 
 ./generate-aes-ssm-key.sh "${param_base_path}/${CLIENT_ID}/aes-sqs-encryption"

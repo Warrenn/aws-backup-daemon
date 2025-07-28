@@ -18,6 +18,7 @@ Resources:
   S3Bucket:
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       BucketName: !Sub "${BucketNamePrefix}-${AWS::AccountId}-${AWS::Region}"
       AccelerateConfiguration:

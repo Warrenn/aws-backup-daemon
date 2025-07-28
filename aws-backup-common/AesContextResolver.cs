@@ -10,21 +10,21 @@ public interface IAesContextResolver
 
 public sealed class AesContextResolver(
     IAwsClientFactory awsClientFactory,
-    AwsConfiguration configuration) : IAesContextResolver
+    IContextResolver resolver) : IAesContextResolver
 {
     private byte[]? _fileEncryptionKey;
     private byte[]? _sqsEncryptionKey;
 
     public async Task<byte[]> SqsEncryptionKey(CancellationToken cancellationToken)
     {
-        return _sqsEncryptionKey ??= await GetEncryptionKey(
-            configuration.AesSqsEncryptionPath, cancellationToken);
+        var aesSqsEncryptionPath = $"{resolver.ParamBasePath()}/{resolver.ClientId()}/aes-sqs-encryption";
+        return _sqsEncryptionKey ??= await GetEncryptionKey(aesSqsEncryptionPath, cancellationToken);
     }
 
     public async Task<byte[]> FileEncryptionKey(CancellationToken cancellationToken)
     {
-        return _fileEncryptionKey ??= await GetEncryptionKey(
-            configuration.AesFileEncryptionPath, cancellationToken);
+        var aesSqsEncryptionPath = $"{resolver.ParamBasePath()}/{resolver.ClientId()}/aes-file-encryption";
+        return _fileEncryptionKey ??= await GetEncryptionKey(aesSqsEncryptionPath, cancellationToken);
     }
 
     private async Task<byte[]> GetEncryptionKey(string path, CancellationToken cancellationToken)

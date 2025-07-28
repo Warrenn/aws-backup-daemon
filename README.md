@@ -88,16 +88,19 @@ The daemon retrieves this configuration at startup via the `AwsConfigurationFact
 ## Building and installing
 
 1. **Clone the repository**:
+
    ```bash
    git clone https://github.com/Warrenn/aws-backup-daemon.git
    cd aws-backup-daemon
    ```
 
 2. **Restore dependencies and build** the solution:
+
    ```bash
    dotnet restore
    dotnet build -c Release
    ```
+
    This produces two console applications: `aws-backup` (the daemon) and `aws-backup-commands` (the CLI utilities).
 
 3. **Create your application settings file** (`appsettings.json`) and place it alongside the built executable, or specify its location at runtime with `--app-settings`.
@@ -109,6 +112,7 @@ The daemon retrieves this configuration at startup via the `AwsConfigurationFact
    **Linux (systemd)**
    1. Copy the `aws-backup` binary and `appsettings.json` to `/opt/aws-backup-daemon/`.
    2. Create `/etc/systemd/system/aws-backup-daemon.service` with contents similar to:
+
       ```ini
       [Unit]
       Description=AWS Backup Daemon
@@ -124,7 +128,9 @@ The daemon retrieves this configuration at startup via the `AwsConfigurationFact
       [Install]
       WantedBy=multi-user.target
       ```
+
    3. Enable and start the service:
+
       ```bash
       sudo systemctl daemon-reload
       sudo systemctl enable aws-backup-daemon
@@ -132,13 +138,16 @@ The daemon retrieves this configuration at startup via the `AwsConfigurationFact
       ```
 
    **Windows service**
-   1. Build a self-contained Windows publish:
+   4. Build a self-contained Windows publish:
+
       ```powershell
       dotnet publish aws-backup -c Release -r win-x64 --sc
       ```
-   2. Use `sc.exe` or PowerShell to create a service that runs the published executable and passes the `--app-settings` argument.
+
+   5. Use `sc.exe` or PowerShell to create a service that runs the published executable and passes the `--app-settings` argument.
 
 6. **Run the command-line utilities**. Use `aws-backup-commands` to list or restore archives:
+
    ```bash
    # list all archives for the client
    dotnet run --project aws-backup-commands -- list-archives --client-id my-client --app-settings appsettings.json

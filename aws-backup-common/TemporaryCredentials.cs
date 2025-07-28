@@ -15,7 +15,7 @@ public sealed record AwsTemporaryCredentials(
 
 public interface ITemporaryCredentialsServer
 {
-    Task<AwsTemporaryCredentials> GetCredentials(
+    Task<(AwsTemporaryCredentials? credentials, string? errorMessage)> GetCredentials(
         string profileArn,
         string roleArn,
         string trustAnchorArn,
@@ -28,7 +28,7 @@ public interface ITemporaryCredentialsServer
 
 public sealed class RolesAnywhere : ITemporaryCredentialsServer
 {
-    public async Task<AwsTemporaryCredentials> GetCredentials(
+    public async Task<(AwsTemporaryCredentials? credentials, string? errorMessage)> GetCredentials(
         string profileArn,
         string roleArn,
         string trustAnchorArn,
@@ -113,8 +113,12 @@ public sealed class RolesAnywhere : ITemporaryCredentialsServer
             req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
 
         var resp = await client.SendAsync(req, cancellationToken);
+
+        if (!resp.IsSuccessStatusCode) return (null, resp.ReasonPhrase);
+
         var json = await resp.Content.ReadAsStringAsync(cancellationToken);
-        return Parse(json);
+        var credentials = Parse(json);
+        return (credentials, null);
     }
 
     private static AwsTemporaryCredentials Parse(string json)

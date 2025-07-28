@@ -20,8 +20,6 @@ public class ChunkDataActorTests
     {
         return new AwsConfiguration(
             chunkSizeBytes,
-            "",
-            "",
             "test-bucket",
             "",
             "",

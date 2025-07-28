@@ -62,11 +62,19 @@ builder
     .AddSingleton(configuration)
     .AddSingleton<IAwsConfigurationFactory, AwsConfigurationFactory>()
     .AddSingleton<IArchiveDataStore, DynamoDbDataStore>()
-    .AddSingleton<AwsConfiguration>(sp => sp
-        .GetService<IAwsConfigurationFactory>()!
-        .GetAwsConfiguration(CancellationToken.None)
-        .GetAwaiter()
-        .GetResult())
+    .AddSingleton<AwsConfiguration>(sp =>
+    {
+        var (awsConfiguration, errorMessage) = sp
+            .GetService<IAwsConfigurationFactory>()!
+            .GetAwsConfiguration(CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
+        if (awsConfiguration is not null) return awsConfiguration;
+        var ex = new InvalidOperationException("AWS configuration could not be loaded.");
+        errorMessage ??= "Failed to load AWS configuration.";
+        Log.Error(ex, errorMessage);
+        throw ex;
+    })
     .AddSingleton<ITemporaryCredentialsServer, RolesAnywhere>()
     .AddSingleton<IAwsClientFactory, AwsClientFactory>()
     .AddSingleton<IAesContextResolver, AesContextResolver>()

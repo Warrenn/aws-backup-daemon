@@ -215,7 +215,7 @@ public sealed class AwsClientFactory(
         if (!File.Exists(certificateFileName)) return null;
         if (!File.Exists(privateKeyFileName)) return null;
 
-        var (accessKey, secretKey, sessionToken, expirationString) = await temporaryCredentialsServer.GetCredentials(
+        var (tempCredentials, errorMessage) = await temporaryCredentialsServer.GetCredentials(
             profileArn,
             roleArn,
             trustAnchorArn,
@@ -225,8 +225,18 @@ public sealed class AwsClientFactory(
             credentialsTimeout,
             cancellationToken);
 
-        if (string.IsNullOrWhiteSpace(accessKey) || string.IsNullOrWhiteSpace(secretKey))
+        if (errorMessage is not null)
+        {
+            logger.LogError("Failed to get temporary credentials from Roles Anywhere: {ErrorMessage}", errorMessage);
             return null;
+        }
+
+        if (tempCredentials is null ||
+            string.IsNullOrWhiteSpace(tempCredentials.AccessKeyId) ||
+            string.IsNullOrWhiteSpace(tempCredentials.SecretAccessKey))
+            return null;
+        
+        var (accessKey, secretKey, sessionToken, expirationString) = tempCredentials;
 
         AWSCredentials newCredentials = string.IsNullOrWhiteSpace(sessionToken)
             ? new BasicAWSCredentials(accessKey, secretKey)

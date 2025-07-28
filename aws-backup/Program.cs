@@ -72,14 +72,25 @@ builder
             sp.GetRequiredService<IOptionsMonitor<Configuration>>(),
             sp.GetRequiredService<ICronScheduleMediator>(),
             sp.GetRequiredService<ILogger<ContextResolver>>()))
-    .AddSingleton<IUpdateConfiguration, ContextResolver>()
+    .AddSingleton<IUpdateConfiguration>(sp => sp.GetRequiredService<ContextResolver>())
     .AddSingleton<IAwsConfigurationFactory, AwsConfigurationFactory>()
-    .AddSingleton<AwsConfiguration>(sp => sp
-        .GetService<IAwsConfigurationFactory>()!
-        .GetAwsConfiguration(CancellationToken.None)
-        .GetAwaiter()
-        .GetResult())
-    .AddSingleton<IArchiveDataStore, DynamoDbDataStore>()
+    .AddSingleton<AwsConfiguration>(sp =>
+    {
+        var (awsConfiguration, errorMessage) = sp
+            .GetService<IAwsConfigurationFactory>()!
+            .GetAwsConfiguration(CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
+        if (awsConfiguration is not null) return awsConfiguration;
+        var ex = new InvalidOperationException("AWS configuration could not be loaded.");
+        errorMessage ??= "Failed to load AWS configuration.";
+        Log.Error(ex, errorMessage);
+        throw ex;
+    })
+    .AddSingleton<DynamoDbDataStore>()
+    .AddSingleton<IRestoreDataStore>(sp => sp.GetRequiredService<DynamoDbDataStore>())
+    .AddSingleton<IArchiveDataStore>(sp => sp.GetRequiredService<DynamoDbDataStore>())
+    .AddSingleton<ICloudChunkStorage>(sp => sp.GetRequiredService<DynamoDbDataStore>())
     .AddSingleton<ISnsMessageMediator>(sp => sp.GetRequiredService<Mediator>())
     .AddSingleton<IArchiveFileMediator>(sp => sp.GetRequiredService<Mediator>())
     .AddSingleton<IRunRequestMediator>(sp => sp.GetRequiredService<Mediator>())
@@ -87,7 +98,9 @@ builder
     .AddSingleton<IRetryMediator>(sp => sp.GetRequiredService<Mediator>())
     .AddSingleton<IRestoreRequestsMediator>(sp => sp.GetRequiredService<Mediator>())
     .AddSingleton<IUploadChunksMediator>(sp => sp.GetRequiredService<Mediator>())
-    .AddSingleton<ICronScheduleMediator>(sp => sp.GetRequiredService<Mediator>())
+    .AddSingleton<IS3StorageClassMediator>(sp => sp.GetRequiredService<Mediator>())
+    .AddSingleton<IUploadBatchMediator>(sp => sp.GetRequiredService<Mediator>())
+    .AddSingleton<ICronScheduleMediator, CronScheduleMediator>()
     .AddSingleton<ITemporaryCredentialsServer, RolesAnywhere>()
     .AddSingleton<IAwsClientFactory, AwsClientFactory>()
     .AddSingleton<IAesContextResolver, AesContextResolver>()

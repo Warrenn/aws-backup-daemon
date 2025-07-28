@@ -41,7 +41,6 @@ public class ChunkedEncryptingFileProcessorTests : IDisposable
 
         var awsConfig = new AwsConfiguration(
             16,
-            "sqs-enc", "file-enc",
             "test-bucket", "queue-in", "queue-out",
             "archive-complete","restore-complete", "restore-errors", "exception",
             "dynamo-table");
@@ -104,7 +103,6 @@ public class ChunkedEncryptingFileProcessorTests : IDisposable
 
         var awsConfig = new AwsConfiguration(
             8,
-            "sqs-enc", "file-enc",
             "test-bucket", "queue-in", "queue-out",
             "archive-complete","restore-complete", "restore-errors", "exception",
             "dynamo-table");
