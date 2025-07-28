@@ -61,6 +61,7 @@ builder
     .AddSingleton<IContextResolver>(_ => new ContextResolver(configuration))
     .AddSingleton(configuration)
     .AddSingleton<IAwsConfigurationFactory, AwsConfigurationFactory>()
+    .AddSingleton<IArchiveDataStore, DynamoDbDataStore>()
     .AddSingleton<AwsConfiguration>(sp => sp
         .GetService<IAwsConfigurationFactory>()!
         .GetAwsConfiguration(CancellationToken.None)

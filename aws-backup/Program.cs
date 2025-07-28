@@ -79,6 +79,7 @@ builder
         .GetAwsConfiguration(CancellationToken.None)
         .GetAwaiter()
         .GetResult())
+    .AddSingleton<IArchiveDataStore, DynamoDbDataStore>()
     .AddSingleton<ISnsMessageMediator>(sp => sp.GetRequiredService<Mediator>())
     .AddSingleton<IArchiveFileMediator>(sp => sp.GetRequiredService<Mediator>())
     .AddSingleton<IRunRequestMediator>(sp => sp.GetRequiredService<Mediator>())
