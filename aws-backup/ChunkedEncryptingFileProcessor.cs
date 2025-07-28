@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 using aws_backup_common;
+using Serilog;
 
 // ReSharper disable AccessToModifiedClosure
 
@@ -203,9 +204,10 @@ public sealed class ChunkedEncryptingFileProcessor(
                 {
                     File.Delete(removableFile);
                 }
-                catch
+                catch (Exception inner)
                 {
                     // ignore errors during cleanup
+                    Log.Error(inner, "Failed to delete temporary file {FilePath}", removableFile);
                 }
 
             return new FileProcessResult(

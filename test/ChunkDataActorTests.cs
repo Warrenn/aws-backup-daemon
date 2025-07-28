@@ -67,6 +67,7 @@ public class ChunkDataActorTests
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
         await service.StartAsync(cts.Token);
+        await service.ExecuteTask!;
 
         _batchMediator.Verify(m => m.ProcessBatch(
             It.Is<UploadBatch>(b => b.Requests.Count == 1),
@@ -108,6 +109,7 @@ public class ChunkDataActorTests
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
         await service.StartAsync(cts.Token);
+        await service.ExecuteTask!;
 
         _batchMediator.Verify(m => m.ProcessBatch(
             It.Is<UploadBatch>(b => b.Requests.Count == 1),
@@ -149,6 +151,7 @@ public class ChunkDataActorTests
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
         await service.StartAsync(cts.Token);
+        await service.ExecuteTask!;
 
         _batchMediator.Verify(x => x.ProcessBatch(It.IsAny<UploadBatch>(), It.IsAny<CancellationToken>()), Times.Never);
         _archiveService.Verify(
@@ -195,6 +198,7 @@ public class ChunkDataActorTests
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
         await service.StartAsync(cts.Token);
+        await service.ExecuteTask!;
 
         _retryMediator.Verify(x => x.RetryAttempt(request, It.IsAny<CancellationToken>()), Times.Once);
     }

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using aws_backup_common;
 using aws_backup;
 using Microsoft.Extensions.Logging;
@@ -35,9 +36,10 @@ public class ArchiveServiceTests
         // first lookup: hits S3
         var got1 = await sut.LookupArchiveRun(runId, CancellationToken.None);
         Assert.Equal(run, got1);
+        var startedRun = await sut.StartNewArchiveRun(new RunRequest(runId, "/p", "* * * * *"), CancellationToken.None);
 
         // should have saved requests
-        _dataStore.Verify(m => m.SaveArchiveRun(run, It.IsAny<CancellationToken>()), Times.Once);
+        _dataStore.Verify(m => m.SaveArchiveRun(startedRun, It.IsAny<CancellationToken>()), Times.Once);
 
         // second lookup: uses cache, no new S3 calls
         _dataStore.Invocations.Clear();
@@ -63,6 +65,30 @@ public class ArchiveServiceTests
     [Fact]
     public async Task DoesFileRequireProcessing_NewAndProcessedBehaviour()
     {
+        _dataStore.Setup(d => d.GetArchiveRun(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string runId, CancellationToken _) => new ArchiveRun
+            {
+                RunId = runId,
+                PathsToArchive = "/p",
+                CronSchedule = "* * * * *",
+                Status = ArchiveRunStatus.Processing,
+                CreatedAt = DateTimeOffset.Now,
+                Files = new ConcurrentDictionary<string, FileMetaData>()
+            });
+        _dataStore.Setup(d => d.GetFileMetaData(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string runId, string fileName, CancellationToken _) => new FileMetaData(fileName));
+        _dataStore.Setup(d => d.GetArchiveRun(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string runId, CancellationToken _) => new ArchiveRun
+            {
+                RunId = runId,
+                PathsToArchive = "/p",
+                CronSchedule = "* * * * *",
+                Status = ArchiveRunStatus.Processing,
+                CreatedAt = DateTimeOffset.Now,
+                Files = new ConcurrentDictionary<string, FileMetaData>()
+            });
+        _dataStore.Setup(d => d.GetFileMetaData(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string runId, string fileName, CancellationToken _) => new FileMetaData(fileName));
         var sut = CreateSut();
         var req = new RunRequest("r3", "/p", "* * * * *");
         await sut.StartNewArchiveRun(req, CancellationToken.None);
@@ -71,7 +97,8 @@ public class ArchiveServiceTests
         var need1 = await sut.DoesFileRequireProcessing("r3", "f.txt", CancellationToken.None);
         Assert.True(need1);
         Assert.Contains("f.txt", (await sut.LookupArchiveRun("r3", CancellationToken.None))!.Files.Keys);
-        _dataStore.Verify(m => m.SaveArchiveRun(It.IsAny<ArchiveRun>(), It.IsAny<CancellationToken>()), Times.AtLeastOnce);
+        _dataStore.Verify(m => m.SaveArchiveRun(It.IsAny<ArchiveRun>(), It.IsAny<CancellationToken>()),
+            Times.AtLeastOnce);
 
         // Mark file processed
         var run = await sut.LookupArchiveRun("r3", CancellationToken.None);
@@ -109,6 +136,11 @@ public class ArchiveServiceTests
         var d4 = new DataChunkDetails("b", 1, 10, [10, 11, 12], 10);
 
         // Process first file
+        await sut.AddChunkToFile(runId, "a", d1, CancellationToken.None);
+        await sut.AddChunkToFile(runId, "a", d2, CancellationToken.None);
+        await sut.AddChunkToFile(runId, "b", d3, CancellationToken.None);
+        await sut.AddChunkToFile(runId, "b", d4, CancellationToken.None);
+
         await sut.ReportProcessingResult(runId, new FileProcessResult("a", 10, [1, 2, 3], 1),
             CancellationToken.None);
         // Process second file → this is last
@@ -132,6 +164,7 @@ public class ArchiveServiceTests
 
         // Should not yet finalize
         _snsMed.VerifyNoOtherCalls();
+        await sut.ReportAllFilesListed(run, CancellationToken.None);
         await sut.RecordChunkUpload("r4", "a", d2.HashKey, CancellationToken.None);
         await sut.RecordChunkUpload("r4", "b", d4.HashKey, CancellationToken.None);
 
@@ -146,7 +179,11 @@ public class ArchiveServiceTests
         var sut = CreateSut();
         var req = new RunRequest("r5", "/p", "* * * * *");
         await sut.StartNewArchiveRun(req, CancellationToken.None);
-        ArchiveRun? savedRun = null;
+        var savedRun = new ArchiveRun
+        {
+            RunId = "r5", PathsToArchive = "/p", CronSchedule = "* * * * *", Status = ArchiveRunStatus.Processing,
+            CreatedAt = DateTimeOffset.Now
+        };
         _dataStore
             .Setup(m => m.SaveArchiveRun(It.IsAny<ArchiveRun>(), It.IsAny<CancellationToken>()))
             .Callback<ArchiveRun, CancellationToken>((m, _) =>
@@ -159,6 +196,10 @@ public class ArchiveServiceTests
             .Setup(s => s.GetArchiveRun("r5", It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => savedRun!);
 
+        _dataStore
+            .Setup(s => s.GetFileMetaData("r5", "x.txt", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FileMetaData("x.txt"));
+
         // Add one file
         await sut.DoesFileRequireProcessing("r5", "x.txt", CancellationToken.None);
 
@@ -169,6 +210,7 @@ public class ArchiveServiceTests
         // Status should be Skipped
         var run = await sut.LookupArchiveRun("r5", CancellationToken.None);
         Assert.Equal(FileStatus.Skipped, run!.Files["x.txt"].Status);
+        await sut.ReportAllFilesListed(run, CancellationToken.None);
 
         // Should publish skip‐exception and final error message
         _snsMed.Verify(

@@ -17,11 +17,12 @@ public class SnsActorTests
     private readonly AwsConfiguration _config = new(
         16,
         "sqs-enc", "file-enc",
-        "bucket-name", "queue-in", "queue-out",
+        "bucket-name", "queue-in",
         "arn:aws:sns:us-east-1:123456789012:archive-complete",
         "arn:aws:sns:us-east-1:123456789012:archive-error",
         "arn:aws:sns:us-east-1:123456789012:restore-complete",
         "arn:aws:sns:us-east-1:123456789012:restore-error",
+        "arn:aws:sns:us-east-1:123456789012:exception",
         "dynamo-table");
 
     private readonly Mock<IContextResolver> _contextResolver;

@@ -65,7 +65,7 @@ public class RestoreServiceTests
             .GetField("_restoreRunsCache", BindingFlags.NonPublic | BindingFlags.Instance)
             ?.GetValue(service) as ConcurrentDictionary<string, RestoreRun>;
 
-        restoreRunsCache?.TryAdd(run.RestoreId, run);
+        restoreRunsCache![run.RestoreId] = run;
 
         // Manually simulate chunk registration in _s3KeysToChunks
         var chunkCache = typeof(RestoreService)
@@ -222,7 +222,8 @@ public class RestoreServiceTests
         Assert.Equal("Disk full", fileMeta.FailedMessage);
 
         _snsMediator.Verify(x =>
-            x.PublishMessage(It.Is<SnsMessage>(m => m.Message.Contains("Download failed")), _token), Times.Once);
+            x.PublishMessage(It.Is<SnsMessage>(m => 
+                m.Subject.Contains("Download failed")), _token), Times.Once);
 
         _restoreDataStore.Verify(x =>
                 x.SaveRestoreFileStatus("restore-2", "file.txt", FileRestoreStatus.Failed, "Disk full", _token),
