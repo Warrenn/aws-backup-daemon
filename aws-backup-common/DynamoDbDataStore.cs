@@ -167,7 +167,18 @@ public class DynamoDbDataStore(
                     ["#h"] = "LocalFilePath",
                     ["#i"] = "ChunkIndex",
                     ["#j"] = "ChunkSize",
-                    ["#k"] = "Size"
+                    ["#k"] = "Size",
+                    ["#l"] = "CompressedSize",
+                    ["#m"] = "OriginalSize",
+                    ["#n"] = "TotalFiles",
+                    ["#o"] = "TotalSkippedFiles",
+                    ["#p"] = "CompletedAt",
+                    ["#q"] = "Owner",
+                    ["#r"] = "Group",
+                    ["#s"] = "AclEntries",
+                    ["#t"] = "HashKey",
+                    ["#u"] = "Created",
+                    ["#v"] = "LastModified"
                 }
             };
 
@@ -188,7 +199,12 @@ public class DynamoDbDataStore(
                             PathsToArchive = item["PathsToArchive"].S,
                             CronSchedule = item["CronSchedule"].S,
                             CreatedAt = DateTimeOffset.Parse(item["CreatedAt"].S),
-                            Status = Enum.Parse<ArchiveRunStatus>(item["Status"].S)
+                            Status = Enum.Parse<ArchiveRunStatus>(item["Status"].S),
+                            CompressedSize = GetNIfExists(item, "CompressedSize", long.Parse),
+                            OriginalSize = GetNIfExists(item, "OriginalSize", long.Parse),
+                            TotalFiles = GetNIfExists(item, "TotalFiles", int.Parse),
+                            TotalSkippedFiles = GetNIfExists(item, "TotalSkippedFiles", int.Parse),
+                            CompletedAt = GetSIfExists(item, "CompletedAt", DateTimeOffset.Parse)
                         };
                         break;
                     case nameof(FileMetaData):
@@ -200,7 +216,17 @@ public class DynamoDbDataStore(
                         var fileMeta = new FileMetaData(filePath)
                         {
                             Status = Enum.Parse<FileStatus>(item["Status"].S),
-                            SkipReason = item.TryGetValue("SkipReason", out var value) ? value.S : ""
+                            SkipReason = item.TryGetValue("SkipReason", out var value) ? value.S : "",
+                            HashKey = GetSIfExists(item, "HashKey", Base64Url.Decode) ?? [],
+                            Created = GetSIfExists(item, "Created", DateTimeOffset.Parse),
+                            CompressedSize = GetNIfExists(item, "CompressedSize", long.Parse),
+                            OriginalSize = GetNIfExists(item, "OriginalSize", long.Parse),
+                            Owner = GetSIfExists(item, "Owner", s => s),
+                            Group = GetSIfExists(item, "Group", s => s),
+                            LastModified = GetSIfExists(item, "LastModified", DateTimeOffset.Parse),
+                            AclEntries = GetSIfExists(item, "AclEntries",
+                                s => JsonSerializer.Deserialize<AclEntry[]>(s,
+                                    SourceGenerationContext.Default.AclEntryArray))
                         };
 
                         run.Files.TryAdd(filePath, fileMeta);
@@ -251,8 +277,7 @@ public class DynamoDbDataStore(
                 // sort key
                 ["SK"] = new() { S = $"RUN_ID#{runId}#FILE#{encodedFilePath}" },
                 ["Status"] = new() { S = Enum.GetName(fileStatus) },
-                ["SkipReason"] = new() { S = skipReason },
-                ["Type"] = new() { S = nameof(FileMetaData) }
+                ["SkipReason"] = new() { S = skipReason }
             }
         };
 
@@ -279,8 +304,7 @@ public class DynamoDbDataStore(
                 // sort key
                 ["SK"] = new() { S = $"RUN_ID#{runId}#FILE#{encodedFilePath}" },
                 ["CreatedAt"] = new() { S = created.ToString("O") },
-                ["ModifiedAt"] = new() { S = modified.ToString("O") },
-                ["Type"] = new() { S = nameof(FileMetaData) }
+                ["ModifiedAt"] = new() { S = modified.ToString("O") }
             }
         };
 
@@ -306,8 +330,7 @@ public class DynamoDbDataStore(
                 // sort key
                 ["SK"] = new() { S = $"RUN_ID#{runId}#FILE#{encodedFilePath}" },
                 ["Owner"] = new() { S = owner },
-                ["Group"] = new() { S = group },
-                ["Type"] = new() { S = nameof(FileMetaData) }
+                ["Group"] = new() { S = group }
             }
         };
 
@@ -333,8 +356,7 @@ public class DynamoDbDataStore(
                 ["PK"] = new() { S = $"RUN_ID#{runId}" },
                 // sort key
                 ["SK"] = new() { S = $"RUN_ID#{runId}#FILE#{encodedFilePath}" },
-                ["AclEntries"] = new() { S = entriesString },
-                ["Type"] = new() { S = nameof(FileMetaData) }
+                ["AclEntries"] = new() { S = entriesString }
             }
         };
 
@@ -353,7 +375,6 @@ public class DynamoDbDataStore(
             ["PK"] = new() { S = $"RUN_ID#{runId}" },
             // sort key
             ["SK"] = new() { S = $"RUN_ID#{runId}" },
-            ["Type"] = new() { S = nameof(ArchiveRun) },
             ["Status"] = new() { S = Enum.GetName(runStatus) }
         };
 
@@ -457,8 +478,7 @@ public class DynamoDbDataStore(
                 ["PK"] = new() { S = $"RUN_ID#{runId}" },
                 // sort key
                 ["SK"] = new() { S = chunkKey },
-                ["Status"] = new() { S = Enum.GetName(chunkStatus) },
-                ["Type"] = new() { S = nameof(DataChunkDetails) }
+                ["Status"] = new() { S = Enum.GetName(chunkStatus) }
             }
         };
 
@@ -521,25 +541,21 @@ public class DynamoDbDataStore(
                 switch (type)
                 {
                     case nameof(FileMetaData):
-                        //RUN_ID#<runID>#FILE#<filePath>
-                        var aclEntries = item.TryGetValue("AclEntries", out var acl)
-                            ? JsonSerializer.Deserialize<AclEntry[]>(acl.S,
-                                SourceGenerationContext.Default.AclEntryArray)
-                            : null;
+                        //RUN_ID#<runID>#FILE#<filePath>                    
                         fileMetaData = new FileMetaData(filePath)
                         {
                             Status = Enum.Parse<FileStatus>(item["Status"].S),
-                            SkipReason = item.TryGetValue("SkipReason", out var skipReason) ? skipReason.S : "",
-                            Created = DateTimeOffset.Parse(item["Created"].S),
-                            CompressedSize = item.TryGetValue("CompressedSize", out var cs) ? long.Parse(cs.N) : null,
-                            OriginalSize = item.TryGetValue("OriginalSize", out var os) ? long.Parse(os.N) : null,
-                            Owner = item.TryGetValue("Owner", out var owner) ? owner.S : null,
-                            Group = item.TryGetValue("Group", out var group) ? group.S : null,
-                            LastModified = item.TryGetValue("LastModified", out var lm)
-                                ? DateTimeOffset.Parse(lm.S)
-                                : null,
-                            HashKey = Base64Url.Decode(item["HashKey"].S),
-                            AclEntries = aclEntries
+                            SkipReason = item.TryGetValue("SkipReason", out var value) ? value.S : "",
+                            HashKey = GetSIfExists(item, "HashKey", Base64Url.Decode) ?? [],
+                            Created = GetSIfExists(item, "Created", DateTimeOffset.Parse),
+                            CompressedSize = GetNIfExists(item, "CompressedSize", long.Parse),
+                            OriginalSize = GetNIfExists(item, "OriginalSize", long.Parse),
+                            Owner = GetSIfExists(item, "Owner", s => s),
+                            Group = GetSIfExists(item, "Group", s => s),
+                            LastModified = GetSIfExists(item, "LastModified", DateTimeOffset.Parse),
+                            AclEntries = GetSIfExists(item, "AclEntries",
+                                s => JsonSerializer.Deserialize<AclEntry[]>(s,
+                                    SourceGenerationContext.Default.AclEntryArray))
                         };
                         break;
                     case nameof(DataChunkDetails):
@@ -606,29 +622,38 @@ public class DynamoDbDataStore(
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
         var localFilePath = metaData.LocalFilePath;
         var hashKey = metaData.HashKey;
-        var originalBytes = metaData.OriginalSize ?? 0;
-        var compressedBytes = metaData.CompressedSize ?? 0;
         var status = metaData.Status;
+        var aclEntryString = metaData.AclEntries is not null
+            ? JsonSerializer.Serialize(metaData.AclEntries, SourceGenerationContext.Default.AclEntryArray)
+            : null;
 
         var encodedFilePath = WebUtility.UrlEncode(localFilePath);
         var hashString = Base64Url.Encode(hashKey);
+        var item = new Dictionary<string, AttributeValue>
+        {
+            // partition key
+            ["PK"] = new() { S = $"RUN_ID#{runId}" },
+            // sort key
+            ["SK"] = new() { S = $"RUN_ID#{runId}#FILE#{encodedFilePath}" },
+            ["Type"] = new() { S = nameof(FileMetaData) },
+            ["HashKey"] = new() { S = hashString },
+            ["Status"] = new() { S = Enum.GetName(status) },
+            ["LocalFilePath"] = new() { S = localFilePath }
+        };
+
+        SetSIfNotNull(item, "AclEntries", aclEntryString);
+        SetSIfNotNull(item, "Created", metaData.Created?.ToString("O"));
+        SetSIfNotNull(item, "LastModified", metaData.LastModified?.ToString("O"));
+        SetSIfNotNull(item, "SkipReason", metaData.SkipReason);
+        SetSIfNotNull(item, "Owner", metaData.Owner);
+        SetSIfNotNull(item, "Group", metaData.Group);
+        SetNIfNotNull(item, "CompressedSize", metaData.CompressedSize);
+        SetNIfNotNull(item, "OriginalSize", metaData.OriginalSize);
 
         var putReq = new PutItemRequest
         {
             TableName = tableName,
-            Item = new Dictionary<string, AttributeValue>
-            {
-                // partition key
-                ["PK"] = new() { S = $"RUN_ID#{runId}" },
-                // sort key
-                ["SK"] = new() { S = $"RUN_ID#{runId}#FILE#{encodedFilePath}" },
-                ["Type"] = new() { S = nameof(FileMetaData) },
-                ["HashKey"] = new() { S = hashString },
-                ["OriginalSize"] = new() { N = originalBytes.ToString() },
-                ["CompressedSize"] = new() { N = compressedBytes.ToString() },
-                ["Status"] = new() { S = Enum.GetName(status) },
-                ["LocalFilePath"] = new() { S = localFilePath }
-            }
+            Item = item
         };
 
         // one round‑trip to DynamoDB
@@ -698,24 +723,20 @@ public class DynamoDbDataStore(
                         var encodedFilePath = skParts.Last();
                         filePath = WebUtility.UrlDecode(encodedFilePath);
 
-                        var aclEntries = item.TryGetValue("AclEntries", out var acl)
-                            ? JsonSerializer.Deserialize<AclEntry[]>(acl.S,
-                                SourceGenerationContext.Default.AclEntryArray)
-                            : null;
                         fileMetaData = new FileMetaData(filePath)
                         {
                             Status = Enum.Parse<FileStatus>(item["Status"].S),
-                            SkipReason = item.TryGetValue("SkipReason", out var skipReason) ? skipReason.S : "",
-                            Created = DateTimeOffset.Parse(item["Created"].S),
-                            CompressedSize = item.TryGetValue("CompressedSize", out var cs) ? long.Parse(cs.N) : null,
-                            OriginalSize = item.TryGetValue("OriginalSize", out var os) ? long.Parse(os.N) : null,
-                            Owner = item.TryGetValue("Owner", out var owner) ? owner.S : null,
-                            Group = item.TryGetValue("Group", out var group) ? group.S : null,
-                            LastModified = item.TryGetValue("LastModified", out var lm)
-                                ? DateTimeOffset.Parse(lm.S)
-                                : null,
-                            HashKey = Base64Url.Decode(item["HashKey"].S),
-                            AclEntries = aclEntries
+                            SkipReason = item.TryGetValue("SkipReason", out var value) ? value.S : "",
+                            HashKey = GetSIfExists(item, "HashKey", Base64Url.Decode) ?? [],
+                            Created = GetSIfExists(item, "Created", DateTimeOffset.Parse),
+                            CompressedSize = GetNIfExists(item, "CompressedSize", long.Parse),
+                            OriginalSize = GetNIfExists(item, "OriginalSize", long.Parse),
+                            Owner = GetSIfExists(item, "Owner", s => s),
+                            Group = GetSIfExists(item, "Group", s => s),
+                            LastModified = GetSIfExists(item, "LastModified", DateTimeOffset.Parse),
+                            AclEntries = GetSIfExists(item, "AclEntries",
+                                s => JsonSerializer.Deserialize<AclEntry[]>(s,
+                                    SourceGenerationContext.Default.AclEntryArray))
                         };
                         break;
                     case nameof(DataChunkDetails):
@@ -852,7 +873,7 @@ public class DynamoDbDataStore(
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
         Dictionary<string, AttributeValue>? lastKey;
 
-        RestoreRun? run = null;
+        RestoreRun? restoreRun = null;
 
         var pk = $"RESTORE_ID#{restoreId}";
         do
@@ -907,60 +928,48 @@ public class DynamoDbDataStore(
                 switch (type)
                 {
                     case nameof(RestoreRun):
-                        run = new RestoreRun
+                        restoreRun = new RestoreRun
                         {
                             RestoreId = restoreId,
                             RestorePaths = item["RestorePaths"].S,
                             ArchiveRunId = item["ArchiveRunId"].S,
                             Status = Enum.Parse<RestoreRunStatus>(item["Status"].S),
                             RequestedAt = DateTimeOffset.Parse(item["RequestedAt"].S),
-                            CompletedAt = item.TryGetValue("CompletedAt", out var completedAt)
-                                ? DateTimeOffset.Parse(completedAt.S)
-                                : null
+                            CompletedAt = GetSIfExists(item, "CompletedAt", DateTimeOffset.Parse)
                         };
                         break;
                     case nameof(RestoreFileMetaData):
                         // If we have FileMetaData, we can add it to the run
-                        if (run is null) break;
+                        if (restoreRun is null) break;
                         //RESTORE_ID#<restoreID>#FILE#<filePath>
                         var filePath = WebUtility.UrlDecode(item["SK"].S.Split('#').Last());
 
                         var fileMeta = new RestoreFileMetaData(filePath)
                         {
                             Status = Enum.Parse<FileRestoreStatus>(item["Status"].S),
-                            FailedMessage = item.TryGetValue("FailedMessage", out var failedMessage)
-                                ? failedMessage.S
-                                : "",
-                            Created = item.TryGetValue("Created", out var created)
-                                ? DateTimeOffset.Parse(created.S)
-                                : null,
-                            Size = item.TryGetValue("Size", out var size) ? long.Parse(size.N) : 0,
-                            Owner = item.TryGetValue("Owner", out var owner) ? owner.S : null,
-                            Group = item.TryGetValue("Group", out var group) ? group.S : null,
-                            LastModified = item.TryGetValue("LastModified", out var lm)
-                                ? DateTimeOffset.Parse(lm.S)
-                                : null,
-                            Sha256Checksum = item.TryGetValue("Sha256Checksum", out var checksumAttr)
-                                ? Base64Url.Decode(checksumAttr.S)
-                                : null,
-                            AclEntries = item.TryGetValue("AclEntries", out var acl)
-                                ? JsonSerializer.Deserialize<AclEntry[]>(acl.S,
-                                    SourceGenerationContext.Default.AclEntryArray)
-                                : null,
+                            FailedMessage = GetSIfExists(item, "FailedMessage", s => s),
+                            Size = GetNIfExists(item, "Size", long.Parse),
+                            LastModified = GetSIfExists(item, "LastModified", DateTimeOffset.Parse),
+                            Created = GetSIfExists(item, "Created", DateTimeOffset.Parse),
+                            AclEntries = GetSIfExists(item, "AclEntries",
+                                s => JsonSerializer.Deserialize<AclEntry[]>(s,
+                                    SourceGenerationContext.Default.AclEntryArray)),
+                            Owner = GetSIfExists(item, "Owner", s => s),
+                            Sha256Checksum = GetSIfExists(item, "Sha256Checksum", Base64Url.Decode),
                             RestorePathStrategy = item.TryGetValue("RestorePathStrategy", out var strategy)
                                 ? Enum.Parse<RestorePathStrategy>(strategy.S)
                                 : RestorePathStrategy.Nested,
-                            RestoreFolder = item.TryGetValue("RestoreFolder", out var folder) ? folder.S : null
+                            RestoreFolder = GetSIfExists(item, "RestoreFolder", s => s)
                         };
 
-                        run.RequestedFiles.TryAdd(filePath, fileMeta);
+                        restoreRun.RequestedFiles.TryAdd(filePath, fileMeta);
                         break;
                     case nameof(RestoreChunkDetails):
-                        if (run is null) break;
+                        if (restoreRun is null) break;
                         //RESTORE_ID#<restoreID>#FILE#<filePath>#CHUNK#<chunkHashKey>
                         var keyParts = item["SK"].S.Split('#');
                         var filePathPart = WebUtility.UrlDecode(keyParts[3]);
-                        if (!run.RequestedFiles.TryGetValue(filePathPart, out var metaData)) break;
+                        if (!restoreRun.RequestedFiles.TryGetValue(filePathPart, out var metaData)) break;
                         var keyBytes = Base64Url.Decode(keyParts.Last());
                         var chunkKey = new ByteArrayKey(keyBytes);
                         metaData.CloudChunkDetails.TryAdd(chunkKey, new RestoreChunkDetails(
@@ -982,7 +991,7 @@ public class DynamoDbDataStore(
             lastKey = resp.LastEvaluatedKey;
         } while (lastKey is { Count: > 0 });
 
-        return run;
+        return restoreRun;
     }
 
     public async Task SaveRestoreRequest(RestoreRequest restoreRequest, CancellationToken cancellationToken)
@@ -1025,20 +1034,19 @@ public class DynamoDbDataStore(
         var writeRequests = new List<WriteRequest>();
 
         // 1) Meta item
-        var metaItem = new Dictionary<string, AttributeValue?>
+        var metaItem = new Dictionary<string, AttributeValue>
         {
             ["PK"] = new() { S = pk },
             ["SK"] = new() { S = pk },
             ["Type"] = new() { S = nameof(RestoreRun) },
-            ["CompletedAt"] = run.CompletedAt.HasValue
-                ? new AttributeValue { S = run.CompletedAt.Value.ToString("O") }
-                : null,
             ["RestoreId"] = new() { S = run.RestoreId },
             ["RestorePaths"] = new() { S = run.RestorePaths },
             ["ArchiveRunId"] = new() { S = run.ArchiveRunId },
             ["Status"] = new() { S = run.Status.ToString() },
             ["RequestedAt"] = new() { S = run.RequestedAt.ToString("O") }
         };
+
+        SetSIfNotNull(metaItem, "CompletedAt", run.CompletedAt?.ToString("O"));
         writeRequests.Add(new WriteRequest { PutRequest = new PutRequest { Item = metaItem } });
 
         // 2) File‐level items
@@ -1046,7 +1054,7 @@ public class DynamoDbDataStore(
         {
             var fileSk = $"{pk}#FILE#{WebUtility.UrlEncode(filePath)}";
 
-            var fileItem = new Dictionary<string, AttributeValue?>
+            var fileItem = new Dictionary<string, AttributeValue>
             {
                 ["PK"] = new() { S = pk },
                 ["SK"] = new() { S = fileSk },
@@ -1055,26 +1063,20 @@ public class DynamoDbDataStore(
                 ["RestorePathStrategy"] = new() { S = Enum.GetName(fileMeta.RestorePathStrategy) },
                 ["Size"] = new() { N = fileMeta.Size.ToString() }
             };
-            if (fileMeta.AclEntries is not null)
-                fileItem["AclEntries"] = new AttributeValue
-                {
-                    S = JsonSerializer.Serialize(fileMeta.AclEntries, SourceGenerationContext.Default.AclEntryArray)
-                };
-            if (fileMeta.RestoreFolder is not null)
-                fileItem["RestoreFolder"] = new AttributeValue { S = fileMeta.RestoreFolder };
-            if (fileMeta.FailedMessage is not null)
-                fileItem["FailedMessage"] = new AttributeValue { S = fileMeta.FailedMessage };
-            if (fileMeta.LastModified is not null)
-                fileItem["LastModified"] = new AttributeValue { S = fileMeta.LastModified.Value.ToString("O") };
-            if (fileMeta.Created is not null)
-                fileItem["Created"] = new AttributeValue { S = fileMeta.Created.Value.ToString("O") };
-            if (fileMeta.Owner is not null)
-                fileItem["Owner"] = new AttributeValue { S = fileMeta.Owner };
-            if (fileMeta.Group is not null)
-                fileItem["Group"] = new AttributeValue { S = fileMeta.Group };
-            if (fileMeta.Sha256Checksum is not null)
-                fileItem["Sha256Checksum"] = new AttributeValue { S = Base64Url.Encode(fileMeta.Sha256Checksum) };
-
+            var aclEntriesString = fileMeta.AclEntries is not null
+                ? JsonSerializer.Serialize(fileMeta.AclEntries, SourceGenerationContext.Default.AclEntryArray)
+                : null;
+            SetSIfNotNull(fileItem, "AclEntries", aclEntriesString);
+            SetSIfNotNull(fileItem, "RestoreFolder", fileMeta.RestoreFolder);
+            SetSIfNotNull(fileItem, "FailedMessage", fileMeta.FailedMessage);
+            SetSIfNotNull(fileItem, "LastModified", fileMeta.LastModified?.ToString("O"));
+            SetSIfNotNull(fileItem, "Created", fileMeta.Created?.ToString("O"));
+            SetSIfNotNull(fileItem, "Owner", fileMeta.Owner);
+            SetSIfNotNull(fileItem, "Group", fileMeta.Group);
+            var sha256Checksum = fileMeta.Sha256Checksum is not null
+                ? Base64Url.Encode(fileMeta.Sha256Checksum)
+                : null;
+            SetSIfNotNull(fileItem, "Sha256Checksum", sha256Checksum);
             writeRequests.Add(new WriteRequest { PutRequest = new PutRequest { Item = fileItem } });
 
             // 3) Chunk‐level items
@@ -1155,7 +1157,7 @@ public class DynamoDbDataStore(
 
         var fileSk = $"{pk}#FILE#{WebUtility.UrlEncode(filePath)}";
 
-        var fileItem = new Dictionary<string, AttributeValue?>
+        var fileItem = new Dictionary<string, AttributeValue>
         {
             ["PK"] = new() { S = pk },
             ["SK"] = new() { S = fileSk },
@@ -1164,26 +1166,21 @@ public class DynamoDbDataStore(
             ["RestorePathStrategy"] = new() { S = Enum.GetName(fileMeta.RestorePathStrategy) },
             ["Size"] = new() { N = fileMeta.Size.ToString() }
         };
-        if (fileMeta.AclEntries is not null)
-            fileItem["AclEntries"] = new AttributeValue
-            {
-                S = JsonSerializer.Serialize(fileMeta.AclEntries, SourceGenerationContext.Default.AclEntryArray)
-            };
-        if (fileMeta.RestoreFolder is not null)
-            fileItem["RestoreFolder"] = new AttributeValue { S = fileMeta.RestoreFolder };
-        if (fileMeta.FailedMessage is not null)
-            fileItem["FailedMessage"] = new AttributeValue { S = fileMeta.FailedMessage };
-        if (fileMeta.LastModified is not null)
-            fileItem["LastModified"] = new AttributeValue { S = fileMeta.LastModified.Value.ToString("O") };
-        if (fileMeta.Created is not null)
-            fileItem["Created"] = new AttributeValue { S = fileMeta.Created.Value.ToString("O") };
-        if (fileMeta.Owner is not null)
-            fileItem["Owner"] = new AttributeValue { S = fileMeta.Owner };
-        if (fileMeta.Group is not null)
-            fileItem["Group"] = new AttributeValue { S = fileMeta.Group };
-        if (fileMeta.Sha256Checksum is not null)
-            fileItem["Sha256Checksum"] = new AttributeValue { S = Base64Url.Encode(fileMeta.Sha256Checksum) };
 
+        var aclEntriesString = fileMeta.AclEntries is not null
+            ? JsonSerializer.Serialize(fileMeta.AclEntries, SourceGenerationContext.Default.AclEntryArray)
+            : null;
+        SetSIfNotNull(fileItem, "AclEntries", aclEntriesString);
+        SetSIfNotNull(fileItem, "RestoreFolder", fileMeta.RestoreFolder);
+        SetSIfNotNull(fileItem, "FailedMessage", fileMeta.FailedMessage);
+        SetSIfNotNull(fileItem, "LastModified", fileMeta.LastModified?.ToString("O"));
+        SetSIfNotNull(fileItem, "Created", fileMeta.Created?.ToString("O"));
+        SetSIfNotNull(fileItem, "Owner", fileMeta.Owner);
+        SetSIfNotNull(fileItem, "Group", fileMeta.Group);
+        var sha256Checksum = fileMeta.Sha256Checksum is not null
+            ? Base64Url.Encode(fileMeta.Sha256Checksum)
+            : null;
+        SetSIfNotNull(fileItem, "Sha256Checksum", sha256Checksum);
         writeRequests.Add(new WriteRequest { PutRequest = new PutRequest { Item = fileItem } });
 
         // 3) Chunk‐level items
@@ -1250,8 +1247,7 @@ public class DynamoDbDataStore(
                 ["PK"] = new() { S = $"RESTORE_ID#{restoreId}" },
                 // sort key
                 ["SK"] = new() { S = chunkSk },
-                ["Status"] = new() { S = Enum.GetName(readyToRestore) },
-                ["Type"] = new() { S = nameof(RestoreChunkDetails) }
+                ["Status"] = new() { S = Enum.GetName(readyToRestore) }
             }
         };
 
@@ -1287,10 +1283,8 @@ public class DynamoDbDataStore(
                 var paths = item["RestorePaths"].S;
                 var archiveRunId = item["ArchiveRunId"].S;
                 var requestedAt = DateTimeOffset.Parse(item["RequestedAt"].S);
-                var restorePathStrategy = item.TryGetValue("RestorePathStrategy", out var strategy)
-                    ? Enum.Parse<RestorePathStrategy>(strategy.S)
-                    : RestorePathStrategy.Nested;
-                var restoreFolder = item.TryGetValue("RestoreFolder", out var folder) ? folder.S : null;
+                var restorePathStrategy = GetSIfExists(item, "RestorePathStrategy", Enum.Parse<RestorePathStrategy>);
+                var restoreFolder = GetSIfExists(item, "RestoreFolder", s => s);
 
                 yield return new RestoreRequest(
                     archiveRunId,
@@ -1324,7 +1318,6 @@ public class DynamoDbDataStore(
                 // sort key
                 ["SK"] = new() { S = chunkSk },
                 ["Status"] = new() { S = Enum.GetName(status) },
-                ["Type"] = new() { S = nameof(RestoreFileMetaData) },
                 ["FailedMessage"] = new() { S = reasonMessage }
             }
         };
@@ -1333,9 +1326,24 @@ public class DynamoDbDataStore(
         await dynamoDbClient.PutItemAsync(putReq, cancellationToken);
     }
 
+    private static T? GetNIfExists<T>(Dictionary<string, AttributeValue> item, string key, Func<string, T> conversion)
+    {
+        if (!item.TryGetValue(key, out var value) || value.N is null)
+            return default;
+        return conversion(value.N);
+    }
+
+    private static T? GetSIfExists<T>(Dictionary<string, AttributeValue> item, string key, Func<string, T> conversion)
+    {
+        if (!item.TryGetValue(key, out var value) || value.S is null || string.IsNullOrWhiteSpace(value.S))
+            return default;
+        return conversion(value.S);
+    }
+
     private static void SetSIfNotNull<T>(Dictionary<string, AttributeValue> item, string key, T? value)
     {
-        if (value is not null) item[key] = new AttributeValue { S = value.ToString()! };
+        if (value is not null && !string.IsNullOrWhiteSpace(value.ToString()))
+            item[key] = new AttributeValue { S = value.ToString()! };
     }
 
     private static void SetNIfNotNull<T>(Dictionary<string, AttributeValue> item, string key, T? value)
