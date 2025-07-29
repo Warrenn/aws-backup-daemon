@@ -28,7 +28,6 @@ public sealed class ContextResolver : ContextResolverBase, IContextResolver, IUp
         configOptions.OnChange((newConfig, _) =>
         {
             logger.LogInformation("Configuration changed, updating ContextResolver.");
-            logger.LogInformation("new config {config}", newConfig);
             _configOptions = newConfig;
             ResetCache();
             logger.LogInformation("Configuration updated in ContextResolver.");

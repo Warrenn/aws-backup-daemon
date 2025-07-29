@@ -157,6 +157,7 @@ Resources:
                   - dynamodb:UpdateItem
                   - dynamodb:Query
                   - dynamodb:Scan
+                  - dynamodb:DeleteItem
                 Resource:
                   - !GetAtt ArchiveDataTable.Arn
 

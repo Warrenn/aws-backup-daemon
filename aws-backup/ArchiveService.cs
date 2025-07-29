@@ -84,7 +84,7 @@ public sealed class ArchiveService(
     public async Task<bool> DoesFileRequireProcessing(
         string runId, string filePath, CancellationToken cancellationToken)
     {
-        var fileStatusData = await GetFileMetaData(runId, filePath, cancellationToken);
+        var fileStatusData = await GetOrCreateFileMetaData(runId, filePath, cancellationToken);
         return fileStatusData.Status is not FileStatus.UploadComplete;
     }
     
@@ -96,7 +96,7 @@ public sealed class ArchiveService(
             cancellationToken);
 
         var run = await GetArchiveRun(runId, cancellationToken);
-        var fileMetaData = await GetFileMetaData(run, localFilePath, cancellationToken);
+        var fileMetaData = await GetOrCreateFileMetaData(run, localFilePath, cancellationToken);
         fileMetaData.Status = FileStatus.Skipped;
         fileMetaData.SkipReason = exception.Message;
 
@@ -118,7 +118,7 @@ public sealed class ArchiveService(
         await archiveDataStore.SaveChunkStatus(runId, localFilePath, chunkKey, ChunkStatus.Failed, cancellationToken);
 
         var run = await GetArchiveRun(runId, cancellationToken);
-        var fileStatusData = await GetFileMetaData(run, localFilePath, cancellationToken);
+        var fileStatusData = await GetOrCreateFileMetaData(run, localFilePath, cancellationToken);
         if (fileStatusData.Chunks.TryGetValue(chunkKey, out var chunkDetails)) chunkDetails.Status = ChunkStatus.Failed;
         fileStatusData.Status = FileStatus.Skipped;
         fileStatusData.SkipReason = exception.Message;
@@ -128,7 +128,7 @@ public sealed class ArchiveService(
 
     public async Task<bool> IsTheFileSkipped(string runId, string localFilePath, CancellationToken cancellationToken)
     {
-        var fileStatusData = await GetFileMetaData(runId, localFilePath, cancellationToken);
+        var fileStatusData = await GetOrCreateFileMetaData(runId, localFilePath, cancellationToken);
         return fileStatusData.Status is FileStatus.Skipped;
     }
 
@@ -145,7 +145,7 @@ public sealed class ArchiveService(
             cancellationToken);
         await archiveDataStore.DeleteFileChunks(runId, localFilePath, cancellationToken);
 
-        var fileStatusData = await GetFileMetaData(runId, localFilePath, cancellationToken);
+        var fileStatusData = await GetOrCreateFileMetaData(runId, localFilePath, cancellationToken);
         fileStatusData.Status = FileStatus.Added;
         fileStatusData.Chunks.Clear();
     }
@@ -157,7 +157,7 @@ public sealed class ArchiveService(
         await archiveDataStore.SaveChunkStatus(runId, localFilePath, chunkKey, ChunkStatus.Uploaded, cancellationToken);
 
         var run = await GetArchiveRun(runId, cancellationToken);
-        var fileStatusData = await GetFileMetaData(runId, localFilePath, cancellationToken);
+        var fileStatusData = await GetOrCreateFileMetaData(runId, localFilePath, cancellationToken);
         if (fileStatusData.Chunks.TryGetValue(chunkKey, out var chunkDetails))
             chunkDetails.Status = ChunkStatus.Uploaded;
 
@@ -171,7 +171,7 @@ public sealed class ArchiveService(
         await archiveDataStore.SaveChunkDetails(runId, localFilePath, chunkDetails, cancellationToken);
 
         var run = await GetArchiveRun(runId, cancellationToken);
-        var fileMetaData = await GetFileMetaData(runId, localFilePath, cancellationToken);
+        var fileMetaData = await GetOrCreateFileMetaData(runId, localFilePath, cancellationToken);
         fileMetaData.Chunks.TryAdd(chunkKey, chunkDetails);
 
         await SaveAndFinalizeIfComplete(run, cancellationToken);
@@ -188,15 +188,16 @@ public sealed class ArchiveService(
             status = FileStatus.Skipped;
             skipReason = result.Error.Message;
         }
-
-        await archiveDataStore.UpdateFileStatus(runId, localFilePath, status, skipReason, cancellationToken);
-        await archiveDataStore.SaveFileMetaData(runId, localFilePath, result.FullFileHash, result.OriginalSize,
-            result.CompressedSize, cancellationToken);
-
+        
         var run = await GetArchiveRun(runId, cancellationToken);
-        var fileStatusData = await GetFileMetaData(run, localFilePath, cancellationToken);
-        fileStatusData.Status = status;
-        fileStatusData.SkipReason = skipReason;
+        
+        var fileMetaData = await GetOrCreateFileMetaData(run, localFilePath, cancellationToken);
+        fileMetaData.Status = status;
+        fileMetaData.SkipReason = skipReason;
+        fileMetaData.HashKey = result.FullFileHash;
+        fileMetaData.OriginalSize = result.OriginalSize;
+        fileMetaData.CompressedSize = result.CompressedSize;
+        await archiveDataStore.SaveFileMetaData(runId, fileMetaData, cancellationToken);
 
         await SaveAndFinalizeIfComplete(run, cancellationToken);
     }
@@ -218,21 +219,31 @@ public sealed class ArchiveService(
         return run!;
     }
     
-    private async Task<FileMetaData> GetFileMetaData(string runId, string filePath,
+    private async Task<FileMetaData> GetOrCreateFileMetaData(string runId, string filePath,
         CancellationToken cancellationToken)
     {
         var run = await GetArchiveRun(runId, cancellationToken);
-        return await GetFileMetaData(run, filePath, cancellationToken);
+        return await GetOrCreateFileMetaData(run, filePath, cancellationToken);
     }
 
-    private async Task<FileMetaData> GetFileMetaData(ArchiveRun run, string filePath,
+    private async Task<FileMetaData> GetOrCreateFileMetaData(ArchiveRun run, string filePath,
         CancellationToken cancellationToken)
     {
         var runId = run.RunId;
         if (run.Files.TryGetValue(filePath, out var metaData))
             return metaData;
 
-        metaData = await archiveDataStore.GetFileMetaData(runId, filePath, cancellationToken) ?? new FileMetaData(filePath);
+        metaData = await archiveDataStore.GetFileMetaData(runId, filePath, cancellationToken);
+        if (metaData is null)
+        {
+            metaData = new FileMetaData(filePath)
+            {
+                Status = FileStatus.Added,
+                Chunks = new ConcurrentDictionary<ByteArrayKey, DataChunkDetails>()
+            };
+            await archiveDataStore.SaveFileMetaData(runId, metaData, cancellationToken);
+        }
+
         run.Files.TryAdd(filePath, metaData);
         return metaData;
     }
@@ -266,6 +277,9 @@ public sealed class ArchiveService(
 
             if (chunkStatuses.Any(s => s == ChunkStatus.Added))
                 continue;
+            
+            if(fileMeta.Status is FileStatus.Skipped)
+                continue;
 
             if (chunkStatuses.Any(s => s == ChunkStatus.Failed))
             {
@@ -273,6 +287,8 @@ public sealed class ArchiveService(
                     fileMeta.SkipReason = "File skipped due to chunk failing to upload";
 
                 fileMeta.Status = FileStatus.Skipped;
+                await archiveDataStore.UpdateFileStatus(
+                    run.RunId, filePath, FileStatus.Skipped, fileMeta.SkipReason, cancellationToken);
                 continue;
             }
 

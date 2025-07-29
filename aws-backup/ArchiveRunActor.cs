@@ -61,6 +61,16 @@ public sealed class ArchiveRunActor(
                 foreach (var filePath in fileLister.GetAllFiles(runRequest.PathsToArchive, ignorePatterns))
                 {
                     var archiveFileRequest = new ArchiveFileRequest(archiveRun.RunId, filePath);
+
+                    var requireProcessing =
+                        await archiveService.DoesFileRequireProcessing(archiveRun.RunId, filePath, cancellationToken);
+                    if (!requireProcessing)
+                    {
+                        logger.LogInformation("Skipping {File} for {ArchiveRunId} - already processed", filePath,
+                            archiveRun.RunId);
+                        continue;
+                    }
+
                     await archiveFileMediator.ProcessFile(archiveFileRequest, cancellationToken);
                 }
 

@@ -59,14 +59,6 @@ public sealed class ArchiveFilesActor(
                 var keepOwnerGroup = contextResolver.KeepOwnerGroup();
                 var keepAclEntries = contextResolver.KeepAclEntries();
 
-                var requireProcessing =
-                    await archiveService.DoesFileRequireProcessing(runId, filePath, cancellationToken);
-                if (!requireProcessing)
-                {
-                    logger.LogInformation("Skipping {File} for {ArchiveRunId} - already processed", filePath, runId);
-                    continue;
-                }
-
                 logger.LogInformation("Processing {File} for {ArchiveRunId}", filePath, runId);
                 var task = processor.ProcessFileAsync(runId, filePath, cancellationToken);
 
@@ -100,6 +92,7 @@ public sealed class ArchiveFilesActor(
                     continue;
                 }
 
+                // this should block the producer side due to bounded channel
                 var result = await task;
 
                 if (result.Error is not null)

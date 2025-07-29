@@ -32,7 +32,7 @@ public interface IArchiveDataStore
     Task SaveChunkDetails(string runId, string localFilePath, DataChunkDetails details,
         CancellationToken cancellationToken);
 
-    Task SaveFileMetaData(string runId, string localFilePath, byte[] hashKey, long originalBytes, long compressedBytes,
+    Task SaveFileMetaData(string runId, FileMetaData metaData,
         CancellationToken cancellationToken);
 
     IAsyncEnumerable<FileMetaData> GetRestorableFileMetaData(string runId, CancellationToken cancellationToken);

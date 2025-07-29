@@ -488,25 +488,25 @@ public class DynamoDbDataStore(
                     [":pk"] = new() { S = pk },
                     [":skp"] = new() { S = sk }
                 },
-                ProjectionExpression = "#a, #b, #c, #d, #e, #f, #g, #h, #i, #j, #k, #l, #m, #n, #o, #p, #q, #r",
+                ProjectionExpression = "#a, #b, #c, #d, #e, #f, #g, #h, #i, #j, #k, #l, #m, #n, #o, #p",
                 ExpressionAttributeNames = new Dictionary<string, string>
                 {
                     ["#a"] = "SK",
-                    ["#d"] = "Created",
-                    ["#e"] = "Status",
-                    ["#f"] = "SkipReason",
-                    ["#g"] = "Type",
-                    ["#h"] = "LocalFilePath",
-                    ["#i"] = "ChunkIndex",
-                    ["#j"] = "ChunkSize",
-                    ["#k"] = "Size",
-                    ["#l"] = "CompressedSize",
-                    ["#m"] = "OriginalSize",
-                    ["#n"] = "Owner",
-                    ["#o"] = "Group",
-                    ["#p"] = "AclEntries",
-                    ["#q"] = "LastModified",
-                    ["#r"] = "HashKey"
+                    ["#b"] = "Created",
+                    ["#c"] = "Status",
+                    ["#d"] = "SkipReason",
+                    ["#e"] = "Type",
+                    ["#f"] = "LocalFilePath",
+                    ["#g"] = "ChunkIndex",
+                    ["#h"] = "ChunkSize",
+                    ["#i"] = "Size",
+                    ["#j"] = "CompressedSize",
+                    ["#k"] = "OriginalSize",
+                    ["#l"] = "Owner",
+                    ["#m"] = "Group",
+                    ["#n"] = "AclEntries",
+                    ["#o"] = "LastModified",
+                    ["#p"] = "HashKey"
                 }
             };
 
@@ -599,12 +599,16 @@ public class DynamoDbDataStore(
         await dynamoDbClient.PutItemAsync(putReq, cancellationToken);
     }
 
-    public async Task SaveFileMetaData(string runId, string localFilePath, byte[] hashKey, long originalBytes,
-        long compressedBytes,
+    public async Task SaveFileMetaData(string runId, FileMetaData metaData,
         CancellationToken cancellationToken)
     {
         var tableName = awsConfiguration.DynamoDbTableName;
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
+        var localFilePath = metaData.LocalFilePath;
+        var hashKey = metaData.HashKey;
+        var originalBytes = metaData.OriginalSize ?? 0;
+        var compressedBytes = metaData.CompressedSize ?? 0;
+        var status = metaData.Status;
 
         var encodedFilePath = WebUtility.UrlEncode(localFilePath);
         var hashString = Base64Url.Encode(hashKey);
@@ -621,7 +625,9 @@ public class DynamoDbDataStore(
                 ["Type"] = new() { S = nameof(FileMetaData) },
                 ["HashKey"] = new() { S = hashString },
                 ["OriginalSize"] = new() { N = originalBytes.ToString() },
-                ["CompressedSize"] = new() { N = compressedBytes.ToString() }
+                ["CompressedSize"] = new() { N = compressedBytes.ToString() },
+                ["Status"] = new() { S = Enum.GetName(status) },
+                ["LocalFilePath"] = new() { S = localFilePath }
             }
         };
 
@@ -653,25 +659,25 @@ public class DynamoDbDataStore(
                     [":pk"] = new() { S = pk },
                     [":skp"] = new() { S = sk }
                 },
-                ProjectionExpression = "#a, #b, #c, #d, #e, #f, #g, #h, #i, #j, #k, #l, #m, #n, #o, #p, #q, #r",
+                ProjectionExpression = "#a, #b, #c, #d, #e, #f, #g, #h, #i, #j, #k, #l, #m, #n, #o, #p",
                 ExpressionAttributeNames = new Dictionary<string, string>
                 {
                     ["#a"] = "SK",
-                    ["#d"] = "Created",
-                    ["#e"] = "Status",
-                    ["#f"] = "SkipReason",
-                    ["#g"] = "Type",
-                    ["#h"] = "LocalFilePath",
-                    ["#i"] = "ChunkIndex",
-                    ["#j"] = "ChunkSize",
-                    ["#k"] = "Size",
-                    ["#l"] = "CompressedSize",
-                    ["#m"] = "OriginalSize",
-                    ["#n"] = "Owner",
-                    ["#o"] = "Group",
-                    ["#p"] = "AclEntries",
-                    ["#q"] = "LastModified",
-                    ["#r"] = "HashKey"
+                    ["#b"] = "Created",
+                    ["#c"] = "Status",
+                    ["#d"] = "SkipReason",
+                    ["#e"] = "Type",
+                    ["#f"] = "LocalFilePath",
+                    ["#g"] = "ChunkIndex",
+                    ["#h"] = "ChunkSize",
+                    ["#i"] = "Size",
+                    ["#j"] = "CompressedSize",
+                    ["#k"] = "OriginalSize",
+                    ["#l"] = "Owner",
+                    ["#m"] = "Group",
+                    ["#n"] = "AclEntries",
+                    ["#o"] = "LastModified",
+                    ["#p"] = "HashKey"
                 }
             };
 
@@ -1253,9 +1259,9 @@ public class DynamoDbDataStore(
         await dynamoDbClient.PutItemAsync(putReq, cancellationToken);
     }
 
-    public async IAsyncEnumerable<RestoreRequest> GetRestoreRequests([EnumeratorCancellation] CancellationToken cancellationToken)
+    public async IAsyncEnumerable<RestoreRequest> GetRestoreRequests(
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        
         var tableName = awsConfiguration.DynamoDbTableName;
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
 
@@ -1285,7 +1291,7 @@ public class DynamoDbDataStore(
                     ? Enum.Parse<RestorePathStrategy>(strategy.S)
                     : RestorePathStrategy.Nested;
                 var restoreFolder = item.TryGetValue("RestoreFolder", out var folder) ? folder.S : null;
-                
+
                 yield return new RestoreRequest(
                     archiveRunId,
                     paths,
