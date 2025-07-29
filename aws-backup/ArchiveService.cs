@@ -85,9 +85,10 @@ public sealed class ArchiveService(
         string runId, string filePath, CancellationToken cancellationToken)
     {
         var fileStatusData = await GetOrCreateFileMetaData(runId, filePath, cancellationToken);
-        return fileStatusData.Status is not FileStatus.UploadComplete;
+        return fileStatusData.Status is not FileStatus.UploadComplete &&
+               fileStatusData.Status is not FileStatus.ChunkingComplete;
     }
-    
+
     public async Task RecordFailedFile(
         string runId, string localFilePath, Exception exception,
         CancellationToken cancellationToken)
@@ -188,15 +189,17 @@ public sealed class ArchiveService(
             status = FileStatus.Skipped;
             skipReason = result.Error.Message;
         }
-        
+
         var run = await GetArchiveRun(runId, cancellationToken);
-        
+
         var fileMetaData = await GetOrCreateFileMetaData(run, localFilePath, cancellationToken);
         fileMetaData.Status = status;
         fileMetaData.SkipReason = skipReason;
         fileMetaData.HashKey = result.FullFileHash;
         fileMetaData.OriginalSize = result.OriginalSize;
         fileMetaData.CompressedSize = result.CompressedSize;
+
+        run.Files[localFilePath] = fileMetaData;
         await archiveDataStore.SaveFileMetaData(runId, fileMetaData, cancellationToken);
 
         await SaveAndFinalizeIfComplete(run, cancellationToken);
@@ -205,7 +208,7 @@ public sealed class ArchiveService(
     public async Task ReportAllFilesListed(ArchiveRun archiveRun, CancellationToken cancellationToken)
     {
         archiveRun.Status = ArchiveRunStatus.AllFilesListed;
-        
+
         await archiveDataStore.UpdateArchiveStatus(archiveRun.RunId, archiveRun.Status, cancellationToken);
         await SaveAndFinalizeIfComplete(archiveRun, cancellationToken);
     }
@@ -218,7 +221,7 @@ public sealed class ArchiveService(
         _runCache.TryAdd(runId, run!);
         return run!;
     }
-    
+
     private async Task<FileMetaData> GetOrCreateFileMetaData(string runId, string filePath,
         CancellationToken cancellationToken)
     {
@@ -264,22 +267,39 @@ public sealed class ArchiveService(
 
     private async Task SaveAndFinalizeInternal(ArchiveRun run, CancellationToken cancellationToken)
     {
-        foreach (var (filePath, fileMeta) in run.Files)
+        var snapshot = run.Files.ToArray();
+        var isIncomplete = false;
+        var originalSize = 0L;
+        var compressedSize = 0L;
+        var skippedFiles = 0;
+        var totalFiles = 0;
+
+        foreach (var (filePath, fileMeta) in snapshot)
         {
-            if (fileMeta.Status is not FileStatus.ChunkingComplete)
-                continue;
+            totalFiles++;
+
+            switch (fileMeta.Status)
+            {
+                case FileStatus.Added:
+                    isIncomplete = true;
+                    continue;
+                case FileStatus.Skipped:
+                    skippedFiles++;
+                    continue;
+                case FileStatus.UploadComplete:
+                    originalSize += fileMeta.OriginalSize ?? 0;
+                    compressedSize += fileMeta.CompressedSize ?? 0;
+                    continue;
+            }
 
             // Snapshot current chunk statuses
             var chunkStatuses = fileMeta.Chunks.Values.Select(c => c.Status).ToArray();
 
-            if (chunkStatuses.Length == 0)
+            if (chunkStatuses.Length == 0 || chunkStatuses.Any(s => s == ChunkStatus.Added))
+            {
+                isIncomplete = true;
                 continue;
-
-            if (chunkStatuses.Any(s => s == ChunkStatus.Added))
-                continue;
-            
-            if(fileMeta.Status is FileStatus.Skipped)
-                continue;
+            }
 
             if (chunkStatuses.Any(s => s == ChunkStatus.Failed))
             {
@@ -287,27 +307,37 @@ public sealed class ArchiveService(
                     fileMeta.SkipReason = "File skipped due to chunk failing to upload";
 
                 fileMeta.Status = FileStatus.Skipped;
+                run.Files[filePath] = fileMeta;
+                skippedFiles++;
+
                 await archiveDataStore.UpdateFileStatus(
                     run.RunId, filePath, FileStatus.Skipped, fileMeta.SkipReason, cancellationToken);
                 continue;
             }
 
             fileMeta.Status = FileStatus.UploadComplete;
+            run.Files[filePath] = fileMeta;
+
             await archiveDataStore.UpdateFileStatus(
                 run.RunId, filePath, FileStatus.UploadComplete, fileMeta.SkipReason, cancellationToken);
 
             logger.LogDebug("File {File} status updated to UploadComplete", filePath);
         }
 
+        if (totalFiles == 0) isIncomplete = true;
+
         // Finalize if all files are accounted for
-        if (run.Status is ArchiveRunStatus.AllFilesListed &&
-            run.Files.Values.All(f => f.Status is FileStatus.UploadComplete or FileStatus.Skipped))
-        {
-            await FinalizeRun(run, cancellationToken);
-        }
+        if (run.Status is ArchiveRunStatus.AllFilesListed && !isIncomplete)
+            await FinalizeRun(run, originalSize, compressedSize, skippedFiles, totalFiles, cancellationToken);
     }
 
-    private async Task FinalizeRun(ArchiveRun run, CancellationToken cancellationToken)
+    private async Task FinalizeRun(
+        ArchiveRun run,
+        long originalSize,
+        long compressedSize,
+        int skippedFiles,
+        int totalFiles,
+        CancellationToken cancellationToken)
     {
         var runId = run.RunId;
         logger.LogInformation("Finalizing runId {RunId}", runId);
@@ -315,12 +345,10 @@ public sealed class ArchiveService(
         // update summary fields
         run.Status = ArchiveRunStatus.Completed;
         run.CompletedAt = DateTimeOffset.UtcNow;
-        run.CompressedSize = run.Files.Values.Where(f => f.Status == FileStatus.UploadComplete)
-            .Sum(f => f.CompressedSize ?? 0);
-        run.OriginalSize = run.Files.Values.Where(f => f.Status == FileStatus.UploadComplete)
-            .Sum(f => f.OriginalSize ?? 0);
-        run.TotalFiles = run.Files.Count;
-        run.TotalSkippedFiles = run.Files.Values.Count(f => f.Status == FileStatus.Skipped);
+        run.CompressedSize = compressedSize;
+        run.OriginalSize = originalSize;
+        run.TotalFiles = totalFiles;
+        run.TotalSkippedFiles = skippedFiles;
 
         // publish summary
         if (run.TotalSkippedFiles > 0)

@@ -19,9 +19,11 @@
       <Link>appsettings.json</Link>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <TrimmerRootAssembly Include="AWSSDK.Extensions.CrtIntegration" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="AWSSDK.Extensions.CrtIntegration" Version="4.0.0" />
     <PackageReference Include="Cronos" Version="0.11.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.0.7" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.7" />
@@ -39,6 +41,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\aws-backup-common\aws-backup-common.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="cache\" />
   </ItemGroup>
 
 </Project>

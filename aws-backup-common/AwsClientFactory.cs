@@ -4,8 +4,6 @@ using Amazon.IdentityManagement;
 using Amazon.Runtime;
 using Amazon.Runtime.CredentialManagement;
 using Amazon.S3;
-using Amazon.SecurityToken;
-using Amazon.SecurityToken.Model;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleSystemsManagement;
 using Amazon.SQS;
@@ -112,26 +110,6 @@ public sealed class AwsClientFactory(
         logger.LogDebug("Cached AWS credentials have been reset");
     }
 
-    private async Task<bool> ValidateCredentialsAsync(AWSCredentials? credentials, CancellationToken cancellationToken)
-    {
-        try
-        {
-            if (credentials is null) return false;
-
-            using var stsClient = new AmazonSecurityTokenServiceClient(credentials);
-            var response = await stsClient.GetCallerIdentityAsync(new GetCallerIdentityRequest(), cancellationToken);
-            if (response != null && !string.IsNullOrWhiteSpace(response.UserId)) return true;
-
-            logger.LogWarning("Invalid AWS credentials: GetCallerIdentity returned null or empty UserId");
-            return false;
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to validate AWS credentials");
-            return false;
-        }
-    }
-
     private static DateTime GetUniversalTime(DateTime? dateTime)
     {
         if (dateTime is null) return DateTime.UtcNow;
@@ -160,7 +138,7 @@ public sealed class AwsClientFactory(
                 ("Roles Anywhere", TryGetRolesAnyWhereCredentials),
                 ("Environment Variables", _ => Task.FromResult(TryGetEnvironmentCredentials(timeProvider, expiresIn))),
                 ("AWS Profile", _ => Task.FromResult(TryGetProfileCredentials(timeProvider, expiresIn))),
-                ("IAM Role", c => TryGetInstanceProfileCredentialsAsync(timeProvider, expiresIn, c)),
+                ("IAM Role", _ => TryGetInstanceProfileCredentialsAsync(timeProvider, expiresIn)),
                 ("Web Identity Token", _ => Task.FromResult(TryGetWebIdentityCredentials(timeProvider, expiresIn)))
             };
 
@@ -291,8 +269,7 @@ public sealed class AwsClientFactory(
 
     private static async Task<AWSCredentials?> TryGetInstanceProfileCredentialsAsync(
         TimeProvider timeProvider,
-        int credentialsTimeout = 3600,
-        CancellationToken cancellationToken = default)
+        int credentialsTimeout = 3600)
     {
         try
         {
@@ -341,7 +318,7 @@ public sealed class AwsClientFactory(
         {
             MaxErrorRetry = resolver.GeneralRetryLimit(),
             RetryMode = resolver.GetAwsRetryMode(),
-            Timeout = TimeSpan.FromSeconds(resolver.AwsTimeoutSeconds()),
+            Timeout = TimeSpan.FromSeconds(resolver.AwsS3TimeoutSeconds()),
             RegionEndpoint = resolver.GetAwsRegion(),
             BufferSize = resolver.ReadBufferSize(),
             UseAccelerateEndpoint = resolver.UseS3Accelerate(),

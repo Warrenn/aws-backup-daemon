@@ -69,6 +69,7 @@ public interface IContextResolver
     int AwsCredentialsTimeoutSeconds();
     CompressionLevel ZipCompressionLevel();
     int AwsTimeoutSeconds();
+    int AwsS3TimeoutSeconds();
 }
 
 public abstract class ContextResolverBase(CommonConfiguration configuration, string clientId) : IContextResolver
@@ -247,10 +248,16 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
 
     public int AwsTimeoutSeconds()
     {
-        return _configOptions.AwsTimeoutSeconds ?? 30;
+        return _configOptions.AwsTimeoutSeconds ?? 60;
         // 60 seconds default
     }
 
+    public int AwsS3TimeoutSeconds()
+    {
+        return _configOptions.AwsS3TimeoutSeconds ?? 600;
+        // 10 minutes default
+    }
+    
     public int ShutdownTimeoutSeconds()
     {
         return _configOptions.ShutdownTimeoutSeconds ?? 30;
@@ -348,7 +355,8 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
     public string BatchS3Key(string batchFileName)
     {
         var prefix = S3DataPrefix();
-        return $"{prefix}/{batchFileName}";
+        var fileName = Path.GetFileNameWithoutExtension(batchFileName);
+        return $"{prefix}/{fileName}";
     }
 
     public string RestoreId(string archiveRunId, string restorePaths, DateTimeOffset requestedAt)

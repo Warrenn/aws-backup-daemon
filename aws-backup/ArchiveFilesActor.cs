@@ -102,8 +102,8 @@ public sealed class ArchiveFilesActor(
                     continue;
                 }
 
-                logger.LogInformation("File {File} processed successfully for {ArchiveRunId}", filePath, runId);
                 await archiveService.ReportProcessingResult(runId, result, cancellationToken);
+                logger.LogInformation("File {File} processed successfully for {ArchiveRunId}", filePath, runId);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -111,6 +111,8 @@ public sealed class ArchiveFilesActor(
             }
             catch (Exception ex)
             {
+                logger.LogError(ex, "Error processing archive file request {FilePath}: {Message}", request.FilePath,
+                    ex.Message);
                 request.Exception = ex;
                 await retryMediator.RetryAttempt(request, cancellationToken);
             }

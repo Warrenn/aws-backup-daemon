@@ -1,10 +1,12 @@
 using System.Threading.Channels;
 using aws_backup_common;
+using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
 public sealed class Mediator(
-    IContextResolver resolver) :
+    IContextResolver resolver,
+    ILogger<Mediator> logger) :
     IArchiveFileMediator,
     IRunRequestMediator,
     IDownloadFileMediator,
@@ -185,6 +187,12 @@ public sealed class Mediator(
 
     async Task IUploadChunksMediator.ProcessChunk(UploadChunkRequest request, CancellationToken cancellationToken)
     {
+        if (!_uploadChunksChannelManager.ChannelIsOpen)
+        {
+            logger.LogWarning("UploadChunks channel is closed, cannot process chunk: {Request}", request);
+            return;
+        }
+
         await _uploadChunksChannelManager.Current.Channel.Writer.WriteAsync(request, cancellationToken);
     }
 
@@ -205,7 +213,7 @@ public sealed class CronScheduleMediator : ICronScheduleMediator
                 SingleReader = true,
                 SingleWriter = true
             });
-    
+
     public ValueTask<string> WaitForCronScheduleChangeAsync(CancellationToken cancellationToken = default)
     {
         return _cronScheduleChannel.Reader.ReadAsync(cancellationToken);

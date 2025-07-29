@@ -158,6 +158,8 @@ Resources:
                   - dynamodb:Query
                   - dynamodb:Scan
                   - dynamodb:DeleteItem
+                  - dynamodb:BatchWriteItem
+                  - dynamodb:BatchGetItem
                 Resource:
                   - !GetAtt ArchiveDataTable.Arn
 

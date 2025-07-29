@@ -148,7 +148,7 @@ public sealed class ChunkDataActor(
 
             logger.LogInformation("Flushing remaining batch data to S3");
             // Flush any remaining data to S3
-            await FlushToS3(true, cancellationToken);
+            await FlushToS3(false, cancellationToken);
         }
 
         return;

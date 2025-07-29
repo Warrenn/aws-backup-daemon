@@ -9,6 +9,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Serilog;
+using Amazon.RuntimeDependencies;
+using AWSSDK.Extensions.CrtIntegration;
 
 var appConfigOpt = new Option<string?>("--app-settings", "-a")
 {
@@ -20,6 +22,9 @@ var rootCommand = new RootCommand("AWS Backup Tool - Archive and restore files t
 {
     appConfigOpt
 };
+
+GlobalRuntimeDependencyRegistry.Instance
+    .RegisterChecksumProvider(new CrtChecksums());
 
 var cancellationToken = new CancellationTokenSource().Token;
 var parsedArgs = rootCommand.Parse(args);
@@ -124,6 +129,7 @@ builder
     .AddHostedService<SqsPollingActor>()
     .AddHostedService<ChunkDataActor>()
     .AddHostedService<SnsActor>()
+    .AddHostedService<UploadBatchActor>()
     .AddHostedService<RollingFileActor>()
     .AddOptions<Configuration>()
     .Bind(configuration.GetSection("Configuration"))

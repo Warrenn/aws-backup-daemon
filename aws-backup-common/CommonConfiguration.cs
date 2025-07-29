@@ -49,4 +49,5 @@ public record CommonConfiguration
     public string? RollingLogFolder { get; set; }
     public string? CompressionLevel { get; set; }
     public int? AwsTimeoutSeconds { get; set; }
+    public int? AwsS3TimeoutSeconds { get; set; }
 }
