@@ -27,6 +27,7 @@ public class RestoreServiceTests
             _storageMediator.Object,
             _s3Service.Object,
             _snsMediator.Object,
+            Mock.Of<IDataStoreMediator>(),
             _restoreDataStore.Object,
             _cloudChunkStorage.Object,
             _logger.Object);

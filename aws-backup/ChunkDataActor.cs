@@ -14,14 +14,13 @@ public sealed record UploadChunkRequest(
 
 public interface IUploadChunksMediator
 {
-    void SignalReaderCompleted();
-    void RegisterReader();
     IAsyncEnumerable<UploadChunkRequest> GetChunks(CancellationToken cancellationToken);
     Task ProcessChunk(UploadChunkRequest request, CancellationToken cancellationToken);
-    Task WaitForAllChunksProcessed();
+    void SignalComplete();
 }
 
 public sealed class ChunkDataActor(
+    IChunkCountDownEvent chunkCountDownEvent,
     IUploadChunksMediator mediator,
     IUploadBatchMediator batchMediator,
     ILogger<ChunkDataActor> logger,
@@ -61,7 +60,7 @@ public sealed class ChunkDataActor(
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            mediator.RegisterReader();
+            chunkCountDownEvent.AddCount();
 
             //this should block the producer side due to bounded channel
             await foreach (var request in mediator.GetChunks(cancellationToken))
@@ -82,8 +81,10 @@ public sealed class ChunkDataActor(
                 if (await dataChunkService.ChunkAlreadyUploaded(chunk, cancellationToken) ||
                     await archiveService.IsTheFileSkipped(request.ArchiveRunId, parentFile, cancellationToken))
                 {
-                    logger.LogInformation("Skipping chunk {ChunkIndex} for file {LocalFilePath} - already uploaded",
-                        chunk.ChunkIndex, chunk.LocalFilePath);
+                    logger.LogInformation(
+                        "Skipping chunk {ChunkHash} {ChunkIndex} for file {LocalFilePath} - already uploaded",
+                        Base64Url.Encode(chunk.HashKey), chunk.ChunkIndex, parentFile);
+                    
                     await archiveService.RecordChunkUpload(
                         request.ArchiveRunId,
                         parentFile,
@@ -143,7 +144,7 @@ public sealed class ChunkDataActor(
                 }
             }
 
-            mediator.SignalReaderCompleted();
+            chunkCountDownEvent.Signal();
             if (batch is null) continue;
 
             logger.LogInformation("Flushing remaining batch data to S3");

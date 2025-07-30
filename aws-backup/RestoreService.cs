@@ -28,13 +28,13 @@ public sealed class RestoreService(
     IS3StorageClassMediator s3StorageClassMediator,
     IS3Service s3Service,
     ISnsMessageMediator snsMed,
+    IDataStoreMediator dataStoreMediator,
     IRestoreDataStore restoreDataStore,
     ICloudChunkStorage cloudChunkStorage,
     ILogger<RestoreService> logger)
     : IRestoreService
 {
     private readonly ConcurrentDictionary<string, RestoreRun> _restoreRunsCache = new();
-    private readonly ConcurrentDictionary<string, SemaphoreSlim> _runLocks = new();
     private readonly ConcurrentDictionary<string, ByteArrayKey[]> _s3KeysToChunks = new();
 
     public async Task<RestoreRun?> LookupRestoreRun(string restoreId, CancellationToken cancellationToken)
@@ -95,11 +95,13 @@ public sealed class RestoreService(
                 var chunkHashKey = restoreChunkStatus.ChunkKey;
 
                 chunkRestore.Status = S3ChunkRestoreStatus.ReadyToRestore;
-                await restoreDataStore.SaveRestoreChunkStatus(
+                
+                var saveRestoreChunkStatusCommand = new SaveRestoreChunkStatusCommand(
                     restoreRunId,
                     restoreFile.FilePath,
                     chunkHashKey,
-                    S3ChunkRestoreStatus.ReadyToRestore, cancellationToken);
+                    S3ChunkRestoreStatus.ReadyToRestore);
+                await dataStoreMediator.ExecuteCommand(saveRestoreChunkStatusCommand, cancellationToken);
 
                 var chunkStatusesSnapshot = restoreFile.CloudChunkDetails.Values.Select(d => d.Status).ToArray();
                 if (chunkStatusesSnapshot.Any(s => s == S3ChunkRestoreStatus.PendingDeepArchiveRestore))
@@ -124,8 +126,11 @@ public sealed class RestoreService(
                     Sha256Checksum = restoreFile.Sha256Checksum
                 };
                 await downloadMediator.DownloadFileFromS3(s3Request, cancellationToken);
-
-                await restoreDataStore.SaveRestoreFileMetaData(restoreRunId, restoreFile, cancellationToken);
+                
+                var saveRestoreFileMetaDataCommand = new SaveRestoreFileMetaDataCommand(
+                    restoreRunId,
+                    restoreFile);
+                await dataStoreMediator.ExecuteCommand(saveRestoreFileMetaDataCommand, cancellationToken);
             }
         }
         catch (Exception ex)
@@ -141,18 +146,22 @@ public sealed class RestoreService(
     {
         try
         {
-            if (!_restoreRunsCache.TryGetValue(req.RestoreId, out var run)) return;
-            if (!run.RequestedFiles.TryGetValue(req.FilePath, out var fileMeta)) return;
+            if (!_restoreRunsCache.TryGetValue(req.RestoreId, out var restoreRun)) return;
+            if (!restoreRun.RequestedFiles.TryGetValue(req.FilePath, out var fileMeta)) return;
 
             fileMeta.Status = FileRestoreStatus.Completed;
             logger.LogInformation("File {File} in run {RunId} marked Completed",
                 req.FilePath, req.RestoreId);
-
-            await restoreDataStore.SaveRestoreFileStatus(req.RestoreId, fileMeta.FilePath, FileRestoreStatus.Completed,
-                "", cancellationToken);
+            
+            var saveRestoreFileStatusCommand = new SaveRestoreFileStatusCommand(
+                req.RestoreId,
+                fileMeta.FilePath,
+                FileRestoreStatus.Completed,
+                "");
+            await dataStoreMediator.ExecuteCommand(saveRestoreFileStatusCommand, cancellationToken);
 
             // if *all* files done → finalize
-            await SaveAndFinalizeIfComplete(run, cancellationToken);
+            await SaveAndFinalizeIfComplete(restoreRun, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -178,8 +187,12 @@ public sealed class RestoreService(
             await snsMed.PublishMessage(
                 new SnsMessage($"Download failed: {req}", reason.ToString()), cancellationToken);
 
-            await restoreDataStore.SaveRestoreFileStatus(req.RestoreId, fileMeta.FilePath, FileRestoreStatus.Failed,
-                reason.Message, cancellationToken);
+            var saveRestoreFileStatusCommand = new SaveRestoreFileStatusCommand(
+                req.RestoreId,
+                fileMeta.FilePath,
+                FileRestoreStatus.Failed,
+                reason.Message);
+            await dataStoreMediator.ExecuteCommand(saveRestoreFileStatusCommand, cancellationToken);
 
             await SaveAndFinalizeIfComplete(run, cancellationToken);
         }
@@ -192,7 +205,9 @@ public sealed class RestoreService(
 
     public async Task ClearCache(string restoreId, CancellationToken cancellationToken)
     {
-        await restoreDataStore.RemoveRestoreRequest(restoreId, cancellationToken);
+        var removeRestoreRequestCommand = new RemoveRestoreRequestCommand(restoreId);
+        await dataStoreMediator.ExecuteCommand(removeRestoreRequestCommand, cancellationToken);
+
         _restoreRunsCache.TryRemove(restoreId, out _);
     }
 
@@ -207,9 +222,12 @@ public sealed class RestoreService(
             RequestedAt = restoreRequest.RequestedAt,
             Status = RestoreRunStatus.Processing
         };
-
-        await restoreDataStore.SaveRestoreRequest(restoreRequest, cancellationToken);
-        await restoreDataStore.SaveRestoreRun(restoreRun, cancellationToken);
+        
+        var saveRestoreRequestCommand = new SaveRestoreRequestCommand(restoreRequest);
+        await dataStoreMediator.ExecuteCommand(saveRestoreRequestCommand, cancellationToken);
+        
+        var saveRestoreRunCommand = new SaveRestoreRunCommand(restoreRun);
+        await dataStoreMediator.ExecuteCommand(saveRestoreRunCommand, cancellationToken);
 
         _restoreRunsCache.TryAdd(restoreId, restoreRun);
         return restoreRun;
@@ -247,12 +265,12 @@ public sealed class RestoreService(
             foreach (var (key, dataChunk) in fileMetaData.Chunks)
             {
                 var cloudChunk = await cloudChunkStorage.GetCloudChunkDetails(key, cancellationToken);
-                if(cloudChunk is null)
+                if (cloudChunk is null)
                 {
                     logger.LogWarning("No cloud chunk found for {Key} in file {File}", key, filePath);
                     continue;
                 }
-                
+
                 var chunkRestoreStatus = _s3KeysToChunks.ContainsKey(cloudChunk.S3Key) ||
                                          deepArchiveFiles.ContainsKey(cloudChunk.S3Key)
                     ? S3ChunkRestoreStatus.PendingDeepArchiveRestore
@@ -310,7 +328,7 @@ public sealed class RestoreService(
                     chunkDetails.Values.ToArray(),
                     fileMetaData.OriginalSize ?? 0,
                     request.RestorePathStrategy,
-                    request.RestoreFolder)
+                    request.RestoreDestination)
                 {
                     LastModified = fileMetaData.LastModified,
                     Created = fileMetaData.Created,
@@ -334,12 +352,14 @@ public sealed class RestoreService(
             restoreFileMeta.Group = fileMetaData.Group;
             restoreFileMeta.Sha256Checksum = fileMetaData.HashKey;
             restoreFileMeta.RestorePathStrategy = request.RestorePathStrategy;
-            restoreFileMeta.RestoreFolder = request.RestoreFolder;
+            restoreFileMeta.RestoreFolder = request.RestoreDestination;
 
             restoreRun.RequestedFiles[filePath] = restoreFileMeta;
-
-            await restoreDataStore.SaveRestoreFileMetaData(restoreRun.RestoreId, restoreFileMeta,
-                cancellationToken);
+            
+            var saveRestoreFileMetaDataCommand = new SaveRestoreFileMetaDataCommand(
+                restoreRun.RestoreId,
+                restoreFileMeta);
+            await dataStoreMediator.ExecuteCommand(saveRestoreFileMetaDataCommand, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -350,46 +370,40 @@ public sealed class RestoreService(
 
     private async Task SaveAndFinalizeIfComplete(RestoreRun run, CancellationToken cancellationToken)
     {
-        var semaphore = _runLocks.GetOrAdd(run.RestoreId, _ => new SemaphoreSlim(1, 1));
-        await semaphore.WaitAsync(cancellationToken);
-        try
-        {
-            if (run.Status is RestoreRunStatus.AllFilesListed &&
-                run.RequestedFiles.Values
-                    .All(f => f.Status is FileRestoreStatus.Completed or FileRestoreStatus.Failed))
-                await FinalizeRun(run, cancellationToken);
-        }
-        finally
-        {
-            semaphore.Release();
-        }
+        if (run.Status is RestoreRunStatus.AllFilesListed &&
+            run.RequestedFiles.Values
+                .All(f => f.Status is FileRestoreStatus.Completed or FileRestoreStatus.Failed))
+            await FinalizeRun(run, cancellationToken);
     }
 
-    private async Task FinalizeRun(RestoreRun run, CancellationToken cancellationToken)
+    private async Task FinalizeRun(RestoreRun restoreRun, CancellationToken cancellationToken)
     {
-        if (run.Status is RestoreRunStatus.Completed) return;
+        if (restoreRun.Status is RestoreRunStatus.Completed) return;
 
-        run.Status = RestoreRunStatus.Completed;
-        run.CompletedAt = DateTimeOffset.UtcNow;
-        logger.LogInformation("Finalizing restore run {RunId}, status {ChunkRestore}",
-            run.RestoreId, run.Status);
+        restoreRun.Status = RestoreRunStatus.Completed;
+        restoreRun.CompletedAt = DateTimeOffset.UtcNow;
+        logger.LogInformation("Finalizing restore restoreRun {RunId}, status {ChunkRestore}",
+            restoreRun.RestoreId, restoreRun.Status);
 
         // pick the right message
-        if (run.RequestedFiles.Values.Any(f => f.Status == FileRestoreStatus.Failed))
+        if (restoreRun.RequestedFiles.Values.Any(f => f.Status == FileRestoreStatus.Failed))
             await snsMed.PublishMessage(
                 new RestoreCompleteErrorMessage(
-                    run.RestoreId,
-                    $"Run {run.RestoreId} completed WITH ERRORS",
-                    "Some files failed", run),
+                    restoreRun.RestoreId,
+                    $"Run {restoreRun.RestoreId} completed WITH ERRORS",
+                    "Some files failed", restoreRun),
                 cancellationToken);
         else
             await snsMed.PublishMessage(
                 new RestoreCompleteMessage(
-                    $"Run {run.RestoreId} completed successfully",
-                    "All files restored", run),
+                    $"Run {restoreRun.RestoreId} completed successfully",
+                    "All files restored", restoreRun),
                 cancellationToken);
+        
+        var saveRestoreRunCommand = new SaveRestoreRunCommand(restoreRun);
+        await dataStoreMediator.ExecuteCommand(saveRestoreRunCommand, cancellationToken);
 
-        await restoreDataStore.SaveRestoreRun(run, cancellationToken);
-        await ClearCache(run.RestoreId, cancellationToken);
+        if (restoreRun.Status is RestoreRunStatus.Completed)
+            await ClearCache(restoreRun.RestoreId, cancellationToken);
     }
 }

@@ -1,12 +1,9 @@
 using System.Threading.Channels;
 using aws_backup_common;
-using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
-public sealed class Mediator(
-    IContextResolver resolver,
-    ILogger<Mediator> logger) :
+public sealed class Mediator(IContextResolver resolver) :
     IArchiveFileMediator,
     IRunRequestMediator,
     IDownloadFileMediator,
@@ -15,8 +12,17 @@ public sealed class Mediator(
     IUploadChunksMediator,
     ISnsMessageMediator,
     IUploadBatchMediator,
-    IS3StorageClassMediator
+    IS3StorageClassMediator,
+    IDataStoreMediator
 {
+    private readonly Channel<DataStoreCommand> _dataStoreCommandChannel =
+        Channel.CreateUnbounded<DataStoreCommand>(
+            new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = false
+            });
+    
     private readonly Channel<ArchiveFileRequest> _archiveFileRequestChannel =
         Channel.CreateUnbounded<ArchiveFileRequest>(
             new UnboundedChannelOptions
@@ -80,12 +86,13 @@ public sealed class Mediator(
                 SingleWriter = false
             });
 
-    private readonly ChannelManager<UploadChunkRequest> _uploadChunksChannelManager =
-        new(new BoundedChannelOptions(resolver.NoOfConcurrentS3Uploads())
-        {
-            SingleReader = false,
-            SingleWriter = false
-        });
+    private readonly Channel<UploadChunkRequest> _uploadChunksChannel =
+        Channel.CreateBounded<UploadChunkRequest>(
+            new BoundedChannelOptions(resolver.NoOfConcurrentS3Uploads())
+            {
+                SingleReader = false,
+                SingleWriter = false
+            });
 
     IAsyncEnumerable<ArchiveFileRequest> IArchiveFileMediator.GetArchiveFiles(CancellationToken cancellationToken)
     {
@@ -170,37 +177,29 @@ public sealed class Mediator(
         await _uploadBatchChannel.Writer.WriteAsync(batch, cancellationToken);
     }
 
-    void IUploadChunksMediator.SignalReaderCompleted()
-    {
-        _uploadChunksChannelManager.Current.SignalReaderCompleted();
-    }
-
-    void IUploadChunksMediator.RegisterReader()
-    {
-        _uploadChunksChannelManager.Current.RegisterReader();
-    }
-
     IAsyncEnumerable<UploadChunkRequest> IUploadChunksMediator.GetChunks(CancellationToken cancellationToken)
     {
-        return _uploadChunksChannelManager.Current.Channel.Reader.ReadAllAsync(cancellationToken);
+        return _uploadChunksChannel.Reader.ReadAllAsync(cancellationToken);
     }
 
     async Task IUploadChunksMediator.ProcessChunk(UploadChunkRequest request, CancellationToken cancellationToken)
     {
-        if (!_uploadChunksChannelManager.ChannelIsOpen)
-        {
-            logger.LogWarning("UploadChunks channel is closed, cannot process chunk: {Request}", request);
-            return;
-        }
-
-        await _uploadChunksChannelManager.Current.Channel.Writer.WriteAsync(request, cancellationToken);
+        await _uploadChunksChannel.Writer.WriteAsync(request, cancellationToken);
     }
 
-    async Task IUploadChunksMediator.WaitForAllChunksProcessed()
+    void IUploadChunksMediator.SignalComplete()
     {
-        _uploadChunksChannelManager.Current.Channel.Writer.TryComplete();
-        await _uploadChunksChannelManager.Current.WaitForAllReadersAsync();
-        _uploadChunksChannelManager.Reset();
+        _uploadChunksChannel.Writer.TryComplete();
+    }
+
+    public IAsyncEnumerable<DataStoreCommand> GetDataStoreCommands(CancellationToken cancellationToken)
+    {
+        return _dataStoreCommandChannel.Reader.ReadAllAsync(cancellationToken);
+    }
+
+    public async Task ExecuteCommand(DataStoreCommand request, CancellationToken cancellationToken)
+    {
+        await _dataStoreCommandChannel.Writer.WriteAsync(request, cancellationToken);
     }
 }
 

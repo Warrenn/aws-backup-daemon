@@ -73,6 +73,8 @@ public class ArchiveRunActorTests : IDisposable
             .Returns(["fileA", "fileB"]);
 
         var orchestrator = new ArchiveRunActor(
+            Mock.Of<IFileCountDownEvent>(),
+            Mock.Of<IChunkCountDownEvent>(),
             mediatorMock.Object,
             archiveFileMediatorMock.Object,
             Mock.Of<IUploadChunksMediator>(),
@@ -126,6 +128,8 @@ public class ArchiveRunActorTests : IDisposable
             .ReturnsAsync(existingRun);
 
         var orchestrator = new ArchiveRunActor(
+            Mock.Of<IFileCountDownEvent>(),
+            Mock.Of<IChunkCountDownEvent>(),
             mediatorMock.Object,
             archiveFileMock.Object,
             Mock.Of<IUploadChunksMediator>(),
@@ -184,6 +188,8 @@ public class ArchiveRunActorTests : IDisposable
             .Returns(["keep.txt"]);
 
         var orchestrator = new ArchiveRunActor(
+            Mock.Of<IFileCountDownEvent>(),
+            Mock.Of<IChunkCountDownEvent>(),
             mediatorMock.Object,
             archiveFileMediatorMock.Object,
             Mock.Of<IUploadChunksMediator>(),
@@ -241,6 +247,8 @@ public class ArchiveRunActorTests : IDisposable
             .Returns(["fileX"]);
 
         var orchestrator = new ArchiveRunActor(
+            Mock.Of<IFileCountDownEvent>(),
+            Mock.Of<IChunkCountDownEvent>(),
             mediatorMock.Object,
             fileMock.Object,
             Mock.Of<IUploadChunksMediator>(),

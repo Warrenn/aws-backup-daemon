@@ -15,6 +15,7 @@ public class ChunkDataActorTests
     private readonly Mock<IDataChunkService> _dataChunkService = new();
     private readonly Mock<ILogger<ChunkDataActor>> _logger = new();
     private readonly Mock<IRetryMediator> _retryMediator = new();
+    private readonly Mock<IChunkCountDownEvent> _latch = new();
 
     private AwsConfiguration CreateAwsConfig(long chunkSizeBytes)
     {
@@ -49,11 +50,13 @@ public class ChunkDataActorTests
         _contextResolver.Setup(x => x.UploadAttemptLimit()).Returns(1);
         _contextResolver.Setup(x => x.ShutdownTimeoutSeconds()).Returns(1);
 
-        _chunksMediator.Setup(m => m.RegisterReader());
         _chunksMediator.Setup(m => m.GetChunks(It.IsAny<CancellationToken>())).Returns(channel.Reader.ReadAllAsync());
-        _chunksMediator.Setup(m => m.SignalReaderCompleted());
+
+        _latch.Setup(l => l.AddCount());
+        _latch.Setup(l => l.Signal());
 
         var service = new ChunkDataActor(
+            _latch.Object,
             _chunksMediator.Object,
             _batchMediator.Object,
             _logger.Object,
@@ -91,11 +94,13 @@ public class ChunkDataActorTests
         _contextResolver.Setup(x => x.UploadAttemptLimit()).Returns(1);
         _contextResolver.Setup(x => x.ShutdownTimeoutSeconds()).Returns(1);
 
-        _chunksMediator.Setup(m => m.RegisterReader());
         _chunksMediator.Setup(m => m.GetChunks(It.IsAny<CancellationToken>())).Returns(channel.Reader.ReadAllAsync());
-        _chunksMediator.Setup(m => m.SignalReaderCompleted());
+        
+        _latch.Setup(l => l.AddCount());
+        _latch.Setup(l => l.Signal());
 
         var service = new ChunkDataActor(
+            _latch.Object,
             _chunksMediator.Object,
             _batchMediator.Object,
             _logger.Object,
@@ -133,11 +138,13 @@ public class ChunkDataActorTests
         _contextResolver.Setup(x => x.UploadAttemptLimit()).Returns(1);
         _contextResolver.Setup(x => x.ShutdownTimeoutSeconds()).Returns(1);
 
-        _chunksMediator.Setup(m => m.RegisterReader());
         _chunksMediator.Setup(m => m.GetChunks(It.IsAny<CancellationToken>())).Returns(channel.Reader.ReadAllAsync());
-        _chunksMediator.Setup(m => m.SignalReaderCompleted());
+        
+        _latch.Setup(l => l.AddCount());
+        _latch.Setup(l => l.Signal());
 
         var service = new ChunkDataActor(
+            _latch.Object,
             _chunksMediator.Object,
             _batchMediator.Object,
             _logger.Object,
@@ -177,11 +184,13 @@ public class ChunkDataActorTests
         _contextResolver.Setup(x => x.UploadAttemptLimit()).Returns(1);
         _contextResolver.Setup(x => x.ShutdownTimeoutSeconds()).Returns(1);
 
-        _chunksMediator.Setup(m => m.RegisterReader());
         _chunksMediator.Setup(m => m.GetChunks(It.IsAny<CancellationToken>())).Returns(channel.Reader.ReadAllAsync());
-        _chunksMediator.Setup(m => m.SignalReaderCompleted());
-
+        
+        _latch.Setup(l => l.AddCount());
+        _latch.Setup(l => l.Signal());
+        
         var service = new ChunkDataActor(
+            _latch.Object,
             _chunksMediator.Object,
             _batchMediator.Object,
             _logger.Object,

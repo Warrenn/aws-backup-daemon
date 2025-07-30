@@ -1,16 +1,16 @@
 ﻿// See https://aka.ms/new-console-template for more information
 
 using System.CommandLine;
+using Amazon.RuntimeDependencies;
 using aws_backup_common;
 using aws_backup;
+using AWSSDK.Extensions.CrtIntegration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Serilog;
-using Amazon.RuntimeDependencies;
-using AWSSDK.Extensions.CrtIntegration;
 
 var appConfigOpt = new Option<string?>("--app-settings", "-a")
 {
@@ -96,6 +96,7 @@ builder
     .AddSingleton<IRestoreDataStore>(sp => sp.GetRequiredService<DynamoDbDataStore>())
     .AddSingleton<IArchiveDataStore>(sp => sp.GetRequiredService<DynamoDbDataStore>())
     .AddSingleton<ICloudChunkStorage>(sp => sp.GetRequiredService<DynamoDbDataStore>())
+    .AddSingleton<IDataStoreMediator>(sp => sp.GetRequiredService<Mediator>())
     .AddSingleton<ISnsMessageMediator>(sp => sp.GetRequiredService<Mediator>())
     .AddSingleton<IArchiveFileMediator>(sp => sp.GetRequiredService<Mediator>())
     .AddSingleton<IRunRequestMediator>(sp => sp.GetRequiredService<Mediator>())
@@ -105,6 +106,8 @@ builder
     .AddSingleton<IUploadChunksMediator>(sp => sp.GetRequiredService<Mediator>())
     .AddSingleton<IS3StorageClassMediator>(sp => sp.GetRequiredService<Mediator>())
     .AddSingleton<IUploadBatchMediator>(sp => sp.GetRequiredService<Mediator>())
+    .AddSingleton<IChunkCountDownEvent>(_ => new InternalCountDownEvent(0))
+    .AddSingleton<IFileCountDownEvent>(_ => new InternalCountDownEvent(0))
     .AddSingleton<ICronScheduleMediator, CronScheduleMediator>()
     .AddSingleton<ITemporaryCredentialsServer, RolesAnywhere>()
     .AddSingleton<IAwsClientFactory, AwsClientFactory>()
@@ -131,6 +134,7 @@ builder
     .AddHostedService<SnsActor>()
     .AddHostedService<UploadBatchActor>()
     .AddHostedService<RollingFileActor>()
+    .AddHostedService<DataStoreActor>()
     .AddOptions<Configuration>()
     .Bind(configuration.GetSection("Configuration"))
     .ValidateOnStart();

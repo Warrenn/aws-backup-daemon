@@ -1,6 +1,6 @@
+using aws_backup_common;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using aws_backup_common;
 
 namespace aws_backup;
 
@@ -16,11 +16,12 @@ public sealed record ArchiveFileRequest(
 ) : RetryState;
 
 public sealed class ArchiveFilesActor(
+    IFileCountDownEvent fileCountDownEvent,
     IArchiveFileMediator mediator,
     IRetryMediator retryMediator,
     IChunkedEncryptingFileProcessor processor,
     IArchiveService archiveService,
-    IArchiveDataStore archiveDataStore,
+    IDataStoreMediator dataStoreMediator,
     ILogger<ArchiveFilesActor> logger,
     IContextResolver contextResolver)
     : BackgroundService
@@ -67,20 +68,25 @@ public sealed class ArchiveFilesActor(
                     if (keepTimeStamps)
                     {
                         FileHelper.GetTimestamps(filePath, out var created, out var modified);
-                        await archiveDataStore.UpdateTimeStamps(runId, filePath, created, modified,
-                            cancellationToken);
+                        var updateTimeStampsCommand = new UpdateTimeStampsCommand(
+                            runId, filePath, created, modified);
+                        await dataStoreMediator.ExecuteCommand(updateTimeStampsCommand, cancellationToken);
                     }
 
                     if (keepOwnerGroup)
                     {
                         var (owner, group) = await FileHelper.GetOwnerGroupAsync(filePath, cancellationToken);
-                        await archiveDataStore.UpdateOwnerGroup(runId, filePath, owner, group, cancellationToken);
+                        var updateOwnerGroupCommand = new UpdateOwnerGroupCommand(
+                            runId, filePath, owner, group);
+                        await dataStoreMediator.ExecuteCommand(updateOwnerGroupCommand, cancellationToken);
                     }
 
                     if (keepAclEntries)
                     {
                         var aclEntries = FileHelper.GetFileAcl(filePath);
-                        await archiveDataStore.UpdateAclEntries(runId, filePath, aclEntries, cancellationToken);
+                        var updateAclEntriesCommand = new UpdateAclEntriesCommand(
+                            runId, filePath, aclEntries);
+                        await dataStoreMediator.ExecuteCommand(updateAclEntriesCommand, cancellationToken);
                     }
                 }
                 catch (Exception ex)
@@ -115,6 +121,10 @@ public sealed class ArchiveFilesActor(
                     ex.Message);
                 request.Exception = ex;
                 await retryMediator.RetryAttempt(request, cancellationToken);
+            }
+            finally
+            {
+                fileCountDownEvent.Signal();
             }
     }
 

@@ -17,6 +17,7 @@ public class ArchiveServiceTests
         return new ArchiveService(
             _snsMed.Object,
             _loggerMock.Object,
+            Mock.Of<IDataStoreMediator>(),
             _dataStore.Object);
     }
 

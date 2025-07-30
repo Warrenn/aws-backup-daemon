@@ -1,5 +1,6 @@
 using System.Net;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
 using Amazon.DynamoDBv2.Model;
 
@@ -53,7 +54,6 @@ public class DynamoDbDataStore(
 
     public async Task SaveRunRequest(RunRequest request, CancellationToken cancellationToken)
     {
-        var tableName = awsConfiguration.DynamoDbTableName;
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
         var item = new Dictionary<string, AttributeValue>
         {
@@ -67,19 +67,13 @@ public class DynamoDbDataStore(
             ["Type"] = new() { S = nameof(RunRequest) }
         };
 
-        var putReq = new PutItemRequest
-        {
-            TableName = tableName,
-            Item = item
-        };
-
+        var updateItemRequest = CreateUpdateItemRequest(item);
         // one round‑trip to DynamoDB
-        await dynamoDbClient.PutItemAsync(putReq, cancellationToken);
+        await dynamoDbClient.UpdateItemAsync(updateItemRequest, cancellationToken);
     }
 
     public async Task SaveArchiveRun(ArchiveRun run, CancellationToken cancellationToken)
     {
-        var tableName = awsConfiguration.DynamoDbTableName;
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
 
         var item = new Dictionary<string, AttributeValue>
@@ -101,14 +95,9 @@ public class DynamoDbDataStore(
         SetNIfNotNull(item, "TotalFiles", run.TotalFiles);
         SetNIfNotNull(item, "TotalSkippedFiles", run.TotalSkippedFiles);
 
-        var putReq = new PutItemRequest
-        {
-            TableName = tableName,
-            Item = item
-        };
-
+        var updateItemRequest = CreateUpdateItemRequest(item);
         // one round‑trip to DynamoDB
-        await dynamoDbClient.PutItemAsync(putReq, cancellationToken);
+        await dynamoDbClient.UpdateItemAsync(updateItemRequest, cancellationToken);
     }
 
     public async Task RemoveArchiveRequest(string archiveRunId, CancellationToken cancellationToken)
@@ -258,7 +247,6 @@ public class DynamoDbDataStore(
     public async Task UpdateFileStatus(string runId, string filePath, FileStatus fileStatus, string skipReason,
         CancellationToken cancellationToken)
     {
-        var tableName = awsConfiguration.DynamoDbTableName;
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
 
         var encodedFilePath = WebUtility.UrlEncode(filePath);
@@ -273,101 +261,76 @@ public class DynamoDbDataStore(
         };
         SetSIfNotNull(item, "SkipReason", skipReason);
 
-        var putReq = new PutItemRequest
-        {
-            TableName = tableName,
-            Item = item
-        };
-
-        // one round‑trip to DynamoDB
-        await dynamoDbClient.PutItemAsync(putReq, cancellationToken);
+        var updateItemRequest = CreateUpdateItemRequest(item);
+        await dynamoDbClient.UpdateItemAsync(updateItemRequest, cancellationToken);
     }
 
     public async Task UpdateTimeStamps(string runId, string localFilePath, DateTimeOffset created,
         DateTimeOffset modified,
         CancellationToken cancellationToken)
     {
-        var tableName = awsConfiguration.DynamoDbTableName;
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
 
         var encodedFilePath = WebUtility.UrlEncode(localFilePath);
-
-        var putReq = new PutItemRequest
+        var item = new Dictionary<string, AttributeValue>
         {
-            TableName = tableName,
-            Item = new Dictionary<string, AttributeValue>
-            {
-                // partition key
-                ["PK"] = new() { S = $"RUN_ID#{runId}" },
-                // sort key
-                ["SK"] = new() { S = $"RUN_ID#{runId}#FILE#{encodedFilePath}" },
-                ["CreatedAt"] = new() { S = created.ToString("O") },
-                ["ModifiedAt"] = new() { S = modified.ToString("O") },
-                ["Type"] = new() { S = nameof(FileMetaData) }
-            }
+            // partition key
+            ["PK"] = new() { S = $"RUN_ID#{runId}" },
+            // sort key
+            ["SK"] = new() { S = $"RUN_ID#{runId}#FILE#{encodedFilePath}" },
+            ["CreatedAt"] = new() { S = created.ToString("O") },
+            ["ModifiedAt"] = new() { S = modified.ToString("O") },
+            ["Type"] = new() { S = nameof(FileMetaData) }
         };
 
-        // one round‑trip to DynamoDB
-        await dynamoDbClient.PutItemAsync(putReq, cancellationToken);
+        var updateItemRequest = CreateUpdateItemRequest(item);
+        await dynamoDbClient.UpdateItemAsync(updateItemRequest, cancellationToken);
     }
 
     public async Task UpdateOwnerGroup(string runId, string localFilePath, string owner, string group,
         CancellationToken cancellationToken)
     {
-        var tableName = awsConfiguration.DynamoDbTableName;
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
 
         var encodedFilePath = WebUtility.UrlEncode(localFilePath);
-
-        var putReq = new PutItemRequest
+        var item = new Dictionary<string, AttributeValue>
         {
-            TableName = tableName,
-            Item = new Dictionary<string, AttributeValue>
-            {
-                // partition key
-                ["PK"] = new() { S = $"RUN_ID#{runId}" },
-                // sort key
-                ["SK"] = new() { S = $"RUN_ID#{runId}#FILE#{encodedFilePath}" },
-                ["Owner"] = new() { S = owner },
-                ["Group"] = new() { S = group },
-                ["Type"] = new() { S = nameof(FileMetaData) }
-            }
+            // partition key
+            ["PK"] = new() { S = $"RUN_ID#{runId}" },
+            // sort key
+            ["SK"] = new() { S = $"RUN_ID#{runId}#FILE#{encodedFilePath}" },
+            ["Owner"] = new() { S = owner },
+            ["Group"] = new() { S = group },
+            ["Type"] = new() { S = nameof(FileMetaData) }
         };
 
-        // one round‑trip to DynamoDB
-        await dynamoDbClient.PutItemAsync(putReq, cancellationToken);
+        var updateItemRequest = CreateUpdateItemRequest(item);
+        await dynamoDbClient.UpdateItemAsync(updateItemRequest, cancellationToken);
     }
 
     public async Task UpdateAclEntries(string runId, string localFilePath, AclEntry[] aclEntries,
         CancellationToken cancellationToken)
     {
-        var tableName = awsConfiguration.DynamoDbTableName;
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
 
         var encodedFilePath = WebUtility.UrlEncode(localFilePath);
         var entriesString = JsonSerializer.Serialize(aclEntries, SourceGenerationContext.Default.AclEntryArray);
-
-        var putReq = new PutItemRequest
+        var item = new Dictionary<string, AttributeValue>
         {
-            TableName = tableName,
-            Item = new Dictionary<string, AttributeValue>
-            {
-                // partition key
-                ["PK"] = new() { S = $"RUN_ID#{runId}" },
-                // sort key
-                ["SK"] = new() { S = $"RUN_ID#{runId}#FILE#{encodedFilePath}" },
-                ["AclEntries"] = new() { S = entriesString },
-                ["Type"] = new() { S = nameof(FileMetaData) }
-            }
+            // partition key
+            ["PK"] = new() { S = $"RUN_ID#{runId}" },
+            // sort key
+            ["SK"] = new() { S = $"RUN_ID#{runId}#FILE#{encodedFilePath}" },
+            ["AclEntries"] = new() { S = entriesString },
+            ["Type"] = new() { S = nameof(FileMetaData) }
         };
 
-        // one round‑trip to DynamoDB
-        await dynamoDbClient.PutItemAsync(putReq, cancellationToken);
+        var updateItemRequest = CreateUpdateItemRequest(item);
+        await dynamoDbClient.UpdateItemAsync(updateItemRequest, cancellationToken);
     }
 
     public async Task UpdateArchiveStatus(string runId, ArchiveRunStatus runStatus, CancellationToken cancellationToken)
     {
-        var tableName = awsConfiguration.DynamoDbTableName;
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
 
         var item = new Dictionary<string, AttributeValue>
@@ -380,14 +343,9 @@ public class DynamoDbDataStore(
             ["Type"] = new() { S = nameof(ArchiveRun) }
         };
 
-        var putReq = new PutItemRequest
-        {
-            TableName = tableName,
-            Item = item
-        };
-
-        // one round‑trip to DynamoDB
-        await dynamoDbClient.PutItemAsync(putReq, cancellationToken);
+        var updateItemRequest = CreateUpdateItemRequest(item);
+        // Update the item in DynamoDB
+        await dynamoDbClient.UpdateItemAsync(updateItemRequest, cancellationToken);
     }
 
     public async Task DeleteFileChunks(string runId, string localFilePath, CancellationToken cancellationToken)
@@ -465,28 +423,22 @@ public class DynamoDbDataStore(
         ChunkStatus chunkStatus,
         CancellationToken cancellationToken)
     {
-        var tableName = awsConfiguration.DynamoDbTableName;
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
 
         var encodedFilePath = WebUtility.UrlEncode(localFilePath);
         var chunkKey = $"RUN_ID#{runId}#FILE#{encodedFilePath}#CHUNK#{Base64Url.Encode(chunkHashKey.ToArray())}";
-
-        var putReq = new PutItemRequest
+        var item = new Dictionary<string, AttributeValue>
         {
-            TableName = tableName,
-            Item = new Dictionary<string, AttributeValue>
-            {
-                // partition key
-                ["PK"] = new() { S = $"RUN_ID#{runId}" },
-                // sort key
-                ["SK"] = new() { S = chunkKey },
-                ["Status"] = new() { S = Enum.GetName(chunkStatus) },
-                ["Type"] = new() { S = nameof(DataChunkDetails) }
-            }
+            // partition key
+            ["PK"] = new() { S = $"RUN_ID#{runId}" },
+            // sort key
+            ["SK"] = new() { S = chunkKey },
+            ["Status"] = new() { S = Enum.GetName(chunkStatus) },
+            ["Type"] = new() { S = nameof(DataChunkDetails) }
         };
 
-        // one round‑trip to DynamoDB
-        await dynamoDbClient.PutItemAsync(putReq, cancellationToken);
+        var updateItemRequest = CreateUpdateItemRequest(item);
+        await dynamoDbClient.UpdateItemAsync(updateItemRequest, cancellationToken);
     }
 
     public async Task<FileMetaData?> GetFileMetaData(string runId, string filePath, CancellationToken cancellationToken)
@@ -590,38 +542,32 @@ public class DynamoDbDataStore(
     public async Task SaveChunkDetails(string runId, string localFilePath, DataChunkDetails details,
         CancellationToken cancellationToken)
     {
-        var tableName = awsConfiguration.DynamoDbTableName;
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
 
         var encodedFilePath = WebUtility.UrlEncode(localFilePath);
         var chunkKey = $"RUN_ID#{runId}#FILE#{encodedFilePath}#CHUNK#{Base64Url.Encode(details.HashKey)}";
 
-        var putReq = new PutItemRequest
+        var item = new Dictionary<string, AttributeValue>
         {
-            TableName = tableName,
-            Item = new Dictionary<string, AttributeValue>
-            {
-                // partition key
-                ["PK"] = new() { S = $"RUN_ID#{runId}" },
-                // sort key
-                ["SK"] = new() { S = chunkKey },
-                ["Status"] = new() { S = Enum.GetName(details.Status) },
-                ["Type"] = new() { S = nameof(DataChunkDetails) },
-                ["LocalFilePath"] = new() { S = details.LocalFilePath },
-                ["ChunkIndex"] = new() { N = details.ChunkIndex.ToString() },
-                ["ChunkSize"] = new() { N = details.ChunkSize.ToString() },
-                ["Size"] = new() { N = details.Size.ToString() }
-            }
+            // partition key
+            ["PK"] = new() { S = $"RUN_ID#{runId}" },
+            // sort key
+            ["SK"] = new() { S = chunkKey },
+            ["Status"] = new() { S = Enum.GetName(details.Status) },
+            ["Type"] = new() { S = nameof(DataChunkDetails) },
+            ["LocalFilePath"] = new() { S = details.LocalFilePath },
+            ["ChunkIndex"] = new() { N = details.ChunkIndex.ToString() },
+            ["ChunkSize"] = new() { N = details.ChunkSize.ToString() },
+            ["Size"] = new() { N = details.Size.ToString() }
         };
 
-        // one round‑trip to DynamoDB
-        await dynamoDbClient.PutItemAsync(putReq, cancellationToken);
+        var updateItemRequest = CreateUpdateItemRequest(item);
+        await dynamoDbClient.UpdateItemAsync(updateItemRequest, cancellationToken);
     }
 
     public async Task SaveFileMetaData(string runId, FileMetaData metaData,
         CancellationToken cancellationToken)
     {
-        var tableName = awsConfiguration.DynamoDbTableName;
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
         var localFilePath = metaData.LocalFilePath;
         var hashKey = metaData.HashKey;
@@ -653,14 +599,8 @@ public class DynamoDbDataStore(
         SetNIfNotNull(item, "CompressedSize", metaData.CompressedSize);
         SetNIfNotNull(item, "OriginalSize", metaData.OriginalSize);
 
-        var putReq = new PutItemRequest
-        {
-            TableName = tableName,
-            Item = item
-        };
-
-        // one round‑trip to DynamoDB
-        await dynamoDbClient.PutItemAsync(putReq, cancellationToken);
+        var updateItemRequest = CreateUpdateItemRequest(item);
+        await dynamoDbClient.UpdateItemAsync(updateItemRequest, cancellationToken);
     }
 
     public async IAsyncEnumerable<FileMetaData> GetRestorableFileMetaData(string runId,
@@ -803,29 +743,24 @@ public class DynamoDbDataStore(
     public async Task AddCloudChunkDetails(ByteArrayKey hashKey, CloudChunkDetails cloudChunkDetails,
         CancellationToken cancellationToken)
     {
-        var tableName = awsConfiguration.DynamoDbTableName;
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
         var keyString = Base64Url.Encode(hashKey.ToArray());
-
-        var putReq = new PutItemRequest
+        var item = new Dictionary<string, AttributeValue>
         {
-            TableName = tableName,
-            Item = new Dictionary<string, AttributeValue>
-            {
-                // partition key
-                ["PK"] = new() { S = $"CLOUD_CHUNK#{keyString}" },
-                // sort key
-                ["SK"] = new() { S = "CLOUD_CHUNK" },
-                ["Type"] = new() { S = nameof(CloudChunkDetails) },
-                ["S3Key"] = new() { S = cloudChunkDetails.S3Key },
-                ["BucketName"] = new() { S = cloudChunkDetails.BucketName },
-                ["ChunkSize"] = new() { N = cloudChunkDetails.ChunkSize.ToString() },
-                ["Offset"] = new() { N = cloudChunkDetails.Offset.ToString() },
-                ["Size"] = new() { N = cloudChunkDetails.Size.ToString() }
-            }
+            // partition key
+            ["PK"] = new() { S = $"CLOUD_CHUNK#{keyString}" },
+            // sort key
+            ["SK"] = new() { S = "CLOUD_CHUNK" },
+            ["Type"] = new() { S = nameof(CloudChunkDetails) },
+            ["S3Key"] = new() { S = cloudChunkDetails.S3Key },
+            ["BucketName"] = new() { S = cloudChunkDetails.BucketName },
+            ["ChunkSize"] = new() { N = cloudChunkDetails.ChunkSize.ToString() },
+            ["Offset"] = new() { N = cloudChunkDetails.Offset.ToString() },
+            ["Size"] = new() { N = cloudChunkDetails.Size.ToString() }
         };
 
-        await dynamoDbClient.PutItemAsync(putReq, cancellationToken);
+        var updateItemRequest = CreateUpdateItemRequest(item);
+        await dynamoDbClient.UpdateItemAsync(updateItemRequest, cancellationToken);
     }
 
     public async Task<CloudChunkDetails?> GetCloudChunkDetails(ByteArrayKey hashKey,
@@ -910,7 +845,7 @@ public class DynamoDbDataStore(
                     ["#o"] = "AclEntries",
                     ["#p"] = "Sha256Checksum",
                     ["#q"] = "RestorePathStrategy",
-                    ["#r"] = "RestoreFolder",
+                    ["#r"] = "RestoreDestination",
                     ["#s"] = "S3Key",
                     ["#t"] = "BucketName",
                     ["#u"] = "ChunkSize",
@@ -962,7 +897,7 @@ public class DynamoDbDataStore(
                             RestorePathStrategy = item.TryGetValue("RestorePathStrategy", out var strategy)
                                 ? Enum.Parse<RestorePathStrategy>(strategy.S)
                                 : RestorePathStrategy.Nested,
-                            RestoreFolder = GetSIfExists(item, "RestoreFolder", s => s)
+                            RestoreFolder = GetSIfExists(item, "RestoreDestination", s => s)
                         };
 
                         restoreRun.RequestedFiles.TryAdd(filePath, fileMeta);
@@ -999,7 +934,6 @@ public class DynamoDbDataStore(
 
     public async Task SaveRestoreRequest(RestoreRequest restoreRequest, CancellationToken cancellationToken)
     {
-        var tableName = awsConfiguration.DynamoDbTableName;
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
         var restoreId = contextResolver.RestoreId(restoreRequest.ArchiveRunId, restoreRequest.RestorePaths,
             restoreRequest.RequestedAt);
@@ -1017,24 +951,15 @@ public class DynamoDbDataStore(
             ["RestorePaths"] = new() { S = restoreRequest.RestorePaths },
             ["ArchiveRunId"] = new() { S = restoreRequest.ArchiveRunId }
         };
-
-        var putReq = new PutItemRequest
-        {
-            TableName = tableName,
-            Item = item
-        };
-
-        // one round‑trip to DynamoDB
-        await dynamoDbClient.PutItemAsync(putReq, cancellationToken);
+        
+        var updateItemRequest = CreateUpdateItemRequest(item);
+        await dynamoDbClient.UpdateItemAsync(updateItemRequest, cancellationToken);
     }
 
     public async Task SaveRestoreRun(RestoreRun run, CancellationToken cancellationToken)
     {
-        var tableName = awsConfiguration.DynamoDbTableName;
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
-
         var pk = $"RESTORE_ID#{run.RestoreId}";
-        var writeRequests = new List<WriteRequest>();
 
         // 1) Meta item
         var metaItem = new Dictionary<string, AttributeValue>
@@ -1050,7 +975,8 @@ public class DynamoDbDataStore(
         };
 
         SetSIfNotNull(metaItem, "CompletedAt", run.CompletedAt?.ToString("O"));
-        writeRequests.Add(new WriteRequest { PutRequest = new PutRequest { Item = metaItem } });
+        var updateRequest = CreateUpdateItemRequest(metaItem);
+        await dynamoDbClient.UpdateItemAsync(updateRequest, cancellationToken);
 
         // 2) File‐level items
         foreach (var (filePath, fileMeta) in run.RequestedFiles)
@@ -1070,7 +996,7 @@ public class DynamoDbDataStore(
                 ? JsonSerializer.Serialize(fileMeta.AclEntries, SourceGenerationContext.Default.AclEntryArray)
                 : null;
             SetSIfNotNull(fileItem, "AclEntries", aclEntriesString);
-            SetSIfNotNull(fileItem, "RestoreFolder", fileMeta.RestoreFolder);
+            SetSIfNotNull(fileItem, "RestoreDestination", fileMeta.RestoreFolder);
             SetSIfNotNull(fileItem, "FailedMessage", fileMeta.FailedMessage);
             SetSIfNotNull(fileItem, "LastModified", fileMeta.LastModified?.ToString("O"));
             SetSIfNotNull(fileItem, "Created", fileMeta.Created?.ToString("O"));
@@ -1080,10 +1006,12 @@ public class DynamoDbDataStore(
                 ? Base64Url.Encode(fileMeta.Sha256Checksum)
                 : null;
             SetSIfNotNull(fileItem, "Sha256Checksum", sha256Checksum);
-            writeRequests.Add(new WriteRequest { PutRequest = new PutRequest { Item = fileItem } });
+            
+            var fileItemUpdateRequest = CreateUpdateItemRequest(fileItem);
+            await dynamoDbClient.UpdateItemAsync(fileItemUpdateRequest, cancellationToken);
 
             // 3) Chunk‐level items
-            writeRequests.AddRange(from chunkKv in fileMeta.CloudChunkDetails
+            var items = from chunkKv in fileMeta.CloudChunkDetails
                 select chunkKv.Value
                 into chunk
                 let chunkKeyB64 = Base64Url.Encode(chunk.HashKey)
@@ -1100,31 +1028,11 @@ public class DynamoDbDataStore(
                     ["Offset"] = new() { N = chunk.Offset.ToString() },
                     ["Size"] = new() { N = chunk.Size.ToString() },
                     ["Status"] = new() { S = Enum.GetName(chunk.Status) }
-                }
-                into chunkItem
-                select new WriteRequest { PutRequest = new PutRequest { Item = chunkItem } });
-        }
-
-        // 4) BatchWrite in chunks of 25
-        const int batchSize = 25;
-        for (var i = 0; i < writeRequests.Count; i += batchSize)
-        {
-            var batch = writeRequests.Skip(i).Take(batchSize).ToList();
-            var batchReq = new BatchWriteItemRequest
+                };
+            foreach (var item in items)
             {
-                RequestItems = new Dictionary<string, List<WriteRequest>>
-                {
-                    [tableName] = batch
-                }
-            };
-
-            var batchResp = await dynamoDbClient.BatchWriteItemAsync(batchReq, cancellationToken);
-
-            // retry any unprocessed items
-            while (batchResp.UnprocessedItems.TryGetValue(tableName, out var unProc) && unProc.Count > 0)
-            {
-                batchReq.RequestItems[tableName] = unProc;
-                batchResp = await dynamoDbClient.BatchWriteItemAsync(batchReq, cancellationToken);
+                var chunkItemUpdateRequest = CreateUpdateItemRequest(item);
+                await dynamoDbClient.UpdateItemAsync(chunkItemUpdateRequest, cancellationToken);
             }
         }
     }
@@ -1174,7 +1082,7 @@ public class DynamoDbDataStore(
             ? JsonSerializer.Serialize(fileMeta.AclEntries, SourceGenerationContext.Default.AclEntryArray)
             : null;
         SetSIfNotNull(fileItem, "AclEntries", aclEntriesString);
-        SetSIfNotNull(fileItem, "RestoreFolder", fileMeta.RestoreFolder);
+        SetSIfNotNull(fileItem, "RestoreDestination", fileMeta.RestoreFolder);
         SetSIfNotNull(fileItem, "FailedMessage", fileMeta.FailedMessage);
         SetSIfNotNull(fileItem, "LastModified", fileMeta.LastModified?.ToString("O"));
         SetSIfNotNull(fileItem, "Created", fileMeta.Created?.ToString("O"));
@@ -1234,28 +1142,22 @@ public class DynamoDbDataStore(
     public async Task SaveRestoreChunkStatus(string restoreId, string filePath, ByteArrayKey chunkKey,
         S3ChunkRestoreStatus readyToRestore, CancellationToken cancellationToken)
     {
-        var tableName = awsConfiguration.DynamoDbTableName;
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
 
         var encodedFilePath = WebUtility.UrlEncode(filePath);
         var chunkKeyB64 = Base64Url.Encode(chunkKey.ToArray());
         var chunkSk = $"RESTORE_ID#{restoreId}#FILE#{encodedFilePath}#CHUNK_ID#{chunkKeyB64}";
-
-        var putReq = new PutItemRequest
+        var item = new Dictionary<string, AttributeValue>
         {
-            TableName = tableName,
-            Item = new Dictionary<string, AttributeValue>
-            {
-                // partition key
-                ["PK"] = new() { S = $"RESTORE_ID#{restoreId}" },
-                // sort key
-                ["SK"] = new() { S = chunkSk },
-                ["Status"] = new() { S = Enum.GetName(readyToRestore) }
-            }
+            // partition key
+            ["PK"] = new() { S = $"RESTORE_ID#{restoreId}" },
+            // sort key
+            ["SK"] = new() { S = chunkSk },
+            ["Status"] = new() { S = Enum.GetName(readyToRestore) }
         };
 
-        // one round‑trip to DynamoDB
-        await dynamoDbClient.PutItemAsync(putReq, cancellationToken);
+        var updateItemRequest = CreateUpdateItemRequest(item);
+        await dynamoDbClient.UpdateItemAsync(updateItemRequest, cancellationToken);
     }
 
     public async IAsyncEnumerable<RestoreRequest> GetRestoreRequests(
@@ -1275,7 +1177,8 @@ public class DynamoDbDataStore(
                 {
                     [":pk"] = new() { S = "RESTORE_REQUESTS" }
                 },
-                ProjectionExpression = "ArchiveRunId, RestorePaths, RequestedAt, RestorePathStrategy, RestoreFolder",
+                ProjectionExpression =
+                    "ArchiveRunId, RestorePaths, RequestedAt, RestorePathStrategy, RestoreDestination",
                 ExclusiveStartKey = lastKey
             };
 
@@ -1287,7 +1190,7 @@ public class DynamoDbDataStore(
                 var archiveRunId = item["ArchiveRunId"].S;
                 var requestedAt = DateTimeOffset.Parse(item["RequestedAt"].S);
                 var restorePathStrategy = GetSIfExists(item, "RestorePathStrategy", Enum.Parse<RestorePathStrategy>);
-                var restoreFolder = GetSIfExists(item, "RestoreFolder", s => s);
+                var restoreFolder = GetSIfExists(item, "RestoreDestination", s => s);
 
                 yield return new RestoreRequest(
                     archiveRunId,
@@ -1305,7 +1208,6 @@ public class DynamoDbDataStore(
         string reasonMessage,
         CancellationToken cancellationToken)
     {
-        var tableName = awsConfiguration.DynamoDbTableName;
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
 
         var encodedFilePath = WebUtility.UrlEncode(fileMetaFilePath);
@@ -1320,14 +1222,60 @@ public class DynamoDbDataStore(
         };
         SetSIfNotNull(item, "FailedMessage", reasonMessage);
 
-        var putReq = new PutItemRequest
-        {
-            TableName = tableName,
-            Item = item
-        };
+        var updateReq = CreateUpdateItemRequest(item);
+        await dynamoDbClient.UpdateItemAsync(updateReq, cancellationToken);
+    }
 
-        // one round‑trip to DynamoDB
-        await dynamoDbClient.PutItemAsync(putReq, cancellationToken);
+    private UpdateItemRequest CreateUpdateItemRequest(Dictionary<string, AttributeValue> attributes)
+    {
+        var expressionBuilder = new StringBuilder("SET");
+        var expressionAttributeNames = new Dictionary<string, string>();
+        var expressionAttributeValues = new Dictionary<string, AttributeValue>();
+
+        var count = 0;
+        foreach (var (key, value) in attributes)
+        {
+            if (key is "PK" or "SK")
+                continue; // PK and SK are not updated
+
+            var letter = ToLetters(count);
+            expressionAttributeNames.Add($"#{letter}", key);
+            expressionAttributeValues.Add($":{letter}", value);
+            expressionBuilder.Append($" #{letter} = :{letter},");
+
+            count++;
+        }
+
+        var expression = expressionBuilder.ToString().TrimEnd(',');
+
+        return new UpdateItemRequest
+        {
+            TableName = awsConfiguration.DynamoDbTableName,
+            Key = new Dictionary<string, AttributeValue>
+            {
+                ["PK"] = attributes["PK"],
+                ["SK"] = attributes["SK"]
+            },
+            ExpressionAttributeNames = expressionAttributeNames,
+            ExpressionAttributeValues = expressionAttributeValues,
+            UpdateExpression = expression
+        };
+    }
+
+    private static string ToLetters(int zeroBasedIndex)
+    {
+        // shift to 1-based so that 1 → 'a', …, 26 → 'z', 27 → 'aa', etc.
+        var n = zeroBasedIndex + 1;
+        var sb = new StringBuilder();
+
+        while (n > 0)
+        {
+            n--; // make 0…25
+            sb.Insert(0, (char)('a' + n % 26));
+            n /= 26;
+        }
+
+        return sb.ToString();
     }
 
     private static T? GetNIfExists<T>(Dictionary<string, AttributeValue> item, string key, Func<string, T> conversion)

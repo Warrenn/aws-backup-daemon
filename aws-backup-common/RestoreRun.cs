@@ -47,7 +47,7 @@ public sealed record RestoreRequest(
     string RestorePaths,
     DateTimeOffset RequestedAt,
     RestorePathStrategy RestorePathStrategy = RestorePathStrategy.Flatten,
-    string? RestoreFolder = null);
+    string? RestoreDestination = null);
 
 public sealed record RestoreFileMetaData(
     string FilePath)

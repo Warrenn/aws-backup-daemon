@@ -36,11 +36,12 @@ public class ArchiveFilesActorTests
         var loggerMock = new Mock<ILogger<ArchiveFilesActor>>();
 
         return new ArchiveFilesActor(
+            Mock.Of<IFileCountDownEvent>(),
             mediatorMock.Object,
             retryMediatorMock.Object,
             processorMock.Object,
             archiveServiceMock.Object,
-            dataStoreMock.Object,
+            Mock.Of<IDataStoreMediator>(),
             loggerMock.Object,
             ctxMock.Object);
     }

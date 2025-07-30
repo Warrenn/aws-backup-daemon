@@ -11,6 +11,8 @@ public interface IRunRequestMediator
 }
 
 public sealed class ArchiveRunActor(
+    IFileCountDownEvent fileCountDownEvent,
+    IChunkCountDownEvent chunkCountDownEvent,
     IRunRequestMediator mediator,
     IArchiveFileMediator archiveFileMediator,
     IUploadChunksMediator uploadChunksMediator,
@@ -70,14 +72,22 @@ public sealed class ArchiveRunActor(
                             archiveRun.RunId);
                         continue;
                     }
-
+                    
+                    fileCountDownEvent.AddCount();
                     await archiveFileMediator.ProcessFile(archiveFileRequest, cancellationToken);
                 }
 
                 logger.LogInformation("All files processed for archive run {RunId}", runRequest.RunId);
 
                 await archiveService.ReportAllFilesListed(archiveRun, cancellationToken);
-                await uploadChunksMediator.WaitForAllChunksProcessed();
+                
+                fileCountDownEvent.Wait(cancellationToken);
+                fileCountDownEvent.Reset();
+                
+                uploadChunksMediator.SignalComplete();
+                
+                chunkCountDownEvent.Wait(cancellationToken);
+                chunkCountDownEvent.Reset();
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

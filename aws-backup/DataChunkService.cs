@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using aws_backup_common;
 
 namespace aws_backup;
@@ -11,22 +12,30 @@ public interface IDataChunkService
 }
 
 public sealed class DataChunkService(
-    ICloudChunkStorage cloudChunkStorage
+    ICloudChunkStorage cloudChunkStorage,
+    IDataStoreMediator mediator
 ) : IDataChunkService
 {
+    private readonly ConcurrentDictionary<ByteArrayKey, DataChunkDetails> _cache = new();
+
     public async Task<bool> ChunkAlreadyUploaded(DataChunkDetails chunk, CancellationToken cancellationToken)
     {
         var key = new ByteArrayKey(chunk.HashKey);
-        return await cloudChunkStorage.ContainsKey(key, cancellationToken);
+        if (_cache.ContainsKey(key)) return true;
+        var inStorage = await cloudChunkStorage.ContainsKey(key, cancellationToken);
+        if (inStorage) _cache.TryAdd(key, chunk);
+        return inStorage;
     }
 
     public async Task MarkChunkAsUploaded(DataChunkDetails chunk, long byteIndex, string s3Key, string bucketName,
         CancellationToken cancellationToken)
     {
-        var hashKey = new ByteArrayKey(chunk.HashKey);
-        if (await cloudChunkStorage.ContainsKey(hashKey, cancellationToken))
-            // If the chunk is already in the manifest, we don't need to re-add it
+        var alreadyUploaded = await ChunkAlreadyUploaded(chunk, cancellationToken);
+
+        if (alreadyUploaded)
             return;
+
+        var hashKey = new ByteArrayKey(chunk.HashKey);
         var cloudChunkDetails = new CloudChunkDetails(
             s3Key,
             bucketName,
@@ -34,6 +43,9 @@ public sealed class DataChunkService(
             byteIndex,
             chunk.Size,
             chunk.HashKey);
-        await cloudChunkStorage.AddCloudChunkDetails(hashKey, cloudChunkDetails, cancellationToken);
+        var addCloudChunkDetailsCommand = new AddCloudChunkDetailsCommand(
+            hashKey,
+            cloudChunkDetails);
+        await mediator.ExecuteCommand(addCloudChunkDetailsCommand, cancellationToken);
     }
 }
