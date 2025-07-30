@@ -50,4 +50,5 @@ public record CommonConfiguration
     public string? CompressionLevel { get; set; }
     public int? AwsTimeoutSeconds { get; set; }
     public int? AwsS3TimeoutSeconds { get; set; }
+    public int? NoOfConcurrentDbWriters { get; set; }
 }

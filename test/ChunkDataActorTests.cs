@@ -53,7 +53,6 @@ public class ChunkDataActorTests
         _chunksMediator.Setup(m => m.GetChunks(It.IsAny<CancellationToken>())).Returns(channel.Reader.ReadAllAsync());
 
         _latch.Setup(l => l.AddCount());
-        _latch.Setup(l => l.Signal());
 
         var service = new ChunkDataActor(
             _latch.Object,
@@ -97,7 +96,6 @@ public class ChunkDataActorTests
         _chunksMediator.Setup(m => m.GetChunks(It.IsAny<CancellationToken>())).Returns(channel.Reader.ReadAllAsync());
         
         _latch.Setup(l => l.AddCount());
-        _latch.Setup(l => l.Signal());
 
         var service = new ChunkDataActor(
             _latch.Object,
@@ -141,7 +139,6 @@ public class ChunkDataActorTests
         _chunksMediator.Setup(m => m.GetChunks(It.IsAny<CancellationToken>())).Returns(channel.Reader.ReadAllAsync());
         
         _latch.Setup(l => l.AddCount());
-        _latch.Setup(l => l.Signal());
 
         var service = new ChunkDataActor(
             _latch.Object,
@@ -187,7 +184,6 @@ public class ChunkDataActorTests
         _chunksMediator.Setup(m => m.GetChunks(It.IsAny<CancellationToken>())).Returns(channel.Reader.ReadAllAsync());
         
         _latch.Setup(l => l.AddCount());
-        _latch.Setup(l => l.Signal());
         
         var service = new ChunkDataActor(
             _latch.Object,

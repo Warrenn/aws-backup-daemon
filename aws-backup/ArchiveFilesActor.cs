@@ -21,7 +21,6 @@ public sealed class ArchiveFilesActor(
     IRetryMediator retryMediator,
     IChunkedEncryptingFileProcessor processor,
     IArchiveService archiveService,
-    IDataStoreMediator dataStoreMediator,
     ILogger<ArchiveFilesActor> logger,
     IContextResolver contextResolver)
     : BackgroundService
@@ -62,31 +61,27 @@ public sealed class ArchiveFilesActor(
 
                 logger.LogInformation("Processing {File} for {ArchiveRunId}", filePath, runId);
                 var task = processor.ProcessFileAsync(runId, filePath, cancellationToken);
-
+                var info = new FileProperties();
                 try
                 {
                     if (keepTimeStamps)
                     {
                         FileHelper.GetTimestamps(filePath, out var created, out var modified);
-                        var updateTimeStampsCommand = new UpdateTimeStampsCommand(
-                            runId, filePath, created, modified);
-                        await dataStoreMediator.ExecuteCommand(updateTimeStampsCommand, cancellationToken);
+                        info.Created = created;
+                        info.LastModified = modified;
                     }
 
                     if (keepOwnerGroup)
                     {
                         var (owner, group) = await FileHelper.GetOwnerGroupAsync(filePath, cancellationToken);
-                        var updateOwnerGroupCommand = new UpdateOwnerGroupCommand(
-                            runId, filePath, owner, group);
-                        await dataStoreMediator.ExecuteCommand(updateOwnerGroupCommand, cancellationToken);
+                        info.Group = group;
+                        info.Owner = owner;
                     }
 
                     if (keepAclEntries)
                     {
                         var aclEntries = FileHelper.GetFileAcl(filePath);
-                        var updateAclEntriesCommand = new UpdateAclEntriesCommand(
-                            runId, filePath, aclEntries);
-                        await dataStoreMediator.ExecuteCommand(updateAclEntriesCommand, cancellationToken);
+                        info.AclEntries = aclEntries;
                     }
                 }
                 catch (Exception ex)
@@ -108,7 +103,7 @@ public sealed class ArchiveFilesActor(
                     continue;
                 }
 
-                await archiveService.ReportProcessingResult(runId, result, cancellationToken);
+                await archiveService.ReportProcessingResult(runId, result, info, cancellationToken);
                 logger.LogInformation("File {File} processed successfully for {ArchiveRunId}", filePath, runId);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

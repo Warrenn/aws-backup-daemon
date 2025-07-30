@@ -101,12 +101,26 @@ public class DataStoreActor(
     IArchiveDataStore archiveDataStore,
     IRestoreDataStore restoreDataStore,
     IDataStoreMediator mediator,
-    ILogger<DataStoreActor> logger
+    ILogger<DataStoreActor> logger,
+    IContextResolver contextResolver
 ) : BackgroundService
 {
-    protected override async Task ExecuteAsync(CancellationToken cancellationToken)
+    private Task[] _workers = [];
+
+    protected override Task ExecuteAsync(CancellationToken cancellationToken)
     {
         logger.LogInformation("DataStoreActor started");
+        var concurrency = contextResolver.NoOfConcurrentDbWriters();
+
+        _workers = new Task[concurrency];
+        for (var i = 0; i < _workers.Length; i++)
+            _workers[i] = Task.Run(() => WorkerLoopAsync(cancellationToken), cancellationToken);
+
+        return Task.WhenAll(_workers);
+    }
+
+    private async Task WorkerLoopAsync(CancellationToken cancellationToken)
+    {
         await foreach (var command in mediator.GetDataStoreCommands(cancellationToken))
             try
             {

@@ -9,22 +9,21 @@ public sealed class Mediator(IContextResolver resolver) :
     IDownloadFileMediator,
     IRetryMediator,
     IRestoreRequestsMediator,
-    IUploadChunksMediator,
     ISnsMessageMediator,
     IUploadBatchMediator,
     IS3StorageClassMediator,
     IDataStoreMediator
 {
-    private readonly Channel<DataStoreCommand> _dataStoreCommandChannel =
-        Channel.CreateUnbounded<DataStoreCommand>(
-            new UnboundedChannelOptions
-            {
-                SingleReader = true,
-                SingleWriter = false
-            });
-    
     private readonly Channel<ArchiveFileRequest> _archiveFileRequestChannel =
         Channel.CreateUnbounded<ArchiveFileRequest>(
+            new UnboundedChannelOptions
+            {
+                SingleReader = false,
+                SingleWriter = false
+            });
+
+    private readonly Channel<DataStoreCommand> _dataStoreCommandChannel =
+        Channel.CreateUnbounded<DataStoreCommand>(
             new UnboundedChannelOptions
             {
                 SingleReader = false,
@@ -86,14 +85,6 @@ public sealed class Mediator(IContextResolver resolver) :
                 SingleWriter = false
             });
 
-    private readonly Channel<UploadChunkRequest> _uploadChunksChannel =
-        Channel.CreateBounded<UploadChunkRequest>(
-            new BoundedChannelOptions(resolver.NoOfConcurrentS3Uploads())
-            {
-                SingleReader = false,
-                SingleWriter = false
-            });
-
     IAsyncEnumerable<ArchiveFileRequest> IArchiveFileMediator.GetArchiveFiles(CancellationToken cancellationToken)
     {
         return _archiveFileRequestChannel.Reader.ReadAllAsync(cancellationToken);
@@ -102,6 +93,16 @@ public sealed class Mediator(IContextResolver resolver) :
     async Task IArchiveFileMediator.ProcessFile(ArchiveFileRequest request, CancellationToken cancellationToken)
     {
         await _archiveFileRequestChannel.Writer.WriteAsync(request, cancellationToken);
+    }
+
+    public IAsyncEnumerable<DataStoreCommand> GetDataStoreCommands(CancellationToken cancellationToken)
+    {
+        return _dataStoreCommandChannel.Reader.ReadAllAsync(cancellationToken);
+    }
+
+    public async Task ExecuteCommand(DataStoreCommand request, CancellationToken cancellationToken)
+    {
+        await _dataStoreCommandChannel.Writer.WriteAsync(request, cancellationToken);
     }
 
     async Task IDownloadFileMediator.DownloadFileFromS3(DownloadFileFromS3Request downloadFileFromS3Request,
@@ -176,8 +177,17 @@ public sealed class Mediator(IContextResolver resolver) :
     {
         await _uploadBatchChannel.Writer.WriteAsync(batch, cancellationToken);
     }
+}
 
-    IAsyncEnumerable<UploadChunkRequest> IUploadChunksMediator.GetChunks(CancellationToken cancellationToken)
+public sealed class UploadChunksMediator(IContextResolver resolver) : IUploadChunksMediator
+{
+
+    private TaskCompletionSource _tcs = new();
+    
+    private Channel<UploadChunkRequest> _uploadChunksChannel = CreateChannel<UploadChunkRequest>(
+        resolver.NoOfConcurrentS3Uploads());
+
+    public IAsyncEnumerable<UploadChunkRequest> GetChunks(CancellationToken cancellationToken)
     {
         return _uploadChunksChannel.Reader.ReadAllAsync(cancellationToken);
     }
@@ -187,19 +197,31 @@ public sealed class Mediator(IContextResolver resolver) :
         await _uploadChunksChannel.Writer.WriteAsync(request, cancellationToken);
     }
 
-    void IUploadChunksMediator.SignalComplete()
+    public void SignalComplete()
     {
         _uploadChunksChannel.Writer.TryComplete();
+        _tcs = new TaskCompletionSource();
     }
 
-    public IAsyncEnumerable<DataStoreCommand> GetDataStoreCommands(CancellationToken cancellationToken)
+    public void Reset()
     {
-        return _dataStoreCommandChannel.Reader.ReadAllAsync(cancellationToken);
+        _uploadChunksChannel = CreateChannel<UploadChunkRequest>(resolver.NoOfConcurrentS3Uploads());
+        _tcs.TrySetResult();
     }
 
-    public async Task ExecuteCommand(DataStoreCommand request, CancellationToken cancellationToken)
+    public async Task WaitForReset(CancellationToken cancellationToken)
     {
-        await _dataStoreCommandChannel.Writer.WriteAsync(request, cancellationToken);
+        await _tcs.Task.WaitAsync(cancellationToken);
+    }
+
+    private static Channel<T> CreateChannel<T>(int noOfConcurrentS3Uploads)
+    {
+        return Channel.CreateBounded<T>(
+            new BoundedChannelOptions(noOfConcurrentS3Uploads)
+            {
+                SingleReader = false,
+                SingleWriter = false
+            });
     }
 }
 

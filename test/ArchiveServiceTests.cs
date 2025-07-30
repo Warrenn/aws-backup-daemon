@@ -142,10 +142,10 @@ public class ArchiveServiceTests
         await sut.AddChunkToFile(runId, "b", d3, CancellationToken.None);
         await sut.AddChunkToFile(runId, "b", d4, CancellationToken.None);
 
-        await sut.ReportProcessingResult(runId, new FileProcessResult("a", 10, [1, 2, 3], 1),
+        await sut.ReportProcessingResult(runId, new FileProcessResult("a", 10, [1, 2, 3], 1),It.IsAny<FileProperties>(), 
             CancellationToken.None);
         // Process second file → this is last
-        await sut.ReportProcessingResult(runId, new FileProcessResult("b", 20, [4, 5, 6], 1),
+        await sut.ReportProcessingResult(runId, new FileProcessResult("b", 20, [4, 5, 6], 1),It.IsAny<FileProperties>(), 
             CancellationToken.None);
 
         // Should not yet finalize

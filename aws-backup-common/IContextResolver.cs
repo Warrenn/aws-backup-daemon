@@ -70,6 +70,7 @@ public interface IContextResolver
     CompressionLevel ZipCompressionLevel();
     int AwsTimeoutSeconds();
     int AwsS3TimeoutSeconds();
+    int NoOfConcurrentDbWriters();
 }
 
 public abstract class ContextResolverBase(CommonConfiguration configuration, string clientId) : IContextResolver
@@ -257,7 +258,12 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
         return _configOptions.AwsS3TimeoutSeconds ?? 600;
         // 10 minutes default
     }
-    
+
+    public int NoOfConcurrentDbWriters()
+    {
+        return _configOptions.NoOfConcurrentDbWriters ?? 8;
+    }
+
     public int ShutdownTimeoutSeconds()
     {
         return _configOptions.ShutdownTimeoutSeconds ?? 30;

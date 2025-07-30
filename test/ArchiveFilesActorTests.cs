@@ -41,7 +41,6 @@ public class ArchiveFilesActorTests
             retryMediatorMock.Object,
             processorMock.Object,
             archiveServiceMock.Object,
-            Mock.Of<IDataStoreMediator>(),
             loggerMock.Object,
             ctxMock.Object);
     }
@@ -84,7 +83,7 @@ public class ArchiveFilesActorTests
             Times.Never);
         // ReportProcessingResult never called
         archiveServiceMock.Verify(
-            a => a.ReportProcessingResult(It.IsAny<string>(), It.IsAny<FileProcessResult>(),
+            a => a.ReportProcessingResult(It.IsAny<string>(), It.IsAny<FileProcessResult>(),It.IsAny<FileProperties>(), 
                 It.IsAny<CancellationToken>()), Times.Never);
         // RetryAttempt never called
         retryMediatorMock.Verify(
@@ -140,7 +139,7 @@ public class ArchiveFilesActorTests
         // Assert: processor called once
         processorMock.Verify(p => p.ProcessFileAsync("run2", "file2", It.IsAny<CancellationToken>()), Times.Once);
         archiveServiceMock.Verify(
-            a => a.ReportProcessingResult("run2", It.IsAny<FileProcessResult>(), It.IsAny<CancellationToken>()),
+            a => a.ReportProcessingResult("run2", It.IsAny<FileProcessResult>(), It.IsAny<FileProperties>(), It.IsAny<CancellationToken>()),
             Times.Once);
 
         // UpdateTimeStamps

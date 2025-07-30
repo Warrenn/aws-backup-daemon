@@ -72,7 +72,7 @@ public sealed class ArchiveRunActor(
                             archiveRun.RunId);
                         continue;
                     }
-                    
+
                     fileCountDownEvent.AddCount();
                     await archiveFileMediator.ProcessFile(archiveFileRequest, cancellationToken);
                 }
@@ -81,13 +81,15 @@ public sealed class ArchiveRunActor(
 
                 await archiveService.ReportAllFilesListed(archiveRun, cancellationToken);
                 
-                fileCountDownEvent.Wait(cancellationToken);
+                await fileCountDownEvent.Wait(cancellationToken);
                 fileCountDownEvent.Reset();
                 
                 uploadChunksMediator.SignalComplete();
                 
-                chunkCountDownEvent.Wait(cancellationToken);
+                await chunkCountDownEvent.Wait(cancellationToken);
                 chunkCountDownEvent.Reset();
+                
+                uploadChunksMediator.Reset();
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

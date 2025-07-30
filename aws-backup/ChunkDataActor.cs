@@ -17,6 +17,8 @@ public interface IUploadChunksMediator
     IAsyncEnumerable<UploadChunkRequest> GetChunks(CancellationToken cancellationToken);
     Task ProcessChunk(UploadChunkRequest request, CancellationToken cancellationToken);
     void SignalComplete();
+    void Reset();
+    Task WaitForReset(CancellationToken cancellationToken);
 }
 
 public sealed class ChunkDataActor(
@@ -145,6 +147,8 @@ public sealed class ChunkDataActor(
             }
 
             chunkCountDownEvent.Signal();
+            await mediator.WaitForReset(cancellationToken);
+            
             if (batch is null) continue;
 
             logger.LogInformation("Flushing remaining batch data to S3");
