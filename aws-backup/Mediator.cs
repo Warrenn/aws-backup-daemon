@@ -181,13 +181,15 @@ public sealed class Mediator(IContextResolver resolver) :
 
 public sealed class UploadChunksMediator(IContextResolver resolver) : IUploadChunksMediator
 {
+    private readonly Channel<IChunkRequest> _uploadChunksChannel = Channel.CreateBounded<IChunkRequest>(
+        new BoundedChannelOptions(resolver.NoOfConcurrentS3Uploads())
+        {
+            SingleReader = false,
+            SingleWriter = false,
+            FullMode = BoundedChannelFullMode.Wait
+        });
 
-    private TaskCompletionSource _tcs = new();
-    
-    private Channel<UploadChunkRequest> _uploadChunksChannel = CreateChannel<UploadChunkRequest>(
-        resolver.NoOfConcurrentS3Uploads());
-
-    public IAsyncEnumerable<UploadChunkRequest> GetChunks(CancellationToken cancellationToken)
+    public IAsyncEnumerable<IChunkRequest> GetChunkRequests(CancellationToken cancellationToken)
     {
         return _uploadChunksChannel.Reader.ReadAllAsync(cancellationToken);
     }
@@ -197,31 +199,12 @@ public sealed class UploadChunksMediator(IContextResolver resolver) : IUploadChu
         await _uploadChunksChannel.Writer.WriteAsync(request, cancellationToken);
     }
 
-    public void SignalComplete()
+    public async Task FlushPendingBatchesToS3(ArchiveRun archiveRun, TaskCompletionSource taskCompletionSource,
+        CancellationToken cancellationToken)
     {
-        _uploadChunksChannel.Writer.TryComplete();
-        _tcs = new TaskCompletionSource();
-    }
-
-    public void Reset()
-    {
-        _uploadChunksChannel = CreateChannel<UploadChunkRequest>(resolver.NoOfConcurrentS3Uploads());
-        _tcs.TrySetResult();
-    }
-
-    public async Task WaitForReset(CancellationToken cancellationToken)
-    {
-        await _tcs.Task.WaitAsync(cancellationToken);
-    }
-
-    private static Channel<T> CreateChannel<T>(int noOfConcurrentS3Uploads)
-    {
-        return Channel.CreateBounded<T>(
-            new BoundedChannelOptions(noOfConcurrentS3Uploads)
-            {
-                SingleReader = false,
-                SingleWriter = false
-            });
+        var flushRequest = new FlushS3ToS3Request(archiveRun, taskCompletionSource);
+        await _uploadChunksChannel.Writer.WaitToWriteAsync(cancellationToken);
+        await _uploadChunksChannel.Writer.WriteAsync(flushRequest, cancellationToken);
     }
 }
 

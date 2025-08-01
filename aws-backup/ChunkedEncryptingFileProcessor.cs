@@ -8,15 +8,13 @@ using Serilog;
 namespace aws_backup;
 
 public sealed record FileProcessResult(
-    string LocalFilePath,
-    long OriginalSize, // Size before compression
-    byte[] FullFileHash, // SHA-256 hash of the full file
-    long CompressedSize, // Size after compression (optional)
+    FileMetaData FileMetaData,
     Exception? Error = null);
 
 public interface IChunkedEncryptingFileProcessor
 {
-    Task<FileProcessResult> ProcessFileAsync(string runId, string inputPath, CancellationToken cancellationToken);
+    Task<FileProcessResult> ProcessFileAsync(ArchiveRun run, FileMetaData fileMetaData,
+        CancellationToken cancellationToken);
 }
 
 public sealed class ChunkedEncryptingFileProcessor(
@@ -26,16 +24,13 @@ public sealed class ChunkedEncryptingFileProcessor(
     IUploadChunksMediator mediator,
     IArchiveService archiveService) : IChunkedEncryptingFileProcessor
 {
-    public async Task<FileProcessResult> ProcessFileAsync(string runId, string inputPath,
+    public async Task<FileProcessResult> ProcessFileAsync(ArchiveRun run, FileMetaData fileMetaData,
         CancellationToken cancellationToken = default)
     {
-        if (!File.Exists(inputPath))
+        if (!File.Exists(fileMetaData.LocalFilePath))
             return new FileProcessResult(
-                inputPath,
-                0,
-                [],
-                0,
-                new FileNotFoundException("Input file does not exist", inputPath)
+                fileMetaData,
+                new FileNotFoundException("Input file does not exist", fileMetaData.LocalFilePath)
             );
 
         var removableFiles = new List<string>();
@@ -50,11 +45,9 @@ public sealed class ChunkedEncryptingFileProcessor(
             var compressionLevel = contextResolver.ZipCompressionLevel();
             var aesKey = await aesContextResolver.FileEncryptionKey(cancellationToken);
 
-            await archiveService.ResetFileStatus(runId, inputPath, cancellationToken);
-
             // open for read, disallow writers
             await using var fs = new FileStream(
-                inputPath,
+                fileMetaData.LocalFilePath,
                 FileMode.Open,
                 FileAccess.Read,
                 FileShare.Read,
@@ -108,12 +101,11 @@ public sealed class ChunkedEncryptingFileProcessor(
 
             // finish full-file hash
             fullHasher.TransformFinalBlock([], 0, 0);
-            return new FileProcessResult(
-                OriginalSize: fs.Length,
-                LocalFilePath: inputPath,
-                FullFileHash: fullHasher.Hash ?? [],
-                CompressedSize: chunks.Sum(c => c.Size)
-            );
+            fileMetaData.OriginalSize = fs.Length;
+            fileMetaData.HashKey = fullHasher.Hash ?? [];
+            fileMetaData.CompressedSize = chunks.Sum(c => c.Size);
+
+            return new FileProcessResult(fileMetaData);
 
             // local helpers:
             void InitializeChunkPipeline()
@@ -127,7 +119,7 @@ public sealed class ChunkedEncryptingFileProcessor(
                 if (!Directory.Exists(cacheFolder))
                     Directory.CreateDirectory(cacheFolder);
 
-                var fileNameHash = Base64Url.ComputeSimpleHash(inputPath);
+                var fileNameHash = Base64Url.ComputeSimpleHash(fileMetaData.LocalFilePath);
                 var outPath = $"{Path.Combine(cacheFolder, fileNameHash)}.chunk{chunkIndex:D8}.br.aes";
                 if (File.Exists(outPath)) File.Delete(outPath);
                 removableFiles.Add(outPath);
@@ -180,11 +172,11 @@ public sealed class ChunkedEncryptingFileProcessor(
 
                 chunks.Add(chunkData);
                 await archiveService.AddChunkToFile(
-                    runId,
-                    inputPath,
+                    run,
+                    fileMetaData,
                     chunkData,
                     cancellationToken);
-                var request = new UploadChunkRequest(runId, inputPath, chunkData);
+                var request = new UploadChunkRequest(run, fileMetaData, chunkData);
 
                 //this should block due to bounded channel
                 await mediator.ProcessChunk(request, cancellationToken);
@@ -210,13 +202,7 @@ public sealed class ChunkedEncryptingFileProcessor(
                     Log.Error(inner, "Failed to delete temporary file {FilePath}", removableFile);
                 }
 
-            return new FileProcessResult(
-                inputPath,
-                0,
-                [],
-                0,
-                ex
-            );
+            return new FileProcessResult(fileMetaData, ex);
         }
     }
 }

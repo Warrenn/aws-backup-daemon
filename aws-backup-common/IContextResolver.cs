@@ -71,6 +71,7 @@ public interface IContextResolver
     int AwsTimeoutSeconds();
     int AwsS3TimeoutSeconds();
     int NoOfConcurrentDbWriters();
+    long FlushDelaySeconds();
 }
 
 public abstract class ContextResolverBase(CommonConfiguration configuration, string clientId) : IContextResolver
@@ -262,6 +263,11 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
     public int NoOfConcurrentDbWriters()
     {
         return _configOptions.NoOfConcurrentDbWriters ?? 8;
+    }
+
+    public long FlushDelaySeconds()
+    {
+        return _configOptions.FlushDelaySeconds ?? 10L;
     }
 
     public int ShutdownTimeoutSeconds()

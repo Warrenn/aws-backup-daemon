@@ -22,15 +22,6 @@ public sealed record AclEntry(
     string Permissions,
     string Type);
 
-public class FileProperties
-{
-    public DateTimeOffset? Created { get; set; }
-    public DateTimeOffset? LastModified { get; set; }
-    public string? Owner { get; set; }
-    public string? Group { get; set; }
-    public AclEntry[]? AclEntries { get; set; }
-}
-
 public sealed record FileMetaData(
     string LocalFilePath
 )

@@ -1,8 +1,10 @@
+using aws_backup_common;
+
 namespace aws_backup;
 
 public sealed record UploadBatch(
     string LocalFilePath,
-    string ArchiveRunId
+    ArchiveRun ArchiveRun
 )
 {
     public List<UploadChunkRequest> Requests { get; } = [];

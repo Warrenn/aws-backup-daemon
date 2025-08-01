@@ -11,12 +11,11 @@ public interface IArchiveFileMediator
 }
 
 public sealed record ArchiveFileRequest(
-    string RunId,
-    string FilePath
+    ArchiveRun Run,
+    FileMetaData FileMetadata
 ) : RetryState;
 
 public sealed class ArchiveFilesActor(
-    IFileCountDownEvent fileCountDownEvent,
     IArchiveFileMediator mediator,
     IRetryMediator retryMediator,
     IChunkedEncryptingFileProcessor processor,
@@ -48,40 +47,42 @@ public sealed class ArchiveFilesActor(
                 request.Retry ??= (r, ct) => mediator.ProcessFile((ArchiveFileRequest)r, ct);
                 request.LimitExceeded ??= (state, token) =>
                     archiveService.RecordFailedFile(
-                        ((ArchiveFileRequest)state).RunId,
-                        ((ArchiveFileRequest)state).FilePath,
+                        ((ArchiveFileRequest)state).Run,
+                        ((ArchiveFileRequest)state).FileMetadata,
                         state.Exception ?? new Exception("Exceeded limit"),
                         token);
+                
+                var run = request.Run;
+                var fileMetadata = request.FileMetadata;
 
-                var runId = request.RunId;
-                var filePath = request.FilePath;
+                var runId = run.RunId;
+                var filePath = fileMetadata.LocalFilePath;
                 var keepTimeStamps = contextResolver.KeepTimeStamps();
                 var keepOwnerGroup = contextResolver.KeepOwnerGroup();
                 var keepAclEntries = contextResolver.KeepAclEntries();
 
                 logger.LogInformation("Processing {File} for {ArchiveRunId}", filePath, runId);
-                var task = processor.ProcessFileAsync(runId, filePath, cancellationToken);
-                var info = new FileProperties();
+                var task = processor.ProcessFileAsync(request.Run, request.FileMetadata, cancellationToken);
                 try
                 {
                     if (keepTimeStamps)
                     {
                         FileHelper.GetTimestamps(filePath, out var created, out var modified);
-                        info.Created = created;
-                        info.LastModified = modified;
+                        fileMetadata.Created = created;
+                        fileMetadata.LastModified = modified;
                     }
 
                     if (keepOwnerGroup)
                     {
                         var (owner, group) = await FileHelper.GetOwnerGroupAsync(filePath, cancellationToken);
-                        info.Group = group;
-                        info.Owner = owner;
+                        fileMetadata.Group = group;
+                        fileMetadata.Owner = owner;
                     }
 
                     if (keepAclEntries)
                     {
                         var aclEntries = FileHelper.GetFileAcl(filePath);
-                        info.AclEntries = aclEntries;
+                        fileMetadata.AclEntries = aclEntries;
                     }
                 }
                 catch (Exception ex)
@@ -103,7 +104,7 @@ public sealed class ArchiveFilesActor(
                     continue;
                 }
 
-                await archiveService.ReportProcessingResult(runId, result, info, cancellationToken);
+                await archiveService.ReportProcessingResult(run, result, cancellationToken);
                 logger.LogInformation("File {File} processed successfully for {ArchiveRunId}", filePath, runId);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -112,14 +113,10 @@ public sealed class ArchiveFilesActor(
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error processing archive file request {FilePath}: {Message}", request.FilePath,
+                logger.LogError(ex, "Error processing archive file request {FilePath}: {Message}", request.FileMetadata.LocalFilePath,
                     ex.Message);
                 request.Exception = ex;
                 await retryMediator.RetryAttempt(request, cancellationToken);
-            }
-            finally
-            {
-                fileCountDownEvent.Signal();
             }
     }
 

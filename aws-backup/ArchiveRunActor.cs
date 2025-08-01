@@ -11,8 +11,7 @@ public interface IRunRequestMediator
 }
 
 public sealed class ArchiveRunActor(
-    IFileCountDownEvent fileCountDownEvent,
-    IChunkCountDownEvent chunkCountDownEvent,
+    CountdownEvent archiveFilesEvent,
     IRunRequestMediator mediator,
     IArchiveFileMediator archiveFileMediator,
     IUploadChunksMediator uploadChunksMediator,
@@ -42,11 +41,13 @@ public sealed class ArchiveRunActor(
                 {
                     logger.Log(LogLevel.Information, "Archive run {ArchiveRunId} is already completed",
                         runRequest.RunId);
-                    await archiveService.ClearCache(runRequest.RunId, cancellationToken);
+                    await archiveService.ClearCache(archiveRun, cancellationToken);
                     continue;
                 }
 
                 string[] ignorePatterns = [];
+                var fileCount = 0;
+
                 if (File.Exists(ignoreFilePath))
                     try
                     {
@@ -62,10 +63,8 @@ public sealed class ArchiveRunActor(
 
                 foreach (var filePath in fileLister.GetAllFiles(runRequest.PathsToArchive, ignorePatterns))
                 {
-                    var archiveFileRequest = new ArchiveFileRequest(archiveRun.RunId, filePath);
-
-                    var requireProcessing =
-                        await archiveService.DoesFileRequireProcessing(archiveRun.RunId, filePath, cancellationToken);
+                    var (requireProcessing, fileMetaData) =
+                        await archiveService.DoesFileRequireProcessing(archiveRun, filePath, cancellationToken);
                     if (!requireProcessing)
                     {
                         logger.LogInformation("Skipping {File} for {ArchiveRunId} - already processed", filePath,
@@ -73,23 +72,23 @@ public sealed class ArchiveRunActor(
                         continue;
                     }
 
-                    fileCountDownEvent.AddCount();
+                    fileCount++;
+                    var archiveFileRequest = new ArchiveFileRequest(archiveRun, fileMetaData);
                     await archiveFileMediator.ProcessFile(archiveFileRequest, cancellationToken);
                 }
 
-                logger.LogInformation("All files processed for archive run {RunId}", runRequest.RunId);
+                logger.LogInformation(
+                    "Total files listed for archive run {RunId} is {FileCount} files", runRequest.RunId, fileCount);
 
+                archiveFilesEvent.Signal();
+                archiveFilesEvent.Wait(cancellationToken);
+                archiveFilesEvent.Reset();
+
+                var taskCompletionSource = new TaskCompletionSource();
+                await uploadChunksMediator.FlushPendingBatchesToS3(archiveRun, taskCompletionSource, cancellationToken);
+                await taskCompletionSource.Task.WaitAsync(cancellationToken);
+                
                 await archiveService.ReportAllFilesListed(archiveRun, cancellationToken);
-                
-                await fileCountDownEvent.Wait(cancellationToken);
-                fileCountDownEvent.Reset();
-                
-                uploadChunksMediator.SignalComplete();
-                
-                await chunkCountDownEvent.Wait(cancellationToken);
-                chunkCountDownEvent.Reset();
-                
-                uploadChunksMediator.Reset();
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

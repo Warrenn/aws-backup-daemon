@@ -25,6 +25,7 @@ public sealed class UploadBatchActor(
 ) : BackgroundService
 {
     private Task[] _workers = [];
+    private readonly CountdownEvent _countdown = new(1);
 
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
@@ -42,8 +43,16 @@ public sealed class UploadBatchActor(
     private async Task WorkerLoopAsync(CancellationToken cancellationToken)
     {
         await foreach (var batch in mediator.GetUploadBatches(cancellationToken))
+        {
+            //todo:use flush batch
+             // if batch is a flush batch
+             // _countdown.Signal();
+             // _countdown.Wait(cancellationToken);
+             // _countdown.Reset();
+             // taskCompletionSource.SetResult();
             try
             {
+                _countdown.AddCount();
                 logger.LogInformation("Uploading batch {BatchFileName}", batch.LocalFilePath);
 
                 var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
@@ -67,7 +76,8 @@ public sealed class UploadBatchActor(
                     TagSet =
                     [
                         new Tag { Key = "storage-class", Value = "cold" },
-                        new Tag { Key = "archive-run-id", Value = S3Service.ScrubTagValue(batch.ArchiveRunId) },
+                        new Tag { Key = "archive-run-id", Value = S3Service.ScrubTagValue(batch.ArchiveRun.RunId) },
+                        new Tag { Key = "client-id", Value = S3Service.ScrubTagValue(contextResolver.ClientId()) },
                         new Tag { Key = "compression", Value = "brotli" },
                         new Tag
                         {
@@ -78,14 +88,14 @@ public sealed class UploadBatchActor(
                 };
                 await transferUtil.UploadAsync(uploadReq, cancellationToken);
                 logger.LogInformation("Upload complete for batch {BatchFileName} for backup {ArchiveRunId}",
-                    batch.LocalFilePath, batch.ArchiveRunId);
+                    batch.LocalFilePath, batch.ArchiveRun.RunId);
 
                 var offset = 0L;
-                foreach (var (archiveRunId, parentFile, chunk) in batch.Requests)
+                foreach (var (archiveRun, fileMetaData, chunk) in batch.Requests)
                 {
                     logger.LogInformation(
-                        "Marking chunk {ChunkIndex} for file {ParentFile} as uploaded. Key: {Key}, Bucket: {BucketName}, LocalFilePath: {LocalFilePath}",
-                        chunk.ChunkIndex, parentFile, key, bucketName, chunk.LocalFilePath);
+                        "Marking chunk {ChunkIndex} for file {ParentFile} as uploaded. Key: {Key}, Bucket: {BucketName}, Offset: {Offset} Size: {Size}",
+                        chunk.ChunkIndex, fileMetaData.LocalFilePath, key, bucketName, offset, chunk.Size);
 
                     await dataChunkService.MarkChunkAsUploaded(
                         chunk,
@@ -95,9 +105,9 @@ public sealed class UploadBatchActor(
                         cancellationToken);
 
                     await archiveService.RecordChunkUpload(
-                        archiveRunId,
-                        parentFile,
-                        chunk.HashKey,
+                        archiveRun,
+                        fileMetaData,
+                        chunk,
                         cancellationToken);
 
                     offset += chunk.Size;
@@ -116,6 +126,11 @@ public sealed class UploadBatchActor(
 
                 await RetryBatch(batch, cancellationToken);
             }
+            finally
+            {
+                _countdown.Signal();
+            }
+        }
     }
 
     private async Task RetryBatch(UploadBatch batch, CancellationToken cancellationToken)
@@ -151,8 +166,8 @@ public sealed class UploadBatchActor(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to retry batch {BatchFileName}: {Message}", batch.LocalFilePath, ex.Message);
-            foreach (var (_, parentFile, (_, _, _, key, _)) in batch.Requests)
-                await archiveService.RecordFailedChunk(batch.ArchiveRunId, parentFile, key, ex, cancellationToken);
+            foreach (var (_, fileMetaData, chunk) in batch.Requests)
+                await archiveService.RecordFailedChunk(batch.ArchiveRun, fileMetaData, chunk, ex, cancellationToken);
         }
         finally
         {

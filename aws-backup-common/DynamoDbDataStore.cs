@@ -1059,11 +1059,9 @@ public class DynamoDbDataStore(
     public async Task SaveRestoreFileMetaData(string restoreRunRestoreId, RestoreFileMetaData fileMeta,
         CancellationToken cancellationToken)
     {
-        var tableName = awsConfiguration.DynamoDbTableName;
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
 
         var pk = $"RESTORE_ID#{restoreRunRestoreId}";
-        var writeRequests = new List<WriteRequest>();
         var filePath = fileMeta.FilePath;
 
         var fileSk = $"{pk}#FILE#{WebUtility.UrlEncode(filePath)}";
@@ -1092,10 +1090,12 @@ public class DynamoDbDataStore(
             ? Base64Url.Encode(fileMeta.Sha256Checksum)
             : null;
         SetSIfNotNull(fileItem, "Sha256Checksum", sha256Checksum);
-        writeRequests.Add(new WriteRequest { PutRequest = new PutRequest { Item = fileItem } });
+        
+        var fileItemUpdateRequest = CreateUpdateItemRequest(fileItem);
+        await dynamoDbClient.UpdateItemAsync(fileItemUpdateRequest, cancellationToken);
 
         // 3) Chunk‐level items
-        writeRequests.AddRange(from chunkKv in fileMeta.CloudChunkDetails
+        var items = from chunkKv in fileMeta.CloudChunkDetails
             select chunkKv.Value
             into chunk
             let chunkKeyB64 = Base64Url.Encode(chunk.HashKey)
@@ -1112,30 +1112,11 @@ public class DynamoDbDataStore(
                 ["Offset"] = new() { N = chunk.Offset.ToString() },
                 ["Size"] = new() { N = chunk.Size.ToString() },
                 ["Status"] = new() { S = Enum.GetName(chunk.Status) }
-            }
-            into chunkItem
-            select new WriteRequest { PutRequest = new PutRequest { Item = chunkItem } });
-
-        const int batchSize = 25;
-        for (var i = 0; i < writeRequests.Count; i += batchSize)
-        {
-            var batch = writeRequests.Skip(i).Take(batchSize).ToList();
-            var batchReq = new BatchWriteItemRequest
-            {
-                RequestItems = new Dictionary<string, List<WriteRequest>>
-                {
-                    [tableName] = batch
-                }
             };
-
-            var batchResp = await dynamoDbClient.BatchWriteItemAsync(batchReq, cancellationToken);
-
-            // retry any unprocessed items
-            while (batchResp.UnprocessedItems.TryGetValue(tableName, out var unProc) && unProc.Count > 0)
-            {
-                batchReq.RequestItems[tableName] = unProc;
-                batchResp = await dynamoDbClient.BatchWriteItemAsync(batchReq, cancellationToken);
-            }
+        foreach (var item in items)
+        {
+            var chunkItemUpdateRequest = CreateUpdateItemRequest(item);
+            await dynamoDbClient.UpdateItemAsync(chunkItemUpdateRequest, cancellationToken);
         }
     }
 

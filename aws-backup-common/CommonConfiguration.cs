@@ -51,4 +51,5 @@ public record CommonConfiguration
     public int? AwsTimeoutSeconds { get; set; }
     public int? AwsS3TimeoutSeconds { get; set; }
     public int? NoOfConcurrentDbWriters { get; set; }
+    public long? FlushDelaySeconds { get; set; }
 }
