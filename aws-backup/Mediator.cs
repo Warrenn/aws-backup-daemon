@@ -77,8 +77,8 @@ public sealed class Mediator(IContextResolver resolver) :
                 SingleWriter = false
             });
 
-    private readonly Channel<UploadBatch> _uploadBatchChannel =
-        Channel.CreateBounded<UploadBatch>(
+    private readonly Channel<IUploadBatch> _uploadBatchChannel =
+        Channel.CreateBounded<IUploadBatch>(
             new BoundedChannelOptions(resolver.NoOfConcurrentS3Uploads())
             {
                 SingleReader = false,
@@ -168,7 +168,7 @@ public sealed class Mediator(IContextResolver resolver) :
         await _snsMessageChannel.Writer.WriteAsync(message, cancellationToken);
     }
 
-    IAsyncEnumerable<UploadBatch> IUploadBatchMediator.GetUploadBatches(CancellationToken cancellationToken)
+    IAsyncEnumerable<IUploadBatch> IUploadBatchMediator.GetUploadBatches(CancellationToken cancellationToken)
     {
         return _uploadBatchChannel.Reader.ReadAllAsync(cancellationToken);
     }
@@ -176,6 +176,14 @@ public sealed class Mediator(IContextResolver resolver) :
     async Task IUploadBatchMediator.ProcessBatch(UploadBatch batch, CancellationToken cancellationToken)
     {
         await _uploadBatchChannel.Writer.WriteAsync(batch, cancellationToken);
+    }
+
+    public async Task FinalizeBatch(ArchiveRun run, TaskCompletionSource taskCompletion,
+        CancellationToken cancellationToken)
+    {
+        var lastBatchRequest = new FinalUploadBatch(run, taskCompletion);
+        await _uploadBatchChannel.Writer.WaitToWriteAsync(cancellationToken);
+        await _uploadBatchChannel.Writer.WriteAsync(lastBatchRequest, cancellationToken);
     }
 }
 

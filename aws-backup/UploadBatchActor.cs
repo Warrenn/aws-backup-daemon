@@ -9,8 +9,9 @@ namespace aws_backup;
 
 public interface IUploadBatchMediator
 {
-    IAsyncEnumerable<UploadBatch> GetUploadBatches(CancellationToken cancellationToken);
+    IAsyncEnumerable<IUploadBatch> GetUploadBatches(CancellationToken cancellationToken);
     Task ProcessBatch(UploadBatch batch, CancellationToken cancellationToken);
+    Task FinalizeBatch(ArchiveRun run, TaskCompletionSource taskCompletion, CancellationToken cancellationToken);
 }
 
 public sealed class UploadBatchActor(
@@ -24,8 +25,8 @@ public sealed class UploadBatchActor(
     IArchiveService archiveService
 ) : BackgroundService
 {
-    private Task[] _workers = [];
     private readonly CountdownEvent _countdown = new(1);
+    private Task[] _workers = [];
 
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
@@ -42,14 +43,18 @@ public sealed class UploadBatchActor(
 
     private async Task WorkerLoopAsync(CancellationToken cancellationToken)
     {
-        await foreach (var batch in mediator.GetUploadBatches(cancellationToken))
+        await foreach (var uploadBatch in mediator.GetUploadBatches(cancellationToken))
         {
-            //todo:use flush batch
-             // if batch is a flush batch
-             // _countdown.Signal();
-             // _countdown.Wait(cancellationToken);
-             // _countdown.Reset();
-             // taskCompletionSource.SetResult();
+            if (uploadBatch is FinalUploadBatch finalUploadBatch)
+            {
+                logger.LogInformation("Finalizing upload batch for run {RunId}", finalUploadBatch.ArchiveRun.RunId);
+                _countdown.Signal();
+                _countdown.Wait(cancellationToken);
+                _countdown.Reset();
+                finalUploadBatch.CompletionSource.SetResult();
+            }
+
+            if (uploadBatch is not UploadBatch batch) continue;
             try
             {
                 _countdown.AddCount();

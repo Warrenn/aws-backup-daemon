@@ -83,7 +83,6 @@ public sealed class ChunkDataActor(
                 logger.LogInformation("Flushing stream for thread {ThreadId} in archive run {ArchiveRunId}",
                     threadId, archiveRun.RunId);
 
-
                 // Flush the stream to the final batch stream
                 await Streams[threadId]!.FlushAsync(cancellationToken);
                 await Streams[threadId]!.DisposeAsync();
@@ -115,8 +114,7 @@ public sealed class ChunkDataActor(
         await finalBatchStream.DisposeAsync();
 
         await batchMediator.ProcessBatch(finalBatch, cancellationToken);
-
-        taskCompletionSource.SetResult();
+        await batchMediator.FinalizeBatch(archiveRun, taskCompletionSource, cancellationToken);
     }
 
     private async Task WorkerLoopAsync(CancellationToken cancellationToken)
