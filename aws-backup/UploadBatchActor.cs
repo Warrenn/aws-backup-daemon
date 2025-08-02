@@ -9,9 +9,8 @@ namespace aws_backup;
 
 public interface IUploadBatchMediator
 {
-    IAsyncEnumerable<IUploadBatch> GetUploadBatches(CancellationToken cancellationToken);
+    IAsyncEnumerable<UploadBatch> GetUploadBatches(CancellationToken cancellationToken);
     Task ProcessBatch(UploadBatch batch, CancellationToken cancellationToken);
-    Task FinalizeBatch(ArchiveRun run, TaskCompletionSource taskCompletion, CancellationToken cancellationToken);
 }
 
 public sealed class UploadBatchActor(
@@ -25,7 +24,6 @@ public sealed class UploadBatchActor(
     IArchiveService archiveService
 ) : BackgroundService
 {
-    private readonly CountdownEvent _countdown = new(1);
     private Task[] _workers = [];
 
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
@@ -43,21 +41,9 @@ public sealed class UploadBatchActor(
 
     private async Task WorkerLoopAsync(CancellationToken cancellationToken)
     {
-        await foreach (var uploadBatch in mediator.GetUploadBatches(cancellationToken))
-        {
-            if (uploadBatch is FinalUploadBatch finalUploadBatch)
-            {
-                logger.LogInformation("Finalizing upload batch for run {RunId}", finalUploadBatch.ArchiveRun.RunId);
-                _countdown.Signal();
-                _countdown.Wait(cancellationToken);
-                _countdown.Reset();
-                finalUploadBatch.CompletionSource.SetResult();
-            }
-
-            if (uploadBatch is not UploadBatch batch) continue;
+        await foreach (var batch in mediator.GetUploadBatches(cancellationToken))
             try
             {
-                _countdown.AddCount();
                 logger.LogInformation("Uploading batch {BatchFileName}", batch.LocalFilePath);
 
                 var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
@@ -111,7 +97,6 @@ public sealed class UploadBatchActor(
 
                     await archiveService.RecordChunkUpload(
                         archiveRun,
-                        fileMetaData,
                         chunk,
                         cancellationToken);
 
@@ -131,11 +116,6 @@ public sealed class UploadBatchActor(
 
                 await RetryBatch(batch, cancellationToken);
             }
-            finally
-            {
-                _countdown.Signal();
-            }
-        }
     }
 
     private async Task RetryBatch(UploadBatch batch, CancellationToken cancellationToken)
@@ -171,8 +151,8 @@ public sealed class UploadBatchActor(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to retry batch {BatchFileName}: {Message}", batch.LocalFilePath, ex.Message);
-            foreach (var (_, fileMetaData, chunk) in batch.Requests)
-                await archiveService.RecordFailedChunk(batch.ArchiveRun, fileMetaData, chunk, ex, cancellationToken);
+            foreach (var (_, _, chunk) in batch.Requests)
+                await archiveService.RecordFailedChunk(batch.ArchiveRun, chunk, ex, cancellationToken);
         }
         finally
         {

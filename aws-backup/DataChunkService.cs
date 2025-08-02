@@ -9,6 +9,8 @@ public interface IDataChunkService
 
     Task MarkChunkAsUploaded(DataChunkDetails chunk, long byteIndex, string key, string bucketName,
         CancellationToken cancellationToken);
+
+    void ClearCache();
 }
 
 public sealed class DataChunkService(
@@ -47,5 +49,10 @@ public sealed class DataChunkService(
             hashKey,
             cloudChunkDetails);
         await mediator.ExecuteCommand(addCloudChunkDetailsCommand, cancellationToken);
+    }
+
+    public void ClearCache()
+    {
+        _cache.Clear();
     }
 }

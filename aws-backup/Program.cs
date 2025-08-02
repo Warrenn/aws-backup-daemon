@@ -41,8 +41,6 @@ if (!File.Exists(appSettingsPath))
     return -1;
 }
 
-var countdownEvent = new CountdownEvent(1);
-
 var configBuilder = new ConfigurationBuilder();
 configBuilder
     .SetBasePath(AppContext.BaseDirectory)
@@ -112,7 +110,6 @@ builder
     .AddSingleton<ITemporaryCredentialsServer, RolesAnywhere>()
     .AddSingleton<IAwsClientFactory, AwsClientFactory>()
     .AddSingleton<IAesContextResolver, AesContextResolver>()
-    .AddSingleton(_ => countdownEvent)
     .AddSingleton<IArchiveService, ArchiveService>()
     .AddSingleton<IChunkedEncryptingFileProcessor, ChunkedEncryptingFileProcessor>()
     .AddSingleton<ICronScheduler, CronScheduler>()

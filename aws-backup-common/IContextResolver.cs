@@ -386,8 +386,8 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
 
     public DateTimeOffset NextRetryTime(int attemptCount)
     {
-        // Exponential backoff: 2^attemptCount seconds, max 300 seconds (5 minutes)
-        var delaySeconds = Math.Min(Math.Pow(2, attemptCount), 600);
+        // Exponential backoff: 2^attemptCount minutes, max 600 seconds (10 minutes)
+        var delaySeconds = Math.Min(Math.Pow(2, attemptCount) * 60, 600);
         return DateTimeOffset.UtcNow.AddSeconds(delaySeconds);
     }
 

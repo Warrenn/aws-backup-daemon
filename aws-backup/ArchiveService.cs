@@ -16,14 +16,12 @@ public interface IArchiveService
     Task RecordFailedFile(ArchiveRun archiveRun, FileMetaData fileMetaData, Exception exception,
         CancellationToken cancellationToken);
 
-    Task RecordFailedChunk(ArchiveRun archiveRun, FileMetaData fileMetaData, DataChunkDetails details,
-        Exception exception,
+    Task RecordFailedChunk(ArchiveRun archiveRun, DataChunkDetails details, Exception exception,
         CancellationToken cancellationToken);
 
     Task ClearCache(ArchiveRun archiveRun, CancellationToken cancellationToken);
 
-    Task RecordChunkUpload(ArchiveRun archiveRun, FileMetaData fileMetaData, DataChunkDetails details,
-        CancellationToken cancellationToken);
+    Task RecordChunkUpload(ArchiveRun archiveRun, DataChunkDetails details, CancellationToken cancellationToken);
 
     Task AddChunkToFile(ArchiveRun archiveRun, FileMetaData fileMetaData, DataChunkDetails chunkDetails,
         CancellationToken cancellationToken);
@@ -38,7 +36,8 @@ public sealed class ArchiveService(
     ISnsMessageMediator snsMed,
     ILogger<ArchiveService> logger,
     IDataStoreMediator dataStoreMediator,
-    IArchiveDataStore archiveDataStore)
+    IArchiveDataStore archiveDataStore,
+    IDataChunkService dataChunkService)
     : IArchiveService
 {
     private readonly ConcurrentDictionary<string, ArchiveRun> _runCache = new();
@@ -105,53 +104,82 @@ public sealed class ArchiveService(
         await SaveAndFinalizeIfComplete(run, cancellationToken);
     }
 
-    public async Task RecordFailedChunk(ArchiveRun run, FileMetaData fileMetaData, DataChunkDetails details,
-        Exception exception,
+    public async Task RecordFailedChunk(ArchiveRun run, DataChunkDetails details, Exception exception,
         CancellationToken cancellationToken)
     {
-        var updateFileStatusCommand = new UpdateFileStatusCommand(
-            run.RunId, fileMetaData.LocalFilePath, FileStatus.Skipped, exception.Message);
-        await dataStoreMediator.ExecuteCommand(updateFileStatusCommand, cancellationToken);
-
         var chunkKey = new ByteArrayKey(details.HashKey);
-        var saveChunkStatusCommand = new SaveChunkStatusCommand(
-            run.RunId, fileMetaData.LocalFilePath, chunkKey, ChunkStatus.Failed);
-        await dataStoreMediator.ExecuteCommand(saveChunkStatusCommand, cancellationToken);
+        var filesSnapshot = run.Files.ToArray();
+
+        foreach (var (filePath, fileMetaData) in filesSnapshot)
+        {
+            if (!fileMetaData.Chunks.ContainsKey(chunkKey)) continue;
+
+            fileMetaData.Status = FileStatus.Skipped;
+            fileMetaData.SkipReason = exception.Message;
+
+            fileMetaData.Chunks[chunkKey].Status = ChunkStatus.Failed;
+
+            // notify via SNS
+            await snsMed.PublishMessage(new ExceptionMessage(
+                $"File Skipped: {filePath} in run {run.RunId}",
+                $"Skipped due to: {exception}"), cancellationToken);
+
+            // save the file metadata with updated status
+            var updateFileStatusCommand = new UpdateFileStatusCommand(
+                run.RunId, filePath, FileStatus.Skipped, exception.Message);
+            await dataStoreMediator.ExecuteCommand(updateFileStatusCommand, cancellationToken);
+
+            var saveChunkStatusCommand = new SaveChunkStatusCommand(
+                run.RunId, filePath, chunkKey, ChunkStatus.Failed);
+            await dataStoreMediator.ExecuteCommand(saveChunkStatusCommand, cancellationToken);
+        }
 
         details.Status = ChunkStatus.Failed;
-
-        fileMetaData.Status = FileStatus.Skipped;
-        fileMetaData.SkipReason = exception.Message;
 
         await SaveAndFinalizeIfComplete(run, cancellationToken);
     }
 
-
     public async Task ClearCache(ArchiveRun archiveRun, CancellationToken cancellationToken)
     {
         _runCache.TryRemove(archiveRun.RunId, out _);
+        dataChunkService.ClearCache();
 
         var removeRunRequestCommand = new RemoveArchiveRequestCommand(archiveRun.RunId);
         await dataStoreMediator.ExecuteCommand(removeRunRequestCommand, cancellationToken);
     }
 
-    public async Task RecordChunkUpload(ArchiveRun run, FileMetaData fileStatusData, DataChunkDetails chunkDetails,
+    public async Task RecordChunkUpload(ArchiveRun run, DataChunkDetails chunkDetails,
         CancellationToken cancellationToken)
     {
         var chunkKey = new ByteArrayKey(chunkDetails.HashKey);
+        var filesSnapshot = run.Files.ToArray();
+
+        foreach (var (filePath, fileMetaData) in filesSnapshot)
+        {
+            if (!fileMetaData.Chunks.TryGetValue(chunkKey, out var fileChunk)) continue;
+            fileChunk.Status = ChunkStatus.Uploaded;
+
+            if (fileMetaData.Status is FileStatus.ChunkingComplete &&
+                !fileMetaData.Chunks.Values.Any(c => c.Status is ChunkStatus.Added))
+                fileMetaData.Status = FileStatus.UploadComplete;
+
+            // save the file metadata with updated status
+            var updateFileStatusCommand = new UpdateFileStatusCommand(
+                run.RunId, filePath, fileMetaData.Status, "");
+            await dataStoreMediator.ExecuteCommand(updateFileStatusCommand, cancellationToken);
+
+            var saveChunkStatusCommand = new SaveChunkStatusCommand(
+                run.RunId, filePath, chunkKey, ChunkStatus.Uploaded);
+            await dataStoreMediator.ExecuteCommand(saveChunkStatusCommand, cancellationToken);
+        }
 
         chunkDetails.Status = ChunkStatus.Uploaded;
-
-        var saveChunkStatusCommand = new SaveChunkStatusCommand(
-            run.RunId, fileStatusData.LocalFilePath, chunkKey, ChunkStatus.Uploaded);
-        await dataStoreMediator.ExecuteCommand(saveChunkStatusCommand, cancellationToken);
 
         await SaveAndFinalizeIfComplete(run, cancellationToken);
     }
 
-    public async Task<bool> ReportAllFilesListed(ArchiveRun archiveRun, CancellationToken cancellationToken)
+    public async Task<bool> ReportAllFilesListed(ArchiveRun run, CancellationToken cancellationToken)
     {
-        var run = await archiveDataStore.GetArchiveRun(archiveRun.RunId, cancellationToken) ?? archiveRun;
         run.Status = ArchiveRunStatus.AllFilesListed;
         return await SaveAndFinalizeIfComplete(run, cancellationToken);
     }
@@ -218,60 +246,32 @@ public sealed class ArchiveService(
 
     private async Task<bool> SaveAndFinalizeIfComplete(ArchiveRun run, CancellationToken cancellationToken)
     {
-        var snapshot = run.Files.ToArray();
-        var isIncomplete = false;
+        var snapshot = run.Files.Values.ToArray();
         var originalSize = 0L;
         var compressedSize = 0L;
         var skippedFiles = 0;
         var totalFiles = 0;
+        var runIsComplete = true;
 
-        foreach (var (filePath, fileMeta) in snapshot)
+        foreach (var fileMeta in snapshot)
         {
             totalFiles++;
 
+            originalSize += fileMeta.OriginalSize ?? 0;
+            compressedSize += fileMeta.CompressedSize ?? 0;
+
             switch (fileMeta.Status)
             {
-                case FileStatus.Added:
-                    isIncomplete = true;
-                    continue;
+                case FileStatus.Added or FileStatus.ChunkingComplete:
+                    runIsComplete = false;
+                    break;
                 case FileStatus.Skipped:
                     skippedFiles++;
                     continue;
-                case FileStatus.UploadComplete:
-                    originalSize += fileMeta.OriginalSize ?? 0;
-                    compressedSize += fileMeta.CompressedSize ?? 0;
-                    continue;
             }
-
-            // Snapshot current chunk statuses
-            var chunkStatuses = fileMeta.Chunks.Values.Select(c => c.Status).ToArray();
-
-            if (chunkStatuses.Length == 0 || chunkStatuses.Any(s => s == ChunkStatus.Added))
-            {
-                isIncomplete = true;
-                continue;
-            }
-
-            if (chunkStatuses.Any(s => s == ChunkStatus.Failed))
-            {
-                if (string.IsNullOrWhiteSpace(fileMeta.SkipReason))
-                    fileMeta.SkipReason = "File skipped due to chunk failing to upload";
-
-                fileMeta.Status = FileStatus.Skipped;
-                skippedFiles++;
-
-                continue;
-            }
-
-            fileMeta.Status = FileStatus.UploadComplete;
-
-            logger.LogDebug("File {File} status updated to UploadComplete", filePath);
         }
 
-        logger.LogInformation("ArchiveService.SaveAndFinalizeIfComplete: totalFiles:{totalFiles} isIncomplete:{isIncomplete} Status:{status}",
-                              totalFiles, isIncomplete, Enum.GetName(ArchiveRunStatus.AllFilesListed));
-        if (totalFiles == 0) isIncomplete = true;
-        if (run.Status is not ArchiveRunStatus.AllFilesListed || isIncomplete) return false;
+        if (run.Status is not ArchiveRunStatus.AllFilesListed || !runIsComplete) return false;
 
         // Finalize if all files are accounted for
         await SummarizeAndSave(run, originalSize, compressedSize, skippedFiles, totalFiles, cancellationToken);
@@ -317,8 +317,7 @@ public sealed class ArchiveService(
         await dataStoreMediator.ExecuteCommand(saveRunCommand, cancellationToken);
 
         // remove from in‐memory caches
-        if (run.Status is ArchiveRunStatus.Completed)
-            await ClearCache(run, cancellationToken);
+        await ClearCache(run, cancellationToken);
 
         // currentRequests.ClearCache(runId, out _);
         logger.LogInformation("Run {RunId} removed from in‐memory cache", runId);

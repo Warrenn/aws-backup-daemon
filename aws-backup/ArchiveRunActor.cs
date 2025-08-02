@@ -11,7 +11,6 @@ public interface IRunRequestMediator
 }
 
 public sealed class ArchiveRunActor(
-    CountdownEvent archiveFilesEvent,
     IRunRequestMediator mediator,
     IArchiveFileMediator archiveFileMediator,
     IUploadChunksMediator uploadChunksMediator,
@@ -77,17 +76,15 @@ public sealed class ArchiveRunActor(
                     await archiveFileMediator.ProcessFile(archiveFileRequest, cancellationToken);
                 }
 
-                logger.LogInformation(
-                    "Total files listed for archive run {RunId} is {FileCount} files", runRequest.RunId, fileCount);
-
-                archiveFilesEvent.Signal();
-                archiveFilesEvent.Wait(cancellationToken);
-                archiveFilesEvent.Reset();
+                logger.LogInformation("Flushing pending batches for archive run {RunId}", runRequest.RunId);
 
                 var taskCompletionSource = new TaskCompletionSource();
                 await uploadChunksMediator.FlushPendingBatchesToS3(archiveRun, taskCompletionSource, cancellationToken);
-                await taskCompletionSource.Task.WaitAsync(cancellationToken);
-                
+                await taskCompletionSource.Task;
+
+                logger.LogInformation(
+                    "Total files listed for archive run {RunId} is {FileCount} files", runRequest.RunId, fileCount);
+
                 await archiveService.ReportAllFilesListed(archiveRun, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

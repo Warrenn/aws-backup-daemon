@@ -77,8 +77,8 @@ public sealed class Mediator(IContextResolver resolver) :
                 SingleWriter = false
             });
 
-    private readonly Channel<IUploadBatch> _uploadBatchChannel =
-        Channel.CreateBounded<IUploadBatch>(
+    private readonly Channel<UploadBatch> _uploadBatchChannel =
+        Channel.CreateBounded<UploadBatch>(
             new BoundedChannelOptions(resolver.NoOfConcurrentS3Uploads())
             {
                 SingleReader = false,
@@ -168,7 +168,7 @@ public sealed class Mediator(IContextResolver resolver) :
         await _snsMessageChannel.Writer.WriteAsync(message, cancellationToken);
     }
 
-    IAsyncEnumerable<IUploadBatch> IUploadBatchMediator.GetUploadBatches(CancellationToken cancellationToken)
+    IAsyncEnumerable<UploadBatch> IUploadBatchMediator.GetUploadBatches(CancellationToken cancellationToken)
     {
         return _uploadBatchChannel.Reader.ReadAllAsync(cancellationToken);
     }
@@ -176,14 +176,6 @@ public sealed class Mediator(IContextResolver resolver) :
     async Task IUploadBatchMediator.ProcessBatch(UploadBatch batch, CancellationToken cancellationToken)
     {
         await _uploadBatchChannel.Writer.WriteAsync(batch, cancellationToken);
-    }
-
-    public async Task FinalizeBatch(ArchiveRun run, TaskCompletionSource taskCompletion,
-        CancellationToken cancellationToken)
-    {
-        var lastBatchRequest = new FinalUploadBatch(run, taskCompletion);
-        await _uploadBatchChannel.Writer.WaitToWriteAsync(cancellationToken);
-        await _uploadBatchChannel.Writer.WriteAsync(lastBatchRequest, cancellationToken);
     }
 }
 
@@ -207,10 +199,9 @@ public sealed class UploadChunksMediator(IContextResolver resolver) : IUploadChu
         await _uploadChunksChannel.Writer.WriteAsync(request, cancellationToken);
     }
 
-    public async Task FlushPendingBatchesToS3(ArchiveRun archiveRun, TaskCompletionSource taskCompletionSource,
-        CancellationToken cancellationToken)
+    public async Task FlushPendingBatchesToS3(ArchiveRun archiveRun, TaskCompletionSource taskCompletion, CancellationToken cancellationToken)
     {
-        var flushRequest = new FlushS3ToS3Request(archiveRun, taskCompletionSource);
+        var flushRequest = new FlushS3ToS3Request(archiveRun, taskCompletion);
         await _uploadChunksChannel.Writer.WaitToWriteAsync(cancellationToken);
         await _uploadChunksChannel.Writer.WriteAsync(flushRequest, cancellationToken);
     }
