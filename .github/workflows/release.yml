@@ -34,7 +34,6 @@ jobs:
 
       - name: Publish cert-gen
         run: dotnet publish ./cert-gen/cert-gen.csproj -c Release -r win-x64 `
-            -p:PublishAot=true `
             -p:SelfContained=true `
             -p:PublishSingleFile=true `
             -p:EnableCompressionInSingleFile=true `
