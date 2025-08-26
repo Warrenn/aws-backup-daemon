@@ -44,20 +44,20 @@ jobs:
 
       - name: Publish ssm-param
         run: dotnet publish ./ssm-param/ssm-param.csproj -c Release -r win-x64 `
-            -p:PublishAot=true `
             -p:SelfContained=true `
             -p:PublishSingleFile=true `
             -p:EnableCompressionInSingleFile=true `
+            -p:PublishTrimmed=false `
             -p:DebugType=None `
             -p:DebugSymbols=false `
             -o publish
 
       - name: Publish temporary-credentials
         run: dotnet publish ./temporary-credentials/temporary-credentials.csproj -c Release -r win-x64 `
-            -p:PublishAot=true `
             -p:SelfContained=true `
             -p:PublishSingleFile=true `
             -p:EnableCompressionInSingleFile=true `
+            -p:PublishTrimmed=false `
             -p:DebugType=None `
             -p:DebugSymbols=false `
             -o publish
