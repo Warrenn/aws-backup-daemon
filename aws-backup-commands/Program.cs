@@ -7,6 +7,7 @@ using Cocona.Help;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
+using temporary_credentials;
 
 var appSettingsPath = GetValueFromArgs("app-settings", "a", args) ??
                       Path.Combine(AppContext.BaseDirectory, "appsettings.json");

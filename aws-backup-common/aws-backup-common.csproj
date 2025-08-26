@@ -27,4 +27,8 @@
     <PackageReference Include="Serilog" Version="4.3.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\temporary-credentials\temporary-credentials.csproj" />
+  </ItemGroup>
+
 </Project>

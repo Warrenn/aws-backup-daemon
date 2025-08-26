@@ -8,6 +8,7 @@ using Amazon.SimpleNotificationService;
 using Amazon.SimpleSystemsManagement;
 using Amazon.SQS;
 using Microsoft.Extensions.Logging;
+using temporary_credentials;
 
 namespace aws_backup_common;
 

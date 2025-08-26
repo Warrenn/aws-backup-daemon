@@ -41,6 +41,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\aws-backup-common\aws-backup-common.csproj" />
+    <ProjectReference Include="..\temporary-credentials\temporary-credentials.csproj" />
   </ItemGroup>
 
   <ItemGroup>

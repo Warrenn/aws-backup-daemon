@@ -3,7 +3,10 @@
 using Amazon.SimpleSystemsManagement;
 using Amazon.SimpleSystemsManagement.Model;
 
-var path = args[0];
+var path = "";
+if(args.Length > 0)
+    path = args[0];
+
 if (string.IsNullOrWhiteSpace(path))
 {
     Console.Error.WriteLine("Path to the parameter is required");
