@@ -14,6 +14,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ssm-param", "ssm-param\ssm-
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "temporary-credentials", "temporary-credentials\temporary-credentials.csproj", "{8A38DA9B-8A17-4D66-8124-1B6941B5EB6E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "schedule-task", "schedule-task\schedule-task.csproj", "{B8A1B825-B5E2-45AB-9904-18308BAC09A4}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -48,5 +50,9 @@ Global
 		{8A38DA9B-8A17-4D66-8124-1B6941B5EB6E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{8A38DA9B-8A17-4D66-8124-1B6941B5EB6E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{8A38DA9B-8A17-4D66-8124-1B6941B5EB6E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B8A1B825-B5E2-45AB-9904-18308BAC09A4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B8A1B825-B5E2-45AB-9904-18308BAC09A4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B8A1B825-B5E2-45AB-9904-18308BAC09A4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B8A1B825-B5E2-45AB-9904-18308BAC09A4}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

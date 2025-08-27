@@ -62,6 +62,16 @@ jobs:
             -p:DebugSymbols=false `
             -o publish
 
+      - name: Publish schedule-task
+        run: dotnet publish ./schedule-task/schedule-task.csproj -c Release -r win-x64 `
+            -p:SelfContained=true `
+            -p:PublishSingleFile=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:PublishTrimmed=false `
+            -p:DebugType=None `
+            -p:DebugSymbols=false `
+            -o publish
+
       - name: Publish aws-backup-command
         run: dotnet publish ./aws-backup-commands/aws-backup-commands.csproj -c Release -r win-x64 `
             -p:PublishAot=true `
