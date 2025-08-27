@@ -1,6 +1,8 @@
 ﻿using Microsoft.Win32.TaskScheduler;
 
 using var ts = new TaskService();
+System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.InvariantCulture;
+System.Globalization.CultureInfo.CurrentUICulture = System.Globalization.CultureInfo.InvariantCulture;
 
 var scriptPath = GetArgValue(args, "script-path");
 var timeStr = GetArgValue(args, "time");
@@ -42,7 +44,7 @@ var scriptFull = Path.GetFullPath(scriptPath);
 var startIn    = Path.GetDirectoryName(scriptFull) ?? Environment.CurrentDirectory;
 var arguments  = $"-NoProfile -ExecutionPolicy Bypass -File \"{scriptFull}\"";
 
-var now = DateTime.UtcNow;
+var now = DateTime.Now;
 var start = new DateTime(now.Year, now.Month, now.Day,
     time.Hour, time.Minute, time.Second);
 if (start <= now) start = start.AddDays(1);
