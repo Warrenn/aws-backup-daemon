@@ -8,7 +8,6 @@ var scriptPath = GetArgValue(args, "script-path");
 var timeStr = GetArgValue(args, "time");
 var taskName = GetArgValue(args, "task-name");
 var description = GetArgValue(args, "description");
-var computerName = GetArgValue(args, "computer-name");
 
 if (string.IsNullOrWhiteSpace(scriptPath) || !File.Exists(scriptPath))
 {
@@ -69,8 +68,7 @@ td.Actions.Add(new ExecAction(powershellExe, arguments, startIn));
 ts.RootFolder.RegisterTaskDefinition(taskName, td, TaskCreation.CreateOrUpdate,
     userId: "SYSTEM", password: null, logonType: TaskLogonType.ServiceAccount);
 
-Console.WriteLine($"Registered scheduled task '{taskName}' to run daily at {timeStr} as SYSTEM."
-                  + (string.IsNullOrWhiteSpace(computerName) ? "" : $" (Target: {computerName})"));
+Console.WriteLine($"Registered scheduled task '{taskName}' to run daily at {timeStr} as SYSTEM.");
 return 0;
 
 static string? FindExe(string[] candidates)
