@@ -5,6 +5,7 @@ using Amazon.S3.Model;
 using Amazon.SQS.Model;
 using aws_backup_common;
 using Cocona;
+
 // ReSharper disable ClassNeverInstantiated.Global
 // ReSharper disable NotAccessedPositionalProperty.Global
 
@@ -34,8 +35,7 @@ public sealed class BackupCommands(
         string archiveId,
         [Option("paths-to-restore", Description = "The paths you want to restore from the archive")]
         string[] pathsToRestore,
-        [Ignore]
-        CancellationToken cancellationToken = default
+        [Ignore] CancellationToken cancellationToken = default
     )
     {
         Console.WriteLine("Restoring archive...");
@@ -43,21 +43,36 @@ public sealed class BackupCommands(
         var joinedPaths = string.Join(":", pathsToRestore);
         var sqs = await awsClientFactory.CreateSqsClient(cancellationToken);
         var queueUrl = awsConfiguration.SqsInboxQueueUrl;
-        
+
+        //todo: deduplication
+        /*
+         *
+         * var createQueueRequest = new CreateQueueRequest
+           {
+               QueueName = "MyFifoQueue.fifo",
+               Attributes = new Dictionary<string, string>
+               {
+                   { "FifoQueue", "true" },
+                   { "ContentBasedDeduplication", "true" }
+               }
+           };
+         */
+
         var request = new RestoreRequest
         (
-            ArchiveRunId: archiveId,
-            RestorePaths: joinedPaths,
-            RequestedAt: DateTimeOffset.UtcNow
+            archiveId,
+            joinedPaths,
+            DateTimeOffset.UtcNow
         );
-        
+
         using var ms = new MemoryStream();
-        await JsonSerializer.SerializeAsync(ms, request, SourceGenerationContext.Default.RestoreRequest, cancellationToken);
+        await JsonSerializer.SerializeAsync(ms, request, SourceGenerationContext.Default.RestoreRequest,
+            cancellationToken);
         ms.Position = 0;
 
         using var streamReader = new StreamReader(ms, Encoding.UTF8);
         var messageBody = await streamReader.ReadToEndAsync(cancellationToken);
-        
+
         var encryptedString = bool.FalseString;
         if (contextResolver.EncryptSqs())
         {
@@ -72,31 +87,22 @@ public sealed class BackupCommands(
             MessageBody = messageBody,
             MessageAttributes =
             {
-                ["command"] = new MessageAttributeValue
-                {
-                    DataType = "String",
-                    StringValue = "restore-backup"
-                },
-                ["encrypted"] = new MessageAttributeValue
-                {
-                    StringValue = encryptedString,
-                    DataType = "String"
-                }
+                ["command"] = new MessageAttributeValue { DataType = "String", StringValue = "restore-backup" },
+                ["encrypted"] = new MessageAttributeValue { StringValue = encryptedString, DataType = "String" }
             }
         };
-        
+
         await sqs.SendMessageAsync(restoreRequest, cancellationToken);
-        
+
         Console.WriteLine($"Restore request for archive {archiveId} with paths {joinedPaths} sent to SQS.");
     }
-    
+
     [Command("list-paths", Description = "List all paths in the archive")]
     public async Task ListPaths(
         CommonParameters commonParams,
         [Option("archive-id", Description = "The archive Id to list paths for")]
         string archiveId,
-        [Ignore]
-        CancellationToken cancellationToken = default)
+        [Ignore] CancellationToken cancellationToken = default)
     {
         Console.WriteLine("Listing all paths in the archive...");
 
@@ -113,8 +119,7 @@ public sealed class BackupCommands(
     [Command("list-archives", Description = "List all backup archives for client")]
     public async Task ListArchives(
         CommonParameters commonParams,
-        [Ignore]
-        CancellationToken cancellationToken = default)
+        [Ignore] CancellationToken cancellationToken = default)
     {
         Console.WriteLine("Listing all archives...");
         // Logic to list archives would go here

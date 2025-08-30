@@ -192,15 +192,32 @@ Resources:
       QueueName: !Sub "${ClientId}-inbox"
       VisibilityTimeout: !Ref VisibilityTimeout
       MessageRetentionPeriod: !Ref MessageRetentionPeriod
+      FifoQueue: true
+      ContentBasedDeduplication: true
       Tags:
         - Key: client-id
           Value: !Ref ClientId
 
+  ClientQueueOutbox:
+    Type: AWS::SQS::Queue
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      QueueName: !Sub "${ClientId}-outbox"
+      VisibilityTimeout: !Ref VisibilityTimeout
+      MessageRetentionPeriod: !Ref MessageRetentionPeriod
+      FifoQueue: true
+      ContentBasedDeduplication: true
+      Tags:
+        - Key: client-id
+          Value: !Ref ClientId
+          
   ClientQueuePolicy:
     Type: AWS::SQS::QueuePolicy
     Properties:
       Queues:
         - !Ref ClientQueueInbox
+        - !Ref ClientQueueOutbox
       PolicyDocument:
         Version: "2012-10-17"
         Statement:

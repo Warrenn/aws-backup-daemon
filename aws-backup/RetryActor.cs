@@ -31,16 +31,16 @@ public sealed class RetryActor(
                 if (state.AttemptCount > limit)
                 {
                     logger.LogInformation("Retry Limit Exceeded for {State}", state);
+                    if (state.LimitExceeded is null)
+                    {
+                        logger.LogWarning("LimitExceeded function not set for {State}", state);
+                        continue;
+                    }
+
                     _ = Task.Run(async () =>
                     {
                         try
                         {
-                            if (state.LimitExceeded is null)
-                            {
-                                logger.LogWarning("LimitExceeded function not set for {State}", state);
-                                return;
-                            }
-
                             await state.LimitExceeded(state, cancellationToken);
                         }
                         catch (Exception ex)
@@ -55,17 +55,17 @@ public sealed class RetryActor(
                 var delay = contextResolver.NextRetryTimeSpan(state.AttemptCount);
                 logger.LogInformation("Delaying retry for {Delay}ms for {State}", delay.TotalMilliseconds, state);
 
+                if (state.Retry is null)
+                {
+                    logger.LogWarning("Retry function not set for {State}", state);
+                    continue;
+                }
+
                 _ = Task.Run(async () =>
                 {
                     try
                     {
                         await Task.Delay(delay, provider, cancellationToken);
-                        if (state.Retry is null)
-                        {
-                            logger.LogWarning("Retry function not set for {State}", state);
-                            return;
-                        }
-
                         await state.Retry(state, cancellationToken);
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

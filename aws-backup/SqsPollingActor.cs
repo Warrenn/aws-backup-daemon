@@ -7,6 +7,11 @@ using Microsoft.Extensions.Logging;
 
 namespace aws_backup;
 
+//todo: implement retry write to read Q if message gone
+//todo: read confirmation receipt from sender
+//todo: implement write to read Q
+// - use message encrypt key of sender
+// - use message id of sender
 public sealed class SqsPollingActor(
     IAwsClientFactory clientFactory,
     ILogger<SqsPollingActor> logger,
@@ -42,6 +47,19 @@ public sealed class SqsPollingActor(
             ReceiveMessageResponse resp = null!;
             try
             {
+                //todo: deduplication
+                /*
+                 *
+                 * var createQueueRequest = new CreateQueueRequest
+                   {
+                       QueueName = "MyFifoQueue.fifo",
+                       Attributes = new Dictionary<string, string>
+                       {
+                           { "FifoQueue", "true" },
+                           { "ContentBasedDeduplication", "true" }
+                       }
+                   };
+                 */
                 resp = await sqs.ReceiveMessageAsync(new ReceiveMessageRequest
                 {
                     QueueUrl = queueUrl,
