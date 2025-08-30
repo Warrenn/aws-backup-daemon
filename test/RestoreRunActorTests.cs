@@ -216,7 +216,7 @@ public class RestoreRunActorTests
                 CompressedSize = 5678,
                 Chunks = new ConcurrentDictionary<ByteArrayKey, DataChunkDetails>
                 {
-                    [new ByteArrayKey(chunk.HashKey)] = chunk
+                    [new ByteArrayKey(chunk.HashId)] = chunk
                 }
             };
 

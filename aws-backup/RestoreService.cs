@@ -279,15 +279,15 @@ public sealed class RestoreService(
                 var restoreChunk = new RestoreChunkDetails(
                     cloudChunk.S3Key,
                     cloudChunk.BucketName,
-                    cloudChunk.ChunkSize,
-                    cloudChunk.Offset,
+                    cloudChunk.OffsetInS3BatchFile,
+                    cloudChunk.CompressedSize,
+                    dataChunk.Offset,
                     cloudChunk.Size,
-                    cloudChunk.HashKey,
-                    dataChunk.ChunkIndex)
+                    cloudChunk.HashId)
                 {
                     Status = chunkRestoreStatus
                 };
-                chunkDetails.TryAdd(new ByteArrayKey(dataChunk.HashKey), restoreChunk);
+                chunkDetails.TryAdd(new ByteArrayKey(dataChunk.HashId), restoreChunk);
 
                 if (chunkRestoreStatus is S3ChunkRestoreStatus.ReadyToRestore) continue;
 
@@ -297,7 +297,7 @@ public sealed class RestoreService(
                     deepArchiveFiles[cloudChunk.S3Key] = detailsList;
                 }
 
-                var hashKey = new ByteArrayKey(cloudChunk.HashKey);
+                var hashKey = new ByteArrayKey(cloudChunk.HashId);
                 detailsList.Add(hashKey);
 
                 logger.LogInformation("Chunk {Chunk} is in DeepArchive, scheduling restore", cloudChunk.S3Key);

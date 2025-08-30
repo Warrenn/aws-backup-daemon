@@ -72,14 +72,15 @@ if (credentials.credentials is null)
     return -1;
 }
 
-Console.WriteLine($$"""
-                    {
-                    "AccessKeyId": "{{credentials.credentials.AccessKeyId}}",
-                    "SecretAccessKey": "{{credentials.credentials.SecretAccessKey}}",
-                    "SessionToken": "{{credentials.credentials.SessionToken}}",
-                    "Expiration": "{{credentials.credentials.Expiration}}"
-                    }
-                    """);
+Console.WriteLine(
+    $$"""
+    {
+        "AccessKeyId": "{{credentials.credentials.AccessKeyId}}",
+        "SecretAccessKey": "{{credentials.credentials.SecretAccessKey}}",
+        "SessionToken": "{{credentials.credentials.SessionToken}}",
+        "Expiration": "{{credentials.credentials.Expiration}}"
+    }
+    """);
 return 0;
         
 string GetArgValue(string[] args, string argName)

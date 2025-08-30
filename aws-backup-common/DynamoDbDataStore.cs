@@ -151,7 +151,7 @@ public class DynamoDbDataStore(
                     ["#g"] = "Type",
                     ["#h"] = "LocalFilePath",
                     ["#i"] = "ChunkIndex",
-                    ["#j"] = "ChunkSize",
+                    ["#j"] = "CompressedSize",
                     ["#k"] = "Size",
                     ["#l"] = "CompressedSize",
                     ["#m"] = "OriginalSize",
@@ -161,7 +161,7 @@ public class DynamoDbDataStore(
                     ["#q"] = "Owner",
                     ["#r"] = "Group",
                     ["#s"] = "AclEntries",
-                    ["#t"] = "HashKey",
+                    ["#t"] = "HashId",
                     ["#u"] = "Created",
                     ["#v"] = "LastModified"
                 }
@@ -202,7 +202,7 @@ public class DynamoDbDataStore(
                         {
                             Status = GetSIfExists(item, "Status", Enum.Parse<FileStatus>),
                             SkipReason = GetSIfExists(item, "SkipReason", s => s) ?? "",
-                            HashKey = GetSIfExists(item, "HashKey", Base64Url.Decode) ?? [],
+                            HashKey = GetSIfExists(item, "HashId", Base64Url.Decode) ?? [],
                             Created = GetSIfExists(item, "Created", DateTimeOffset.Parse),
                             CompressedSize = GetNIfExists(item, "CompressedSize", long.Parse),
                             OriginalSize = GetNIfExists(item, "OriginalSize", long.Parse),
@@ -227,7 +227,7 @@ public class DynamoDbDataStore(
                         metaData.Chunks.TryAdd(chunkKey, new DataChunkDetails(
                             GetSIfExists(item, "LocalFilePath", s => s) ?? "",
                             GetNIfExists(item, "ChunkIndex", int.Parse),
-                            GetNIfExists(item, "ChunkSize", long.Parse),
+                            GetNIfExists(item, "CompressedSize", long.Parse),
                             keyBytes,
                             GetNIfExists(item, "Size", long.Parse))
                         {
@@ -473,7 +473,7 @@ public class DynamoDbDataStore(
                     ["#e"] = "Type",
                     ["#f"] = "LocalFilePath",
                     ["#g"] = "ChunkIndex",
-                    ["#h"] = "ChunkSize",
+                    ["#h"] = "CompressedSize",
                     ["#i"] = "Size",
                     ["#j"] = "CompressedSize",
                     ["#k"] = "OriginalSize",
@@ -481,7 +481,7 @@ public class DynamoDbDataStore(
                     ["#m"] = "Group",
                     ["#n"] = "AclEntries",
                     ["#o"] = "LastModified",
-                    ["#p"] = "HashKey"
+                    ["#p"] = "HashId"
                 }
             };
 
@@ -501,7 +501,7 @@ public class DynamoDbDataStore(
                         {
                             Status = GetSIfExists(item, "Status", Enum.Parse<FileStatus>),
                             SkipReason = GetSIfExists(item, "SkipReason", s => s) ?? "",
-                            HashKey = GetSIfExists(item, "HashKey", Base64Url.Decode) ?? [],
+                            HashKey = GetSIfExists(item, "HashId", Base64Url.Decode) ?? [],
                             Created = GetSIfExists(item, "Created", DateTimeOffset.Parse),
                             CompressedSize = GetNIfExists(item, "CompressedSize", long.Parse),
                             OriginalSize = GetNIfExists(item, "OriginalSize", long.Parse),
@@ -522,7 +522,7 @@ public class DynamoDbDataStore(
                         fileMetaData?.Chunks.TryAdd(chunkKey, new DataChunkDetails(
                             GetSIfExists(item, "LocalFilePath", s => s) ?? "",
                             GetNIfExists(item, "ChunkIndex", int.Parse),
-                            GetNIfExists(item, "ChunkSize", long.Parse),
+                            GetNIfExists(item, "CompressedSize", long.Parse),
                             keyBytes,
                             GetNIfExists(item, "Size", long.Parse))
                         {
@@ -545,7 +545,7 @@ public class DynamoDbDataStore(
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
 
         var encodedFilePath = WebUtility.UrlEncode(localFilePath);
-        var chunkKey = $"RUN_ID#{runId}#FILE#{encodedFilePath}#CHUNK#{Base64Url.Encode(details.HashKey)}";
+        var chunkKey = $"RUN_ID#{runId}#FILE#{encodedFilePath}#CHUNK#{Base64Url.Encode(details.HashId)}";
 
         var item = new Dictionary<string, AttributeValue>
         {
@@ -557,7 +557,7 @@ public class DynamoDbDataStore(
             ["Type"] = new() { S = nameof(DataChunkDetails) },
             ["LocalFilePath"] = new() { S = details.LocalFilePath },
             ["ChunkIndex"] = new() { N = details.ChunkIndex.ToString() },
-            ["ChunkSize"] = new() { N = details.ChunkSize.ToString() },
+            ["CompressedSize"] = new() { N = details.ChunkSize.ToString() },
             ["Size"] = new() { N = details.Size.ToString() }
         };
 
@@ -585,7 +585,7 @@ public class DynamoDbDataStore(
             // sort key
             ["SK"] = new() { S = $"RUN_ID#{runId}#FILE#{encodedFilePath}" },
             ["Type"] = new() { S = nameof(FileMetaData) },
-            ["HashKey"] = new() { S = hashString },
+            ["HashId"] = new() { S = hashString },
             ["Status"] = new() { S = Enum.GetName(status) },
             ["LocalFilePath"] = new() { S = localFilePath }
         };
@@ -637,7 +637,7 @@ public class DynamoDbDataStore(
                     ["#e"] = "Type",
                     ["#f"] = "LocalFilePath",
                     ["#g"] = "ChunkIndex",
-                    ["#h"] = "ChunkSize",
+                    ["#h"] = "CompressedSize",
                     ["#i"] = "Size",
                     ["#j"] = "CompressedSize",
                     ["#k"] = "OriginalSize",
@@ -645,7 +645,7 @@ public class DynamoDbDataStore(
                     ["#m"] = "Group",
                     ["#n"] = "AclEntries",
                     ["#o"] = "LastModified",
-                    ["#p"] = "HashKey"
+                    ["#p"] = "HashId"
                 }
             };
 
@@ -670,7 +670,7 @@ public class DynamoDbDataStore(
                         {
                             Status = GetSIfExists(item, "Status", Enum.Parse<FileStatus>),
                             SkipReason = GetSIfExists(item, "SkipReason", s => s) ?? "",
-                            HashKey = GetSIfExists(item, "HashKey", Base64Url.Decode) ?? [],
+                            HashKey = GetSIfExists(item, "HashId", Base64Url.Decode) ?? [],
                             Created = GetSIfExists(item, "Created", DateTimeOffset.Parse),
                             CompressedSize = GetNIfExists(item, "CompressedSize", long.Parse),
                             OriginalSize = GetNIfExists(item, "OriginalSize", long.Parse),
@@ -691,7 +691,7 @@ public class DynamoDbDataStore(
                         fileMetaData?.Chunks.TryAdd(chunkKey, new DataChunkDetails(
                             GetSIfExists(item, "LocalFilePath", s => s) ?? "",
                             GetNIfExists(item, "ChunkIndex", int.Parse),
-                            GetNIfExists(item, "ChunkSize", long.Parse),
+                            GetNIfExists(item, "CompressedSize", long.Parse),
                             keyBytes,
                             GetNIfExists(item, "Size", long.Parse))
                         {
@@ -754,9 +754,9 @@ public class DynamoDbDataStore(
             ["Type"] = new() { S = nameof(CloudChunkDetails) },
             ["S3Key"] = new() { S = cloudChunkDetails.S3Key },
             ["BucketName"] = new() { S = cloudChunkDetails.BucketName },
-            ["ChunkSize"] = new() { N = cloudChunkDetails.ChunkSize.ToString() },
-            ["Offset"] = new() { N = cloudChunkDetails.Offset.ToString() },
-            ["Size"] = new() { N = cloudChunkDetails.Size.ToString() }
+            ["CompressedSize"] = new() { N = cloudChunkDetails.CompressedSize.ToString() },
+            ["OffsetInS3BatchFile"] = new() { N = cloudChunkDetails.OffsetInS3BatchFile.ToString() },
+            ["Size"] = new() { N = cloudChunkDetails.SizeInSourceFile.ToString() }
         };
 
         var updateItemRequest = CreateUpdateItemRequest(item);
@@ -783,8 +783,8 @@ public class DynamoDbDataStore(
             {
                 ["#a"] = "S3Key",
                 ["#b"] = "BucketName",
-                ["#c"] = "ChunkSize",
-                ["#d"] = "Offset",
+                ["#c"] = "CompressedSize",
+                ["#d"] = "OffsetInS3BatchFile",
                 ["#e"] = "Size"
             }
         };
@@ -797,8 +797,8 @@ public class DynamoDbDataStore(
         var returnChunk = new CloudChunkDetails(
             GetSIfExists(item, "S3Key", s => s) ?? "",
             GetSIfExists(item, "BucketName", s => s) ?? "",
-            GetNIfExists(item, "ChunkSize", long.Parse),
-            GetNIfExists(item, "Offset", long.Parse),
+            GetNIfExists(item, "CompressedSize", long.Parse),
+            GetNIfExists(item, "OffsetInS3BatchFile", long.Parse),
             GetNIfExists(item, "Size", long.Parse),
             hashKey.ToArray());
 
@@ -848,8 +848,8 @@ public class DynamoDbDataStore(
                     ["#r"] = "RestoreDestination",
                     ["#s"] = "S3Key",
                     ["#t"] = "BucketName",
-                    ["#u"] = "ChunkSize",
-                    ["#v"] = "Offset",
+                    ["#u"] = "CompressedSize",
+                    ["#v"] = "OffsetInS3BatchFile",
                     ["#w"] = "Size",
                     ["#x"] = "Index"
                 }
@@ -913,8 +913,8 @@ public class DynamoDbDataStore(
                         metaData.CloudChunkDetails.TryAdd(chunkKey, new RestoreChunkDetails(
                             GetSIfExists(item, "S3Key", s => s) ?? "",
                             GetSIfExists(item, "BucketName", s => s) ?? "",
-                            GetNIfExists(item, "ChunkSize", long.Parse),
-                            GetNIfExists(item, "Offset", long.Parse),
+                            GetNIfExists(item, "CompressedSize", long.Parse),
+                            GetNIfExists(item, "OffsetInS3BatchFile", long.Parse),
                             GetNIfExists(item, "Size", long.Parse),
                             keyBytes,
                             GetNIfExists(item, "index", int.Parse))
@@ -1014,7 +1014,7 @@ public class DynamoDbDataStore(
             var items = from chunkKv in fileMeta.CloudChunkDetails
                 select chunkKv.Value
                 into chunk
-                let chunkKeyB64 = Base64Url.Encode(chunk.HashKey)
+                let chunkKeyB64 = Base64Url.Encode(chunk.HashInSourceFile)
                 let chunkSk = $"{fileSk}#CHUNK_ID#{chunkKeyB64}"
                 select new Dictionary<string, AttributeValue>
                 {
@@ -1024,9 +1024,9 @@ public class DynamoDbDataStore(
                     ["S3Key"] = new() { S = chunk.S3Key },
                     ["BucketName"] = new() { S = chunk.BucketName },
                     ["Index"] = new() { N = chunk.Index.ToString() },
-                    ["ChunkSize"] = new() { N = chunk.ChunkSize.ToString() },
-                    ["Offset"] = new() { N = chunk.Offset.ToString() },
-                    ["Size"] = new() { N = chunk.Size.ToString() },
+                    ["CompressedSize"] = new() { N = chunk.CompressedSize.ToString() },
+                    ["OffsetInS3BatchFile"] = new() { N = chunk.OffsetInS3BatchFile.ToString() },
+                    ["Size"] = new() { N = chunk.SizeInSourceFile.ToString() },
                     ["Status"] = new() { S = Enum.GetName(chunk.Status) }
                 };
             foreach (var item in items)
@@ -1098,7 +1098,7 @@ public class DynamoDbDataStore(
         var items = from chunkKv in fileMeta.CloudChunkDetails
             select chunkKv.Value
             into chunk
-            let chunkKeyB64 = Base64Url.Encode(chunk.HashKey)
+            let chunkKeyB64 = Base64Url.Encode(chunk.HashInSourceFile)
             let chunkSk = $"{fileSk}#CHUNK_ID#{chunkKeyB64}"
             select new Dictionary<string, AttributeValue>
             {
@@ -1108,9 +1108,9 @@ public class DynamoDbDataStore(
                 ["S3Key"] = new() { S = chunk.S3Key },
                 ["BucketName"] = new() { S = chunk.BucketName },
                 ["Index"] = new() { N = chunk.Index.ToString() },
-                ["ChunkSize"] = new() { N = chunk.ChunkSize.ToString() },
-                ["Offset"] = new() { N = chunk.Offset.ToString() },
-                ["Size"] = new() { N = chunk.Size.ToString() },
+                ["CompressedSize"] = new() { N = chunk.CompressedSize.ToString() },
+                ["OffsetInS3BatchFile"] = new() { N = chunk.OffsetInS3BatchFile.ToString() },
+                ["Size"] = new() { N = chunk.SizeInSourceFile.ToString() },
                 ["Status"] = new() { S = Enum.GetName(chunk.Status) }
             };
         foreach (var item in items)

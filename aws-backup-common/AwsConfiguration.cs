@@ -5,7 +5,7 @@ namespace aws_backup_common;
 
 //settings that client should not change
 public sealed record AwsConfiguration(
-    long ChunkSizeBytes,
+    long S3BatchSizeBytes,
     string BucketName,
     string SqsInboxQueueUrl,
     string ArchiveCompleteTopicArn,

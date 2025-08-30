@@ -160,14 +160,14 @@
 //         // Should not yet finalize
 //         _snsMed.VerifyNoOtherCalls();
 //
-//         await sut.RecordChunkUpload("r4", "a", d1.HashKey, CancellationToken.None);
-//         await sut.RecordChunkUpload("r4", "b", d3.HashKey, CancellationToken.None);
+//         await sut.RecordChunkUpload("r4", "a", d1.HashId, CancellationToken.None);
+//         await sut.RecordChunkUpload("r4", "b", d3.HashId, CancellationToken.None);
 //
 //         // Should not yet finalize
 //         _snsMed.VerifyNoOtherCalls();
 //         await sut.ReportAllFilesListed(run, CancellationToken.None);
-//         await sut.RecordChunkUpload("r4", "a", d2.HashKey, CancellationToken.None);
-//         await sut.RecordChunkUpload("r4", "b", d4.HashKey, CancellationToken.None);
+//         await sut.RecordChunkUpload("r4", "a", d2.HashId, CancellationToken.None);
+//         await sut.RecordChunkUpload("r4", "b", d4.HashId, CancellationToken.None);
 //
 //         // Now run is completed and SNS message sent
 //         _snsMed.Verify(s =>

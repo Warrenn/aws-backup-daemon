@@ -17,7 +17,7 @@ public interface IContextResolver
 
     string LocalRestoreFolder(string requestRestoreId);
     string ArchiveRunId(DateTimeOffset utcNow);
-    DateTimeOffset NextRetryTime(int attemptCount);
+    TimeSpan NextRetryTimeSpan(int attemptCount);
     S3StorageClass ColdStorage();
     S3StorageClass HotStorage();
     S3StorageClass LowCostStorage();
@@ -384,11 +384,11 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
         return $"{timestamp}";
     }
 
-    public DateTimeOffset NextRetryTime(int attemptCount)
+    public TimeSpan NextRetryTimeSpan(int attemptCount)
     {
         // Exponential backoff: 2^attemptCount minutes, max 600 seconds (10 minutes)
         var delaySeconds = Math.Min(Math.Pow(2, attemptCount) * 60, 600);
-        return DateTimeOffset.UtcNow.AddSeconds(delaySeconds);
+        return TimeSpan.FromSeconds(delaySeconds);
     }
 
     public bool NotifyOnArchiveComplete()

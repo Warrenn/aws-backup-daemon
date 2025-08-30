@@ -51,8 +51,8 @@ public class RetryActorTests
         await chan.Writer.WriteAsync(state);
         chan.Writer.Complete();
 
-        // context: NextRetryTime shouldn't matter
-        _ctx.Setup(c => c.NextRetryTime(It.IsAny<int>()))
+        // context: NextRetryTimeSpan shouldn't matter
+        _ctx.Setup(c => c.NextRetryTimeSpan(It.IsAny<int>()))
             .Returns(DateTimeOffset.UtcNow.AddSeconds(1));
 
         // Act
@@ -93,7 +93,7 @@ public class RetryActorTests
         await chan.Writer.WriteAsync(state);
         chan.Writer.Complete();
 
-        _ctx.Setup(c => c.NextRetryTime(It.IsAny<int>()))
+        _ctx.Setup(c => c.NextRetryTimeSpan(It.IsAny<int>()))
             .Returns(DateTimeOffset.UtcNow);
         _ctx.Setup(c => c.RetryCheckIntervalMs())
             .Returns(1);
@@ -135,8 +135,8 @@ public class RetryActorTests
         await chan.Writer.WriteAsync(state);
         chan.Writer.Complete();
 
-        // NextRetryTime should be called with new attempt count
-        _ctx.Setup(c => c.NextRetryTime(1))
+        // NextRetryTimeSpan should be called with new attempt count
+        _ctx.Setup(c => c.NextRetryTimeSpan(1))
             .Returns(now.AddMinutes(5));
 
         var tp = new FakeTimeProvider(now);
@@ -174,7 +174,7 @@ public class RetryActorTests
 
         // general limit set to 5
         _ctx.Setup(c => c.GeneralRetryLimit()).Returns(5);
-        _ctx.Setup(c => c.NextRetryTime(It.IsAny<int>()))
+        _ctx.Setup(c => c.NextRetryTimeSpan(It.IsAny<int>()))
             .Returns(DateTimeOffset.UtcNow.AddSeconds(1));
 
         var tp = new FakeTimeProvider(DateTimeOffset.UtcNow);

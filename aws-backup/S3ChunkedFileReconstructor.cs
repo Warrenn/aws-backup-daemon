@@ -1,7 +1,8 @@
-using System.IO.Compression;
 using System.Security.Cryptography;
 using Amazon.S3.Model;
 using aws_backup_common;
+using Microsoft.Extensions.Logging;
+using ZstdSharp;
 
 namespace aws_backup;
 
@@ -23,7 +24,8 @@ public interface IS3ChunkedFileReconstructor
 public sealed class S3ChunkedFileReconstructor(
     IContextResolver contextResolver,
     IAwsClientFactory awsClientFactory,
-    IAesContextResolver aesContextResolver
+    IAesContextResolver aesContextResolver,
+    ILogger<S3ChunkedFileReconstructor> logger
 ) : IS3ChunkedFileReconstructor
 {
     public async Task<ReconstructResult> ReconstructAsync(
@@ -84,17 +86,17 @@ public sealed class S3ChunkedFileReconstructor(
 
             var tasks = Enumerable.Range(0, chunkDetails.Length).Select(async idx =>
             {
-                var (key, bucketName, chunkSize, offset, size, _) = chunkDetails[idx];
+                var (s3Key, bucketName, offsetInS3, compressedSize, offsetInSourceFile, _, _, _) = chunkDetails[idx];
                 await sem.WaitAsync(cancellationToken);
                 try
                 {
                     var s3 = await awsClientFactory.CreateS3Client(cancellationToken);
-                    var range = new ByteRange(offset, offset + size);
+                    var range = new ByteRange(offsetInS3, offsetInS3 + compressedSize);
 
                     var resp = await s3.GetObjectAsync(new GetObjectRequest
                     {
                         BucketName = bucketName,
-                        Key = key,
+                        Key = s3Key,
                         ByteRange = range
                     }, cancellationToken);
 
@@ -117,9 +119,7 @@ public sealed class S3ChunkedFileReconstructor(
                         aes.CreateDecryptor(),
                         CryptoStreamMode.Read);
 
-                    await using var gzipStream = new BrotliStream(
-                        decryptStream,
-                        CompressionMode.Decompress);
+                    await using var zstdStream = new DecompressionStream(decryptStream);
 
                     // 3) write into output at correct offset
                     await using var outFs = new FileStream(
@@ -129,11 +129,11 @@ public sealed class S3ChunkedFileReconstructor(
                         FileShare.Write,
                         bufferSize, FileOptions.None);
 
-                    outFs.Seek(idx * chunkSize, SeekOrigin.Begin);
+                    outFs.Seek(offsetInSourceFile, SeekOrigin.Begin);
 
                     var buf = new byte[bufferSize];
                     int read;
-                    while ((read = await gzipStream.ReadAsync(buf, cancellationToken)) > 0)
+                    while ((read = await zstdStream.ReadAsync(buf, cancellationToken)) > 0)
                         await outFs.WriteAsync(buf.AsMemory(0, read), cancellationToken);
                 }
                 finally
@@ -163,7 +163,7 @@ public sealed class S3ChunkedFileReconstructor(
             }
             catch
             {
-                // ignored
+                logger.LogWarning("Failed to delete incomplete reconstructed file {FilePath}", outputFilePath);
             }
 
             return new ReconstructResult(null, ex);

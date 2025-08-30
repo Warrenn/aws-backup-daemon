@@ -157,7 +157,7 @@
 //
 //         _batchMediator.Verify(x => x.ProcessBatch(It.IsAny<UploadBatch>(), It.IsAny<CancellationToken>()), Times.Never);
 //         _archiveService.Verify(
-//             x => x.RecordChunkUpload("run-3", "file3.txt", chunk.HashKey, It.IsAny<CancellationToken>()), Times.Once);
+//             x => x.RecordChunkUpload("run-3", "file3.txt", chunk.HashId, It.IsAny<CancellationToken>()), Times.Once);
 //     }
 //
 //     [Fact]

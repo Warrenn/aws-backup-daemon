@@ -7,7 +7,7 @@ public interface IDataChunkService
 {
     Task<bool> ChunkAlreadyUploaded(DataChunkDetails chunk, CancellationToken cancellationToken);
 
-    Task MarkChunkAsUploaded(DataChunkDetails chunk, long byteIndex, string key, string bucketName,
+    Task MarkChunkAsUploaded(DataChunkDetails chunk, long offsetInS3, string key, string bucketName,
         CancellationToken cancellationToken);
 
     void ClearCache();
@@ -22,14 +22,14 @@ public sealed class DataChunkService(
 
     public async Task<bool> ChunkAlreadyUploaded(DataChunkDetails chunk, CancellationToken cancellationToken)
     {
-        var key = new ByteArrayKey(chunk.HashKey);
+        var key = new ByteArrayKey(chunk.HashId);
         if (_cache.ContainsKey(key)) return true;
         var inStorage = await cloudChunkStorage.ContainsKey(key, cancellationToken);
         if (inStorage) _cache.TryAdd(key, chunk);
         return inStorage;
     }
 
-    public async Task MarkChunkAsUploaded(DataChunkDetails chunk, long byteIndex, string s3Key, string bucketName,
+    public async Task MarkChunkAsUploaded(DataChunkDetails chunk, long offsetInS3, string s3Key, string bucketName,
         CancellationToken cancellationToken)
     {
         var alreadyUploaded = await ChunkAlreadyUploaded(chunk, cancellationToken);
@@ -37,14 +37,14 @@ public sealed class DataChunkService(
         if (alreadyUploaded)
             return;
 
-        var hashKey = new ByteArrayKey(chunk.HashKey);
+        var hashKey = new ByteArrayKey(chunk.HashId);
         var cloudChunkDetails = new CloudChunkDetails(
             s3Key,
             bucketName,
-            chunk.ChunkSize,
-            byteIndex,
+            offsetInS3,
+            chunk.CompressedSize,
             chunk.Size,
-            chunk.HashKey);
+            chunk.HashId);
         var addCloudChunkDetailsCommand = new AddCloudChunkDetailsCommand(
             hashKey,
             cloudChunkDetails);

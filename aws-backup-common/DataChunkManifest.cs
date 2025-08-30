@@ -10,17 +10,17 @@ public enum ChunkStatus
 public record CloudChunkDetails(
     string S3Key, // S3 key for the chunk
     string BucketName, // S3 bucket name
-    long ChunkSize,
-    long Offset,
+    long OffsetInS3BatchFile,
+    long CompressedSize,
     long Size,
-    byte[] HashKey);
+    byte[] HashId);
 
 public sealed record DataChunkDetails(
     string LocalFilePath,
-    int ChunkIndex,
-    long ChunkSize,
-    byte[] HashKey,
-    long Size)
+    long CompressedSize,
+    long Offset,
+    long Size,
+    byte[] HashId)
 {
     public ChunkStatus Status { get; set; } = ChunkStatus.Added;
 }

@@ -139,7 +139,7 @@ public class HotStorageServiceIntegrationTests
                 Assert.Equal(exp.LocalFilePath, act.LocalFilePath);
                 Assert.Equal(exp.ChunkIndex, act.ChunkIndex);
                 Assert.Equal(exp.Size, act.Size);
-                Assert.True(exp.HashKey.AsSpan().SequenceEqual(act.HashKey));
+                Assert.True(exp.HashId.AsSpan().SequenceEqual(act.HashId));
             }
         }
     }

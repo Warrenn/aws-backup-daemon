@@ -33,11 +33,11 @@ public enum RestorePathStrategy
 public sealed record RestoreChunkDetails(
     string S3Key, // S3 key for the chunk
     string BucketName, // S3 bucket name
-    long ChunkSize,
-    long Offset,
+    long OffsetInS3BatchFile,
+    long CompressedSize,
+    long OffsetInSourceFile,
     long Size,
-    byte[] HashKey,
-    int Index) : CloudChunkDetails(S3Key, BucketName, ChunkSize, Offset, Size, HashKey)
+    byte[] HashId) : CloudChunkDetails(S3Key, BucketName, OffsetInS3BatchFile, CompressedSize, Size, HashId)
 {
     public S3ChunkRestoreStatus Status { get; set; } = S3ChunkRestoreStatus.PendingDeepArchiveRestore;
 }

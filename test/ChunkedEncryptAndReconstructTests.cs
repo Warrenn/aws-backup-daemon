@@ -97,10 +97,10 @@
 //         var cloudDetails = chunks.Select(ch => new RestoreChunkDetails(
 //             Path.GetFileName(ch.LocalFilePath),
 //             bucket,
-//             ch.ChunkSize,
+//             ch.CompressedSize,
 //             0,
 //             0,
-//             ch.HashKey.ToArray(),
+//             ch.HashId.ToArray(),
 //             0
 //         )).ToArray();
 //
@@ -217,10 +217,10 @@
 //         var cloudDetails = chunks.Select(ch => new RestoreChunkDetails(
 //             Path.GetFileName(ch.LocalFilePath),
 //             bucket,
-//             ch.ChunkSize,
+//             ch.CompressedSize,
 //             0,
 //             0,
-//             ch.HashKey.ToArray(),
+//             ch.HashId.ToArray(),
 //             0
 //         )).ToArray();
 //

@@ -107,7 +107,7 @@ public sealed class ArchiveService(
     public async Task RecordFailedChunk(ArchiveRun run, DataChunkDetails details, Exception exception,
         CancellationToken cancellationToken)
     {
-        var chunkKey = new ByteArrayKey(details.HashKey);
+        var chunkKey = new ByteArrayKey(details.HashId);
         var filesSnapshot = run.Files.ToArray();
 
         foreach (var (filePath, fileMetaData) in filesSnapshot)
@@ -151,7 +151,7 @@ public sealed class ArchiveService(
     public async Task RecordChunkUpload(ArchiveRun run, DataChunkDetails chunkDetails,
         CancellationToken cancellationToken)
     {
-        var chunkKey = new ByteArrayKey(chunkDetails.HashKey);
+        var chunkKey = new ByteArrayKey(chunkDetails.HashId);
         var filesSnapshot = run.Files.ToArray();
 
         foreach (var (filePath, fileMetaData) in filesSnapshot)
@@ -187,7 +187,7 @@ public sealed class ArchiveService(
     public async Task AddChunkToFile(ArchiveRun run, FileMetaData fileMetaData, DataChunkDetails chunkDetails,
         CancellationToken cancellationToken)
     {
-        var chunkKey = new ByteArrayKey(chunkDetails.HashKey);
+        var chunkKey = new ByteArrayKey(chunkDetails.HashId);
         fileMetaData.Chunks.TryAdd(chunkKey, chunkDetails);
 
         var saveChunkDetailsCommand = new SaveChunkDetailsCommand(

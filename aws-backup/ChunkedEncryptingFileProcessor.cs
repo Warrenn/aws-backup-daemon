@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using aws_backup_common;
 using Serilog;
+using ZstdSharp;
 
 // ReSharper disable AccessToModifiedClosure
 
@@ -19,11 +20,14 @@ public interface IChunkedEncryptingFileProcessor
 
 public sealed class ChunkedEncryptingFileProcessor(
     IContextResolver contextResolver,
-    AwsConfiguration awsConfiguration,
     IAesContextResolver aesContextResolver,
     IUploadChunksMediator mediator,
     IArchiveService archiveService) : IChunkedEncryptingFileProcessor
 {
+    private const int _defaultMinSize = 2 * 1024 * 1024; // ~2 MiB
+    private const int _defaultMaxSize = 8 * 1024 * 1024; // ~8 MiB
+    private const int _defaultMaskBits = 22; // 2^22 = 4 MiB expected
+
     public async Task<FileProcessResult> ProcessFileAsync(ArchiveRun run, FileMetaData fileMetaData,
         CancellationToken cancellationToken = default)
     {
@@ -40,10 +44,19 @@ public sealed class ChunkedEncryptingFileProcessor(
             using var fullHasher = SHA256.Create();
             var chunks = new List<DataChunkDetails>();
             var bufferSize = contextResolver.ReadBufferSize();
-            var chunkSize = awsConfiguration.ChunkSizeBytes;
             var cacheFolder = contextResolver.LocalCacheFolder();
             var compressionLevel = contextResolver.ZipCompressionLevel();
             var aesKey = await aesContextResolver.FileEncryptionKey(cancellationToken);
+            var offsetInFile = 0L;
+
+            var zstdCompressionLevel = compressionLevel switch
+            {
+                CompressionLevel.NoCompression => 1,
+                CompressionLevel.Fastest => 7,
+                CompressionLevel.Optimal => 14,
+                CompressionLevel.SmallestSize => 22,
+                _ => 14
+            };
 
             // open for read, disallow writers
             await using var fs = new FileStream(
@@ -59,39 +72,47 @@ public sealed class ChunkedEncryptingFileProcessor(
 
             // will be initialized at first write
             SHA256? chunkHasher = null!;
-            BrotliStream gzipStream = null!;
+            CompressionStream zstdStream = null!;
             CryptoStream cryptoStream = null!;
             FileStream chunkFileFs = null!;
 
             var buffer = new byte[bufferSize];
+            var rollingHasher = new RollingBuzhash32();
             int read;
 
             while ((read = await fs.ReadAsync(buffer, cancellationToken)) > 0)
             {
                 // feed the full-file hash
-                fullHasher.TransformBlock(buffer, 0, read, null, 0);
 
-                var offset = 0;
-                while (offset < read)
+                var inputOffset = 0;
+                while (inputOffset < read)
                 {
+                    var b = buffer[inputOffset];
+                    rollingHasher.Push(b);
+
+                    fullHasher.TransformBlock(buffer, inputOffset, 1, null, 0);
                     // ensure chunk pipeline is ready
                     if (chunkHasher is null)
                         InitializeChunkPipeline();
                     if (chunkHasher is null) continue; // safety check
 
-                    // how many bytes can we write into this chunk before we hit chunkSize?
-                    var spaceLeft = chunkSize - bytesInChunk;
-                    var toWrite = Math.Min(spaceLeft, read - offset);
-
                     // feed chunk hash + compression + encryption
-                    chunkHasher.TransformBlock(buffer, offset, (int)toWrite, null, 0);
-                    await gzipStream.WriteAsync(buffer.AsMemory(offset, (int)toWrite), cancellationToken);
+                    chunkHasher.TransformBlock(buffer, inputOffset, 1, null, 0);
+                    await zstdStream.WriteAsync(buffer.AsMemory(inputOffset, 1), cancellationToken);
 
-                    bytesInChunk += toWrite;
-                    offset += (int)toWrite;
+                    bytesInChunk++;
+                    inputOffset++;
+                    offsetInFile++;
 
-                    if (bytesInChunk >= chunkSize)
-                        await FinalizeChunkAsync();
+                    if (rollingHasher.Filled != RollingBuzhash32.WindowSize || bytesInChunk < _defaultMinSize)
+                        continue;
+
+                    var maskHit = (rollingHasher.Value & ((1 << _defaultMaskBits) - 1)) == 0;
+                    if (!maskHit && bytesInChunk < _defaultMaxSize)
+                        continue;
+
+                    // cut chunk here
+                    await FinalizeChunkAsync();
                 }
             }
 
@@ -103,7 +124,7 @@ public sealed class ChunkedEncryptingFileProcessor(
             fullHasher.TransformFinalBlock([], 0, 0);
             fileMetaData.OriginalSize = fs.Length;
             fileMetaData.HashKey = fullHasher.Hash ?? [];
-            fileMetaData.CompressedSize = chunks.Sum(c => c.Size);
+            fileMetaData.CompressedSize = chunks.Sum(c => c.CompressedSize);
 
             return new FileProcessResult(fileMetaData);
 
@@ -120,7 +141,7 @@ public sealed class ChunkedEncryptingFileProcessor(
                     Directory.CreateDirectory(cacheFolder);
 
                 var fileNameHash = Base64Url.ComputeSimpleHash(fileMetaData.LocalFilePath);
-                var outPath = $"{Path.Combine(cacheFolder, fileNameHash)}.chunk{chunkIndex:D8}.br.aes";
+                var outPath = $"{Path.Combine(cacheFolder, fileNameHash)}.chunk{chunkIndex:D8}.zstd.aes";
                 if (File.Exists(outPath)) File.Delete(outPath);
                 removableFiles.Add(outPath);
 
@@ -139,7 +160,7 @@ public sealed class ChunkedEncryptingFileProcessor(
 
                 // 4) crypto + gzip stream
                 cryptoStream = new CryptoStream(chunkFileFs, aes.CreateEncryptor(), CryptoStreamMode.Write);
-                gzipStream = new BrotliStream(cryptoStream, compressionLevel, true);
+                zstdStream = new CompressionStream(cryptoStream, zstdCompressionLevel);
             }
 
             async Task FinalizeChunkAsync()
@@ -150,8 +171,8 @@ public sealed class ChunkedEncryptingFileProcessor(
                 chunkHasher.TransformFinalBlock([], 0, 0);
 
                 // finish compression & encryption
-                await gzipStream.FlushAsync(cancellationToken);
-                await gzipStream.DisposeAsync(); // closes GZip
+                await zstdStream.FlushAsync(cancellationToken);
+                await zstdStream.DisposeAsync(); // closes Zstd
                 await cryptoStream.FlushFinalBlockAsync(cancellationToken);
                 await cryptoStream.DisposeAsync(); // closes CryptoStream
                 await chunkFileFs.DisposeAsync(); // closes file stream
@@ -160,11 +181,10 @@ public sealed class ChunkedEncryptingFileProcessor(
 
                 var chunkData = new DataChunkDetails(
                     chunkFileFs.Name,
-                    chunkIndex,
-                    chunkSize,
-                    chunkHasher.Hash ?? [],
-                    fileInfo.Length
-                )
+                    fileInfo.Length,
+                    offsetInFile - bytesInChunk,
+                    bytesInChunk,
+                    chunkHasher.Hash ?? [])
                 {
                     Status =
                         ChunkStatus.Added
@@ -184,9 +204,10 @@ public sealed class ChunkedEncryptingFileProcessor(
                 // prepare for next chunk
                 chunkIndex++;
                 chunkHasher = null!;
-                gzipStream = null!;
+                zstdStream = null!;
                 cryptoStream = null!;
                 chunkFileFs = null!;
+                rollingHasher.Reset();
             }
         }
         catch (Exception ex)

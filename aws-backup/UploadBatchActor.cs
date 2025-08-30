@@ -69,28 +69,23 @@ public sealed class UploadBatchActor(
                         new Tag { Key = "storage-class", Value = "cold" },
                         new Tag { Key = "archive-run-id", Value = S3Service.ScrubTagValue(batch.ArchiveRun.RunId) },
                         new Tag { Key = "client-id", Value = S3Service.ScrubTagValue(contextResolver.ClientId()) },
-                        new Tag { Key = "compression", Value = "brotli" },
-                        new Tag
-                        {
-                            Key = "chunk-size",
-                            Value = S3Service.ScrubTagValue(awsConfiguration.ChunkSizeBytes.ToString())
-                        }
+                        new Tag { Key = "compression", Value = "zstd" }
                     ]
                 };
                 await transferUtil.UploadAsync(uploadReq, cancellationToken);
                 logger.LogInformation("Upload complete for batch {BatchFileName} for backup {ArchiveRunId}",
                     batch.LocalFilePath, batch.ArchiveRun.RunId);
 
-                var offset = 0L;
+                var offsetInS3Batch = 0L;
                 foreach (var (archiveRun, fileMetaData, chunk) in batch.Requests)
                 {
                     logger.LogInformation(
-                        "Marking chunk {ChunkIndex} for file {ParentFile} as uploaded. Key: {Key}, Bucket: {BucketName}, Offset: {Offset} Size: {Size}",
-                        chunk.ChunkIndex, fileMetaData.LocalFilePath, key, bucketName, offset, chunk.Size);
+                        "Marking chunk {ChunkIndex} for file {ParentFile} as uploaded. Key: {Key}, Bucket: {BucketName}, OffsetInS3BatchFile: {OffsetInS3BatchFile} Size: {Size}",
+                        chunk.Offset, fileMetaData.LocalFilePath, key, bucketName, offsetInS3Batch, chunk.Size);
 
                     await dataChunkService.MarkChunkAsUploaded(
                         chunk,
-                        offset,
+                        offsetInS3Batch,
                         key,
                         bucketName,
                         cancellationToken);
@@ -100,7 +95,7 @@ public sealed class UploadBatchActor(
                         chunk,
                         cancellationToken);
 
-                    offset += chunk.Size;
+                    offsetInS3Batch += chunk.CompressedSize;
                 }
 
                 if (File.Exists(batch.LocalFilePath)) File.Delete(batch.LocalFilePath);
@@ -122,30 +117,51 @@ public sealed class UploadBatchActor(
     {
         try
         {
-            var offset = 0;
+            var bytesToWrite = 0;
             var sourcePath = batch.LocalFilePath;
+            var bufferSize = contextResolver.ReadBufferSize();
+            var buffer = new byte[bufferSize];
+            var read = 0;
+
             await using var source = new FileStream(
                 sourcePath,
                 FileMode.Open,
                 FileAccess.Read,
                 FileShare.Read,
-                1,
-                FileOptions.Asynchronous);
+                bufferSize,
+                FileOptions.SequentialScan);
 
             foreach (var request in batch.Requests)
             {
-                var (_, _, (destPath, _, _, _, size)) = request;
-                var length = (int)size;
-                var buffer = new byte[length];
-                var read = await source.ReadAsync(buffer.AsMemory(offset, length), cancellationToken);
-                if (read < length)
-                    Array.Resize(ref buffer, read);
+                var destPath = request.DataChunkDetails.LocalFilePath;
+                var bytesRemaining = request.DataChunkDetails.CompressedSize;
 
-                logger.LogInformation("Re-writing to disk chunk {DestPath} with size {Size}", destPath, size);
-                await File.WriteAllBytesAsync(destPath, buffer, cancellationToken);
+                logger.LogInformation("Re-writing to disk chunk {DestPath} with size {Size}", destPath, bytesRemaining);
 
+                await using var destFs = new FileStream(
+                    destPath,
+                    FileMode.Create,
+                    FileAccess.Write,
+                    FileShare.None,
+                    bufferSize,
+                    FileOptions.WriteThrough);
+
+                if (read > bytesToWrite)
+                {
+                    await destFs.WriteAsync(buffer.AsMemory(bytesToWrite), cancellationToken);
+                    bytesRemaining -= read - bytesToWrite;
+                }
+
+                while ((read = await source.ReadAsync(buffer.AsMemory(), cancellationToken)) > 0)
+                {
+                    bytesToWrite = Math.Min(read, (int)bytesRemaining);
+                    await destFs.WriteAsync(buffer.AsMemory(0, bytesToWrite), cancellationToken);
+                    bytesRemaining -= bytesToWrite;
+                    if (bytesRemaining <= 0) break;
+                }
+
+                logger.LogInformation("Re-write complete for chunk {DestPath}", destPath);
                 await retryMediator.RetryAttempt(request, cancellationToken);
-                offset += read;
             }
         }
         catch (Exception ex)
