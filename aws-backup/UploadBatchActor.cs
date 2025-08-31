@@ -50,7 +50,7 @@ public sealed class UploadBatchActor(
                 var bucketName = awsConfiguration.BucketName;
                 var storageClass = contextResolver.ColdStorage();
                 var serverSideEncryptionMethod = contextResolver.ServerSideEncryption();
-                var s3PartSize = contextResolver.S3PartSize();
+                var s3PartSize = contextResolver.S3BatchSize();
                 var key = contextResolver.BatchS3Key(batch.LocalFilePath);
 
                 // upload the batch file to S3

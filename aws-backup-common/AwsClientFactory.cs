@@ -1,11 +1,10 @@
 using System.Globalization;
-using Amazon.DynamoDBv2;
-using Amazon.IdentityManagement;
 using Amazon.Runtime;
 using Amazon.Runtime.CredentialManagement;
 using Amazon.S3;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleSystemsManagement;
+using Amazon.CloudFormation;
 using Amazon.SQS;
 using Microsoft.Extensions.Logging;
 using temporary_credentials;
@@ -18,8 +17,7 @@ public interface IAwsClientFactory
     Task<IAmazonSimpleSystemsManagement> CreateSsmClient(CancellationToken cancellationToken = default);
     Task<IAmazonSQS> CreateSqsClient(CancellationToken cancellationToken);
     Task<IAmazonSimpleNotificationService> CreateSnsClient(CancellationToken cancellationToken);
-    Task<AmazonIdentityManagementServiceClient> CreateIamClient(CancellationToken cancellationToken = default);
-    Task<AmazonDynamoDBClient> CreateDynamoDbClient(CancellationToken cancellationToken = default);
+    Task<IAmazonCloudFormation> CreateCloudFormationClient(CancellationToken cancellationToken = default);
     void ResetCachedCredentials();
 }
 
@@ -73,9 +71,9 @@ public sealed class AwsClientFactory(
             : new AmazonSimpleNotificationServiceClient(config);
     }
 
-    public async Task<AmazonIdentityManagementServiceClient> CreateIamClient(CancellationToken cancellationToken)
+    public async Task<IAmazonCloudFormation> CreateCloudFormationClient(CancellationToken cancellationToken)
     {
-        var config = new AmazonIdentityManagementServiceConfig
+        var config = new AmazonCloudFormationConfig
         {
             MaxErrorRetry = resolver.GeneralRetryLimit(),
             RetryMode = resolver.GetAwsRetryMode(),
@@ -85,26 +83,10 @@ public sealed class AwsClientFactory(
 
         var credentials = await GetCredentialsAsync(cancellationToken);
         return credentials != null
-            ? new AmazonIdentityManagementServiceClient(credentials, config)
-            : new AmazonIdentityManagementServiceClient(config);
+            ? new AmazonCloudFormationClient(credentials, config)
+            : new AmazonCloudFormationClient(config);
     }
-
-    public async Task<AmazonDynamoDBClient> CreateDynamoDbClient(CancellationToken cancellationToken = default)
-    {
-        var config = new AmazonDynamoDBConfig
-        {
-            MaxErrorRetry = resolver.GeneralRetryLimit(),
-            RetryMode = resolver.GetAwsRetryMode(),
-            Timeout = TimeSpan.FromSeconds(resolver.ShutdownTimeoutSeconds()),
-            RegionEndpoint = resolver.GetAwsRegion()
-        };
-
-        var credentials = await GetCredentialsAsync(cancellationToken);
-        return credentials != null
-            ? new AmazonDynamoDBClient(credentials, config)
-            : new AmazonDynamoDBClient(config);
-    }
-
+    
     public void ResetCachedCredentials()
     {
         _cachedCredentials = null;

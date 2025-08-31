@@ -82,11 +82,11 @@ public sealed class S3ChunkedFileReconstructor(
             }
 
             var sem = new SemaphoreSlim(maxDownloadConcurrency);
-            var chunkDetails = request.CloudChunkDetails.OrderBy(d => d.Index).ToArray();
+            var chunkDetails = request.CloudChunkDetails.OrderBy(d => d.OffsetInSourceFile).ToArray();
 
             var tasks = Enumerable.Range(0, chunkDetails.Length).Select(async idx =>
             {
-                var (s3Key, bucketName, offsetInS3, compressedSize, offsetInSourceFile, _, _, _) = chunkDetails[idx];
+                var (s3Key, bucketName, offsetInS3, compressedSize, offsetInSourceFile, _, _) = chunkDetails[idx];
                 await sem.WaitAsync(cancellationToken);
                 try
                 {

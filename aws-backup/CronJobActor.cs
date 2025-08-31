@@ -72,14 +72,15 @@ public sealed class CronJobActor(
                     continue;
 
                 var waitForSignal = cronScheduleMediator.WaitForCronScheduleChangeAsync(cancellationToken).AsTask();
-                var delay = Task.Delay(delayTime, cancellationToken);
+                var timer = new PeriodicTimer(delayTime, timeProvider);
+                var delay = timer.WaitForNextTickAsync(cancellationToken).AsTask();
 
                 // Whichever completes first…
                 var finished = await Task.WhenAny(waitForSignal, delay);
 
                 if (finished == waitForSignal)
                 {
-                    cronSchedule = await waitForSignal;
+                    cronSchedule = waitForSignal.Result;
                     scheduler = cronSchedulerFactory.Create(cronSchedule);
                     logger.LogInformation("Cron schedule changed {cronSchedule}.", cronSchedule); // SignalCronScheduleChange arrived
                     continue;
@@ -93,11 +94,11 @@ public sealed class CronJobActor(
                     timeProvider.GetUtcNow());
                 await mediator.ScheduleRunRequest(runRequest, cancellationToken);
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                if (cancellationToken.IsCancellationRequested) break;
+                break;
             }
-            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            catch (Exception ex)
             {
                 await snsMessageMediator.PublishMessage(
                     new SnsMessage($"Error running cron job {cronSchedule}",

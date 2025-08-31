@@ -23,7 +23,7 @@ public interface IContextResolver
     S3StorageClass LowCostStorage();
     ServerSideEncryptionMethod ServerSideEncryption();
     int ReadBufferSize();
-    long S3PartSize();
+    long S3BatchSize();
     bool KeepTimeStamps();
     bool KeepOwnerGroup();
     bool KeepAclEntries();
@@ -53,14 +53,12 @@ public interface IContextResolver
     string RolesAnyWhereTrustAnchorArn();
     string RolesAnyWhereCertificateFileName();
     string RolesAnyWherePrivateKeyFileName();
-    string ParamBasePath();
     bool NotifyOnArchiveComplete();
     bool NotifyOnArchiveCompleteErrors();
     bool NotifyOnRestoreComplete();
     bool NotifyOnRestoreCompleteErrors();
     bool NotifyOnException();
     int DaysToKeepRestoredCopy();
-    string S3DataPrefix();
     string S3LogFolder();
     string PathsToArchive();
     string ClientId();
@@ -71,23 +69,21 @@ public interface IContextResolver
     int AwsTimeoutSeconds();
     int AwsS3TimeoutSeconds();
     int NoOfConcurrentDbWriters();
-    long FlushDelaySeconds();
 }
 
-public abstract class ContextResolverBase(CommonConfiguration configuration, string clientId) : IContextResolver
+public class ContextResolverBase(Configuration configuration) : IContextResolver
 {
-    private readonly string _clientId = ScrubClientId(clientId);
+    private readonly string _clientId = ScrubClientId(configuration.ClientId);
     protected RegionEndpoint? _awsRegion;
     protected RequestRetryMode? _awsRetryMode;
     protected S3StorageClass? _coldStorageClass;
     protected CompressionLevel? _compressionLevel;
-    protected CommonConfiguration _configOptions = configuration;
+    protected Configuration _configOptions = configuration;
     protected S3StorageClass? _hotStorageClass;
     protected string? _ignoreFile;
     protected string? _localCacheFolder;
     protected string? _localRestoreFolder;
     protected S3StorageClass? _lowCostStorage;
-    protected string? _paramBasePath;
     protected ServerSideEncryptionMethod? _serverSideEncryptionMethod;
 
     public S3StorageClass ColdStorage()
@@ -265,11 +261,6 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
         return _configOptions.NoOfConcurrentDbWriters ?? 8;
     }
 
-    public long FlushDelaySeconds()
-    {
-        return _configOptions.FlushDelaySeconds ?? 10L;
-    }
-
     public int ShutdownTimeoutSeconds()
     {
         return _configOptions.ShutdownTimeoutSeconds ?? 30;
@@ -315,10 +306,10 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
         return _configOptions.SqsVisibilityTimeout ?? 300;
     }
 
-    public long S3PartSize()
+    public long S3BatchSize()
     {
-        return _configOptions.S3PartSize ?? 104857600L;
-        // 100MB default
+        return _configOptions.S3BatchSize ?? 41943040L;
+        // 40MB default
     }
 
     public long SqsRetryDelaySeconds()
@@ -357,18 +348,11 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
         return _configOptions.UseS3Accelerate ?? false;
     }
 
-    public string ParamBasePath()
-    {
-        _paramBasePath ??= (_configOptions.ParamBasePath ?? "/backup-application").TrimEnd('/', '\\');
-        return _paramBasePath;
-    }
-
     // ID generation methods
     public string BatchS3Key(string batchFileName)
     {
-        var prefix = S3DataPrefix();
         var fileName = Path.GetFileNameWithoutExtension(batchFileName);
-        return $"{prefix}/{fileName}";
+        return $"{_clientId}/data/{fileName}";
     }
 
     public string RestoreId(string archiveRunId, string restorePaths, DateTimeOffset requestedAt)
@@ -421,17 +405,20 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
         return _configOptions.DaysToKeepRestoredCopy ?? 7;
     }
 
-    public string S3DataPrefix()
-    {
-        return $"{_clientId}/data";
-    }
-
     public string S3LogFolder()
     {
         return $"{_clientId}/logs";
     }
 
-    public abstract string PathsToArchive();
+    public string PathsToArchive()
+    {
+        return string.IsNullOrWhiteSpace(_configOptions.PathsToArchive) ? "/" : _configOptions.PathsToArchive;
+    }
+
+    public string CronSchedule()
+    {
+        return string.IsNullOrWhiteSpace(_configOptions.CronSchedule) ? "0 0 * * ? *" : _configOptions.CronSchedule;
+    }
 
     public string ClientId()
     {
@@ -442,8 +429,6 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
     {
         return _configOptions.RollingLogFolder ?? "";
     }
-
-    public abstract string CronSchedule();
 
     public int AwsCredentialsTimeoutSeconds()
     {
@@ -463,8 +448,7 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
 
         return _compressionLevel.Value;
     }
-
-
+    
     private static S3StorageClass ResolveStorageClass(string? storageClassName, S3StorageClass defaultStorageClass)
     {
         if (string.IsNullOrWhiteSpace(storageClassName))
@@ -474,11 +458,11 @@ public abstract class ContextResolverBase(CommonConfiguration configuration, str
         return storageClass ?? defaultStorageClass;
     }
 
-    private static string ScrubClientId(string clientId)
+    private static string ScrubClientId(string? clientId)
     {
         return RegexHelper
             .NonAlphanumericRegex()
-            .Replace(clientId, "")
+            .Replace(clientId ?? "", "")
             .ToLowerInvariant();
     }
 

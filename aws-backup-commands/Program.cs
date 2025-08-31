@@ -12,7 +12,7 @@ using temporary_credentials;
 var appSettingsPath = GetValueFromArgs("app-settings", "a", args) ??
                       Path.Combine(AppContext.BaseDirectory, "appsettings.json");
 
-var clientId = GetValueFromArgs("client-id", "c", args);
+var clientIdFromArgs = GetValueFromArgs("client-id", "c", args);
 
 if (!Path.IsPathRooted(appSettingsPath))
     appSettingsPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, appSettingsPath));
@@ -41,15 +41,15 @@ if (configuration is null)
     return -1;
 }
 
-if (string.IsNullOrWhiteSpace(configuration.ClientId) && string.IsNullOrWhiteSpace(clientId))
+configuration.ClientId = string.IsNullOrWhiteSpace(clientIdFromArgs) ? configuration.ClientId : clientIdFromArgs;
+
+if (string.IsNullOrWhiteSpace(configuration.ClientId))
 {
     await Console.Error.WriteLineAsync(
         "Client ID is required. Please provide it via --client-id or in appsettings.json.");
     await CoconaApp.CreateBuilder([..args, "--help"]).Build().RunAsync<BackupCommands>();
     return -1;
 }
-
-configuration.ClientId = clientId ?? configuration.ClientId;
 
 var builder = CoconaApp.CreateBuilder(args);
 builder.Configuration.AddConfiguration(configurationRoot);
@@ -59,8 +59,8 @@ builder
 
 builder
     .Services
-    .AddSingleton<IContextResolver>(_ => new ContextResolver(configuration))
     .AddSingleton(configuration)
+    .AddSingleton<IContextResolver, ContextResolverBase>()
     .AddSingleton<IAwsConfigurationFactory, AwsConfigurationFactory>()
     .AddSingleton<IArchiveDataStore, DynamoDbDataStore>()
     .AddSingleton<AwsConfiguration>(sp =>

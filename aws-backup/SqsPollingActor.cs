@@ -19,50 +19,39 @@ public sealed class SqsPollingActor(
     IContextResolver contextResolver,
     ISnsMessageMediator snsMessageMediator,
     AwsConfiguration awsConfiguration,
-    IAesContextResolver aesContextResolver
+    IAesContextResolver aesContextResolver,
+    TimeProvider timeProvider
 ) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         logger.LogInformation("Starting SQS polling");
-        var logQueueUrl = "";
+        var logInboxQueueUrl = "";
+        var retryDelay = contextResolver.SqsRetryDelaySeconds();
+        var timer = new PeriodicTimer(TimeSpan.FromSeconds(retryDelay), timeProvider);
 
         while (!cancellationToken.IsCancellationRequested)
         {
             var sqs = await clientFactory.CreateSqsClient(cancellationToken);
 
-            var queueUrl = awsConfiguration.SqsInboxQueueUrl;
+            var sqsInboxQueueUrl = awsConfiguration.SqsInboxQueueUrl;
             var waitTimeSeconds = contextResolver.SqsWaitTimeSeconds();
             var maxNumberOfMessages = contextResolver.SqsMaxNumberOfMessages();
             var visibilityTimeout = contextResolver.SqsVisibilityTimeout();
-            var retryDelay = contextResolver.SqsRetryDelaySeconds();
             var sqsDecryptionKey = await aesContextResolver.SqsEncryptionKey(cancellationToken);
 
-            if (logQueueUrl != queueUrl)
+            if (logInboxQueueUrl != sqsInboxQueueUrl)
             {
-                logQueueUrl = queueUrl;
-                logger.LogInformation("SQS queue URL: {QueueUrl}", queueUrl);
+                logInboxQueueUrl = sqsInboxQueueUrl;
+                logger.LogInformation("SQS queue URL: {QueueUrl}", sqsInboxQueueUrl);
             }
 
-            ReceiveMessageResponse resp = null!;
+            ReceiveMessageResponse resp;
             try
             {
-                //todo: deduplication
-                /*
-                 *
-                 * var createQueueRequest = new CreateQueueRequest
-                   {
-                       QueueName = "MyFifoQueue.fifo",
-                       Attributes = new Dictionary<string, string>
-                       {
-                           { "FifoQueue", "true" },
-                           { "ContentBasedDeduplication", "true" }
-                       }
-                   };
-                 */
                 resp = await sqs.ReceiveMessageAsync(new ReceiveMessageRequest
                 {
-                    QueueUrl = queueUrl,
+                    QueueUrl = sqsInboxQueueUrl,
                     WaitTimeSeconds = waitTimeSeconds, // long poll
                     MaxNumberOfMessages = maxNumberOfMessages, // batch up to 10
                     VisibilityTimeout = visibilityTimeout,
@@ -72,11 +61,12 @@ public sealed class SqsPollingActor(
             catch (AmazonSQSException ex) when (ex.Message.Contains("Signature expired"))
             {
                 logger.LogError(ex, "Signature expired. System clock or credentials may be invalid.");
-                clientFactory.ResetCachedCredentials();
+                await timer.WaitForNextTickAsync(cancellationToken);
 
-                await Task.Delay(TimeSpan.FromSeconds(retryDelay), cancellationToken);
+                clientFactory.ResetCachedCredentials();
+                continue;
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 break;
             }
@@ -84,7 +74,7 @@ public sealed class SqsPollingActor(
             {
                 logger.LogError(ex, "Error receiving messages, retrying in {retryDelay} seconds", retryDelay);
 
-                await Task.Delay(TimeSpan.FromSeconds(retryDelay), cancellationToken);
+                await timer.WaitForNextTickAsync(cancellationToken);
                 continue;
             }
 
@@ -109,14 +99,14 @@ public sealed class SqsPollingActor(
                     if (string.IsNullOrWhiteSpace(messageString) ||
                         string.IsNullOrWhiteSpace(command))
                     {
-                        await sqs.DeleteMessageAsync(queueUrl, msg.ReceiptHandle, cancellationToken);
+                        await sqs.DeleteMessageAsync(sqsInboxQueueUrl, msg.ReceiptHandle, cancellationToken);
                         continue;
                     }
 
                     if (contextResolver.EncryptSqs() && !isEncrypted)
                     {
                         logger.LogWarning("Message encryption expected but message {Id} was not encrypted", msg.MessageId);
-                        await sqs.DeleteMessageAsync(queueUrl, msg.ReceiptHandle, cancellationToken);
+                        await sqs.DeleteMessageAsync(sqsInboxQueueUrl, msg.ReceiptHandle, cancellationToken);
                         continue;
                     }
                     
@@ -138,7 +128,7 @@ public sealed class SqsPollingActor(
                             break;
                     }
 
-                    await sqs.DeleteMessageAsync(queueUrl, msg.ReceiptHandle, cancellationToken);
+                    await sqs.DeleteMessageAsync(sqsInboxQueueUrl, msg.ReceiptHandle, cancellationToken);
                     logger.LogInformation("Deleted message {Id} from SQS", msg.MessageId);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

@@ -124,15 +124,7 @@ cfn_outputs=$(aws cloudformation describe-stacks \
   --output json)
 
 json_output=$(jq -r 'map({key: .OutputKey, value: .OutputValue}) | from_entries' <<< "$cfn_outputs")
-json_output=$(echo "$json_output" | jq '.ChunkSizeBytes |= tonumber')
 param_base_path=$(jq -r '.ParamBasePath' <<< "$json_output")
 
-./generate-aes-ssm-key.sh "${param_base_path}/${CLIENT_ID}/aes-sqs-encryption"
-./generate-aes-ssm-key.sh "${param_base_path}/${CLIENT_ID}/aes-file-encryption"
-
-aws ssm put-parameter \
-  --name "${param_base_path}/${CLIENT_ID}/aws-config" \
-  --value "${json_output}" \
-  --type String \
-  --overwrite \
-  --region "$REGION"
+./generate-aes-ssm-key.sh "${param_base_path}/aes-sqs-encryption"
+./generate-aes-ssm-key.sh "${param_base_path}/aes-file-encryption"

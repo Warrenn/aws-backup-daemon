@@ -11,7 +11,7 @@ public interface IUpdateConfiguration
     Task UpdateConfiguration(Configuration configOptions, CancellationToken cancellationToken);
 }
 
-public sealed class ContextResolver : ContextResolverBase, IContextResolver, IUpdateConfiguration
+public sealed class ContextResolver : ContextResolverBase, IUpdateConfiguration
 {
     private readonly string _appSettingsPath;
     private readonly ILogger<ContextResolver> _logger;
@@ -20,29 +20,18 @@ public sealed class ContextResolver : ContextResolverBase, IContextResolver, IUp
         string appSettingsPath,
         IOptionsMonitor<Configuration> configOptions,
         ICronScheduleMediator cronScheduleMediator,
-        ILogger<ContextResolver> logger) : base(configOptions.CurrentValue, configOptions.CurrentValue.ClientId)
+        ILogger<ContextResolver> logger) : base(configOptions.CurrentValue)
     {
         _appSettingsPath = appSettingsPath;
         _logger = logger;
-        _configOptions = configOptions.CurrentValue;
         configOptions.OnChange((newConfig, _) =>
         {
             logger.LogInformation("Configuration changed, updating ContextResolver.");
             _configOptions = newConfig;
             ResetCache();
             logger.LogInformation("Configuration updated in ContextResolver.");
-            cronScheduleMediator.SignalCronScheduleChange(((Configuration)_configOptions).CronSchedule);
+            cronScheduleMediator.SignalCronScheduleChange(_configOptions.CronSchedule ?? "0 0 * * ? *");
         });
-    }
-
-    public override string PathsToArchive()
-    {
-        return ((Configuration)_configOptions).PathsToArchive;
-    }
-
-    public override string CronSchedule()
-    {
-        return ((Configuration)_configOptions).CronSchedule;
     }
 
     public async Task UpdateConfiguration(Configuration configOptions, CancellationToken cancellationToken)
@@ -59,7 +48,7 @@ public sealed class ContextResolver : ContextResolverBase, IContextResolver, IUp
         }
 
         root["Configuration"] =
-            JsonSerializer.SerializeToNode(configOptions, ConfigurationGenerationContext.Default.Configuration);
+            JsonSerializer.SerializeToNode(configOptions, SourceGenerationContext.Default.Configuration);
 
         _logger.LogInformation("Writing updated configuration to {appSettingsPath}", _appSettingsPath);
         await File.WriteAllTextAsync(_appSettingsPath, root.ToJsonString(SourceGenerationContext.Default.Options),

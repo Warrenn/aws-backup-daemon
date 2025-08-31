@@ -1,19 +1,19 @@
-using System.Text.Json;
-using Amazon.SimpleSystemsManagement.Model;
+using System.Collections.Frozen;
+using System.Text;
+using Amazon.CloudFormation.Model;
 
 namespace aws_backup_common;
 
-//settings that client should not change
 public sealed record AwsConfiguration(
-    long S3BatchSizeBytes,
-    string BucketName,
+    string BucketName, // required
     string SqsInboxQueueUrl,
+    string SqsOutboxQueueUrl,
     string ArchiveCompleteTopicArn,
-    string ArchiveCompleteErrorsTopicArn,
     string RestoreCompleteTopicArn,
+    string ArchiveCompleteErrorsTopicArn,
     string RestoreCompleteErrorsTopicArn,
     string ExceptionTopicArn,
-    string DynamoDbTableName);
+    string ParamBasePath);
 
 public interface IAwsConfigurationFactory
 {
@@ -23,25 +23,59 @@ public interface IAwsConfigurationFactory
 
 public sealed class AwsConfigurationFactory(
     IAwsClientFactory clientFactory,
-    IContextResolver contextResolver) : IAwsConfigurationFactory
+    string clientId,
+    Configuration configuration) : IAwsConfigurationFactory
 {
     public async Task<(AwsConfiguration? configuration, string? errorMessage)> GetAwsConfiguration(
         CancellationToken cancellationToken)
     {
-        var ssm = await clientFactory.CreateSsmClient(cancellationToken);
-        var paramBasePath = contextResolver.ParamBasePath();
-        var clientId = contextResolver.ClientId();
-        var region = contextResolver.GetAwsRegion().ToString().ToLowerInvariant();
-        var paramPath = $"{paramBasePath.TrimEnd('/', '\\')}/{clientId}/aws-config";
-        var configParam = await ssm.GetParameterAsync(new GetParameterRequest { Name = paramPath }, cancellationToken);
-        if (configParam.Parameter is null)
-            return (null,
-                $"Parameter {paramPath} not found in SSM Parameter Store for client {clientId} in region {region}");
+        try
+        {
+            var stackName = GetDefault(configuration.StackName, $"per-client-{clientId}");
+            var cloudFormationClient = await clientFactory.CreateCloudFormationClient(cancellationToken);
 
-        var config = configParam.Parameter.Value;
-        var returnValue =
-            JsonSerializer.Deserialize<AwsConfiguration>(config, SourceGenerationContext.Default.AwsConfiguration);
+            var resp = await cloudFormationClient.DescribeStacksAsync(
+                new DescribeStacksRequest { StackName = stackName }, cancellationToken);
+            var stack = resp.Stacks?.FirstOrDefault();
+            var outputs = (stack?.Outputs ?? [])
+                .ToFrozenDictionary(o => o.OutputKey, o => o.OutputValue ?? string.Empty,
+                    StringComparer.InvariantCultureIgnoreCase);
 
-        return (returnValue, null);
+            var errorBuilder = new StringBuilder();
+            var returnValue = new AwsConfiguration(
+                BucketName: GetValue(outputs, errorBuilder, "BucketName", configuration.BucketName),
+                SqsInboxQueueUrl: GetValue(outputs, errorBuilder, "SqsInboxQueueUrl", configuration.SqsInboxQueueUrl),
+                SqsOutboxQueueUrl: GetValue(outputs, errorBuilder,"SqsOutboxQueueUrl", configuration.SqsOutboxQueueUrl),
+                ArchiveCompleteTopicArn: GetValue(outputs, errorBuilder, "ArchiveCompleteTopicArn", configuration.ArchiveCompleteTopicArn),
+                RestoreCompleteTopicArn: GetValue(outputs, errorBuilder, "RestoreCompleteTopicArn", configuration.RestoreCompleteTopicArn),
+                ArchiveCompleteErrorsTopicArn: GetValue(outputs, errorBuilder, "ArchiveCompleteErrorsTopicArn", configuration.ArchiveCompleteErrorsTopicArn),
+                RestoreCompleteErrorsTopicArn: GetValue(outputs, errorBuilder, "RestoreCompleteErrorsTopicArn", configuration.RestoreCompleteErrorsTopicArn),
+                ExceptionTopicArn: GetValue(outputs, errorBuilder, "ExceptionTopicArn", configuration.ExceptionTopicArn),
+                ParamBasePath: GetValue(outputs, errorBuilder, "ParamBasePath", configuration.ParamBasePath)
+            );
+            
+            if (errorBuilder.Length > 0)
+                return (null, errorBuilder.ToString()); ;
+
+            return (returnValue, null);
+        }
+        catch (Exception e)
+        {
+            return (null, e.Message);
+        }
+    }
+
+    private static string GetDefault(string? value, string defaultValue)
+    {
+        return string.IsNullOrWhiteSpace(value) ? defaultValue : value;
+    }
+
+    private static string GetValue(FrozenDictionary<string, string> d, StringBuilder errorBuilder, string key,
+        string? defaultValue)
+    {
+        if (!string.IsNullOrWhiteSpace(defaultValue)) return defaultValue;
+        if (d.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v)) return v;
+        errorBuilder.AppendLine($"Required CloudFormation Output '{key}' is missing or empty.");
+        return "";
     }
 }

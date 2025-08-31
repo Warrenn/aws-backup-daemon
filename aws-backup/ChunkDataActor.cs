@@ -31,8 +31,7 @@ public sealed class ChunkDataActor(
     IContextResolver contextResolver,
     IDataChunkService dataChunkService,
     IArchiveService archiveService,
-    IRetryMediator retryMediator,
-    AwsConfiguration awsConfiguration)
+    IRetryMediator retryMediator)
     : BackgroundService
 {
     private readonly ConcurrentDictionary<Guid, UploadBatch?> _batches = [];
@@ -56,110 +55,120 @@ public sealed class ChunkDataActor(
     private async Task FlushPendingBatchesAsync(ArchiveRun archiveRun, TaskCompletionSource taskCompletion,
         CancellationToken cancellationToken)
     {
-        var bufferSize = contextResolver.ReadBufferSize();
-        var cacheFolder = contextResolver.LocalCacheFolder();
-        var batchSizeLimit = awsConfiguration.S3BatchSizeBytes;
+        try
+        {
+            var bufferSize = contextResolver.ReadBufferSize();
+            var cacheFolder = contextResolver.LocalCacheFolder();
+            var batchSizeLimit = contextResolver.S3BatchSize();
 
-        var batchFileName = Guid.NewGuid().ToString("N");
-        var outPath = Path.Combine(cacheFolder, batchFileName);
+            var batchFileName = Guid.NewGuid().ToString("N");
+            var outPath = Path.Combine(cacheFolder, batchFileName);
 
-        var finalBatchStream = new FileStream(
-            outPath,
-            FileMode.Create,
-            FileAccess.Write,
-            FileShare.None,
-            bufferSize,
-            FileOptions.Asynchronous | FileOptions.SequentialScan);
-        
-        var finalBatch = new UploadBatch(finalBatchStream.Name, archiveRun);
-        foreach (var threadId in _batches
-                     .Where(kp => kp.Value?.ArchiveRun.RunId == archiveRun.RunId)
-                     .Select(kp => kp.Key))
-            if (_streams.TryGetValue(threadId, out var stream) && stream is not null &&
-                _batches.TryGetValue(threadId, out var batch) && batch is not null)
-            {
-                logger.LogInformation("Flushing stream for thread {ThreadId} in archive run {ArchiveRunId}",
-                    threadId, archiveRun.RunId);
-                
-                await _streams[threadId]!.FlushAsync(cancellationToken);
-                await _streams[threadId]!.DisposeAsync();
-                _streams[threadId] = null;
+            var finalBatchStream = new FileStream(
+                outPath,
+                FileMode.Create,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
 
-                var buffer = new byte[bufferSize];
-                var bytesToWrite = 0L;
-                var read = 0;
-
-                await using var src = new FileStream(
-                    batch.LocalFilePath,
-                    FileMode.Open,
-                    FileAccess.Read,
-                    FileShare.Read,
-                    bufferSize,
-                    FileOptions.Asynchronous | FileOptions.SequentialScan);
-
-                foreach (var uploadChunkRequest in batch.Requests)
+            var finalBatch = new UploadBatch(finalBatchStream.Name, archiveRun);
+            foreach (var threadId in _batches
+                         .Where(kp => kp.Value?.ArchiveRun.RunId == archiveRun.RunId)
+                         .Select(kp => kp.Key))
+                if (_streams.TryGetValue(threadId, out var stream) && stream is not null &&
+                    _batches.TryGetValue(threadId, out var batch) && batch is not null)
                 {
-                    var details = uploadChunkRequest.DataChunkDetails;
-                    var bytesRemainingInChunk = details.CompressedSize;
+                    logger.LogInformation("Flushing stream for thread {ThreadId} in archive run {ArchiveRunId}",
+                        threadId, archiveRun.RunId);
 
-                    if (bytesToWrite < read)
-                    {
-                        await finalBatchStream.WriteAsync(buffer.AsMemory((int)bytesToWrite), cancellationToken);
-                        bytesRemainingInChunk -= read - bytesToWrite;
-                    }
+                    await _streams[threadId]!.FlushAsync(cancellationToken);
+                    await _streams[threadId]!.DisposeAsync();
+                    _streams[threadId] = null;
 
-                    while ((read = await src.ReadAsync(buffer, cancellationToken)) > 0)
-                    {
-                        bytesToWrite = Math.Min(read, bytesRemainingInChunk);
-                        await finalBatchStream.WriteAsync(buffer.AsMemory(0, (int)bytesToWrite), cancellationToken);
-                        bytesRemainingInChunk -= bytesToWrite;
+                    var buffer = new byte[bufferSize];
+                    var bytesToWrite = 0L;
+                    var read = 0;
 
-                        if (bytesRemainingInChunk <= 0) // read the entire chunk
-                            break;
-                    }
-
-                    finalBatch.Requests.Add(uploadChunkRequest);
-                    finalBatch.FileSize += details.CompressedSize;
-
-                    if (finalBatch.FileSize < batchSizeLimit) continue;
-
-                    await finalBatchStream.FlushAsync(cancellationToken);
-                    await finalBatchStream.DisposeAsync();
-
-                    await batchMediator.ProcessBatch(finalBatch, cancellationToken);
-
-                    batchFileName = Guid.NewGuid().ToString("N");
-                    outPath = Path.Combine(cacheFolder, batchFileName);
-
-                    finalBatchStream = new FileStream(
-                        outPath,
-                        FileMode.Create,
-                        FileAccess.Write,
-                        FileShare.None,
+                    await using var src = new FileStream(
+                        batch.LocalFilePath,
+                        FileMode.Open,
+                        FileAccess.Read,
+                        FileShare.Read,
                         bufferSize,
                         FileOptions.Asynchronous | FileOptions.SequentialScan);
-                    finalBatch = new UploadBatch(finalBatchStream.Name, archiveRun);
+
+                    foreach (var uploadChunkRequest in batch.Requests)
+                    {
+                        var details = uploadChunkRequest.DataChunkDetails;
+                        var bytesRemainingInChunk = details.CompressedSize;
+
+                        if (bytesToWrite < read)
+                        {
+                            await finalBatchStream.WriteAsync(buffer.AsMemory((int)bytesToWrite), cancellationToken);
+                            bytesRemainingInChunk -= read - bytesToWrite;
+                        }
+
+                        while ((read = await src.ReadAsync(buffer, cancellationToken)) > 0)
+                        {
+                            bytesToWrite = Math.Min(read, bytesRemainingInChunk);
+                            await finalBatchStream.WriteAsync(buffer.AsMemory(0, (int)bytesToWrite), cancellationToken);
+                            bytesRemainingInChunk -= bytesToWrite;
+
+                            if (bytesRemainingInChunk <= 0) // read the entire chunk
+                                break;
+                        }
+
+                        finalBatch.Requests.Add(uploadChunkRequest);
+                        finalBatch.FileSize += details.CompressedSize;
+
+                        if (finalBatch.FileSize < batchSizeLimit) continue;
+
+                        await finalBatchStream.FlushAsync(cancellationToken);
+                        await finalBatchStream.DisposeAsync();
+
+                        await batchMediator.ProcessBatch(finalBatch, cancellationToken);
+
+                        batchFileName = Guid.NewGuid().ToString("N");
+                        outPath = Path.Combine(cacheFolder, batchFileName);
+
+                        finalBatchStream = new FileStream(
+                            outPath,
+                            FileMode.Create,
+                            FileAccess.Write,
+                            FileShare.None,
+                            bufferSize,
+                            FileOptions.Asynchronous | FileOptions.SequentialScan);
+                        finalBatch = new UploadBatch(finalBatchStream.Name, archiveRun);
+                    }
+
+                    File.Delete(batch.LocalFilePath);
+                    _batches[threadId] = null;
+                }
+                else
+                {
+                    logger.LogWarning("No stream or batch found for thread {ThreadId} in archive run {ArchiveRunId}",
+                        threadId, archiveRun.RunId);
                 }
 
-                File.Delete(batch.LocalFilePath);
-                _batches[threadId] = null;
+            await finalBatchStream.FlushAsync(cancellationToken);
+            await finalBatchStream.DisposeAsync();
+
+            if (finalBatch.Requests.Count > 0)
+            {
+                await batchMediator.ProcessBatch(finalBatch, cancellationToken);
             }
             else
             {
-                logger.LogWarning("No stream or batch found for thread {ThreadId} in archive run {ArchiveRunId}",
-                    threadId, archiveRun.RunId);
+                if (File.Exists(finalBatch.LocalFilePath)) File.Delete(finalBatch.LocalFilePath);
             }
-
-        await finalBatchStream.FlushAsync(cancellationToken);
-        await finalBatchStream.DisposeAsync();
-
-        if (finalBatch.Requests.Count > 0)
-        {
-            await batchMediator.ProcessBatch(finalBatch, cancellationToken);
         }
-        else
+        catch (Exception ex)
         {
-            if (File.Exists(finalBatch.LocalFilePath)) File.Delete(finalBatch.LocalFilePath);
+            logger.LogError(ex, "Failed to flush pending batches for archive run {ArchiveRunId}",
+                archiveRun.RunId);
+            taskCompletion.SetException(ex);
+            return;
         }
 
         taskCompletion.SetResult();
@@ -168,7 +177,7 @@ public sealed class ChunkDataActor(
     private async Task WorkerLoopAsync(CancellationToken cancellationToken)
     {
         var bufferSize = contextResolver.ReadBufferSize();
-        var chunkSize = awsConfiguration.S3BatchSizeBytes;
+        var s3BatchSize = contextResolver.S3BatchSize();
         var index = Guid.NewGuid();
 
         _streams[index] = null;
@@ -222,7 +231,7 @@ public sealed class ChunkDataActor(
                 var dataSize = chunk.CompressedSize;
 
                 if (_batches[index] is null || _streams[index] is null ||
-                    _batches[index]!.FileSize + dataSize > chunkSize)
+                    _batches[index]!.FileSize > s3BatchSize)
                     // If the batch is null or the file size exceeds the chunk size, flush the current batch
                     await FlushToS3(index, true, cancellationToken);
 

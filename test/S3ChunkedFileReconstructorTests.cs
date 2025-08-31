@@ -77,7 +77,7 @@ public class HotStorageServiceIntegrationTests
             "archive-complete","restore-complete", "restore-errors", "exception",
             "dynamo-table");
 
-        ctx.Setup(c => c.S3PartSize()).Returns(5 * 1024 * 1024);
+        ctx.Setup(c => c.S3BatchSize()).Returns(5 * 1024 * 1024);
         ctx.Setup(c => c.HotStorage()).Returns(S3StorageClass.Standard);
         // other methods not used by HotStorageService.Upload/Download
 

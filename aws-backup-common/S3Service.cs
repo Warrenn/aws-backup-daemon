@@ -72,7 +72,7 @@ public sealed class S3Service(
         var pipe = new Pipe();
         var s3Client = await awsClientFactory.CreateS3Client(cancellationToken);
         var bucketName = awsConfiguration.BucketName;
-        var partSizeBytes = contextResolver.S3PartSize();
+        var partSizeBytes = contextResolver.S3BatchSize();
         var encryptionMethod = contextResolver.ServerSideEncryption();
         var compressionLevel = contextResolver.ZipCompressionLevel();
         var (storageClass, tag) = temp switch
@@ -155,7 +155,7 @@ public sealed class S3Service(
         var pipe = new Pipe();
         var s3 = await awsClientFactory.CreateS3Client(cancellationToken);
         var bucketName = awsConfiguration.BucketName;
-        var partSizeBytes = contextResolver.S3PartSize();
+        var partSizeBytes = contextResolver.S3BatchSize();
         var compressionLevel = contextResolver.ZipCompressionLevel();
         var encryptionMethod = contextResolver.ServerSideEncryption();
         var (storageClass, tag) = temp switch

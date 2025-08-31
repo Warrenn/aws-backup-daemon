@@ -1,8 +1,23 @@
 namespace aws_backup_common;
 
-public record CommonConfiguration
+public sealed record Configuration
 {
+    public string? ClientId { get; set; }
+    public string? CronSchedule { get; set; }
+    public string? PathsToArchive { get; set; }
+    public string? BucketName { get; set; }
+    public string? SqsInboxQueueUrl { get; set; }
+    public string? SqsOutboxQueueUrl { get; set; }
+    public string? ArchiveCompleteTopicArn { get; set; }
+    public string? RestoreCompleteTopicArn { get; set; }
+    public string? ArchiveCompleteErrorsTopicArn { get; set; }
+    public string? RestoreCompleteErrorsTopicArn { get; set; }
+    public string? ExceptionTopicArn { get; set; }
+    public string? RolesAnyWhereProfileArn { get; set; }
+    public string? RolesAnyWhereRoleArn { get; set; }
+    public string? RolesAnyWhereTrustAnchorArn { get; set; }
     public string? ParamBasePath { get; set; }
+    public string? StackName { get; set; }
     public string? ColdStorage { get; set; }
     public string? HotStorage { get; set; }
     public string? LowCostStorage { get; set; }
@@ -12,14 +27,11 @@ public record CommonConfiguration
     public string? LocalIgnoreFile { get; set; }
     public string? LocalRestoreFolderBase { get; set; }
     public string? AwsRetryMode { get; set; }
-    public string? RolesAnyWhereProfileArn { get; set; }
-    public string? RolesAnyWhereRoleArn { get; set; }
-    public string? RolesAnyWhereTrustAnchorArn { get; set; }
     public string? RolesAnyWhereCertificateFileName { get; set; }
     public string? RolesAnyWherePrivateKeyFileName { get; set; }
     public int? AwsCredentialsTimeoutSeconds { get; set; }
     public int? ReadBufferSize { get; set; }
-    public long? S3PartSize { get; set; }
+    public long? S3BatchSize { get; set; }
     public int? NoOfFilesToBackupConcurrently { get; set; }
     public int? NoOfConcurrentDownloadsPerFile { get; set; }
     public int? NoOfS3FilesToDownloadConcurrently { get; set; }

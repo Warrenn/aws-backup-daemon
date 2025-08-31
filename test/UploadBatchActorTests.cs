@@ -36,7 +36,7 @@
 //         _contextResolver.Setup(x => x.NoOfConcurrentS3Uploads()).Returns(1);
 //         _contextResolver.Setup(x => x.ColdStorage()).Returns(S3StorageClass.Standard);
 //         _contextResolver.Setup(x => x.ServerSideEncryption()).Returns(ServerSideEncryptionMethod.AES256);
-//         _contextResolver.Setup(x => x.S3PartSize()).Returns(5242880);
+//         _contextResolver.Setup(x => x.S3BatchSize()).Returns(5242880);
 //         _contextResolver.Setup(x => x.BatchS3Key(It.IsAny<string>())).Returns("key/path/file.gz");
 //         _contextResolver.Setup(x => x.ShutdownTimeoutSeconds()).Returns(2);
 //

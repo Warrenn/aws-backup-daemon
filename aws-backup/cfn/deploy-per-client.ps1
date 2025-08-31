@@ -142,23 +142,18 @@ $cfn_outputs = aws cloudformation describe-stacks `
 $jsonArray = $cfn_outputs | ConvertFrom-Json
 
 # Build key-value hashtable
-$flat = @{}
+$paramBasePath = ""
 foreach ($item in $jsonArray) {
-  $flat[$item.OutputKey] = $item.OutputValue
+    if ($item.OutputKey -ne "ParamBasePath") continue
+    $paramBasePath = $item.OutputValue
+    break
 }
-$flat.ChunkSizeBytes = [long]$flat.ChunkSizeBytes
 
-# Convert hashtable to JSON string
-$flattenedJson = $flat | ConvertTo-Json -Depth 2
-$paramBasePath = $flat["ParamBasePath"]
+if([string]::IsNullOrEmpty($paramBasePath)) {
+    Write-Host "Error: ParamBasePath output not found in stack outputs"
+    exit 1
+}
 
 # Call external script
-& ./generate-aes-ssm-key.ps1 -ParamName "$paramBasePath/$ClientId/aes-sqs-encryption"
-& ./generate-aes-ssm-key.ps1 -ParamName "$paramBasePath/$ClientId/aes-file-encryption"
-
-aws ssm put-parameter `
-  --name "$paramBasePath/$ClientId/aws-config" `
-  --value "$flattenedJson" `
-  --type String `
-  --overwrite `
-  --region "$Region"
+& ./generate-aes-ssm-key.ps1 -ParamName "$paramBasePath/aes-sqs-encryption"
+& ./generate-aes-ssm-key.ps1 -ParamName "$paramBasePath/aes-file-encryption"

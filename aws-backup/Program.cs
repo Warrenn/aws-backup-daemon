@@ -19,9 +19,16 @@ var appConfigOpt = new Option<string?>("--app-settings", "-a")
     Required = false
 };
 
+var clientIdOpt = new Option<string?>("--client-id", "-c")
+{
+    Description = "Client ID to use, if not specified in the application settings file.",
+    Required = false
+};
+
 var rootCommand = new RootCommand("AWS Backup Tool - Archive and restore files to/from AWS S3")
 {
-    appConfigOpt
+    appConfigOpt,
+    clientIdOpt
 };
 
 GlobalRuntimeDependencyRegistry.Instance
@@ -42,16 +49,39 @@ if (!File.Exists(appSettingsPath))
     return -1;
 }
 
+var inMemory = (IEnumerable<KeyValuePair<string, string>>)
+[
+    new KeyValuePair<string, string>("Configuration:SettingsPath", appSettingsPath)
+];
+
+var clientId = parsedArgs.GetValue(clientIdOpt);
+if (!string.IsNullOrWhiteSpace(clientId))
+    inMemory = inMemory.Append(new KeyValuePair<string, string>("Configuration:ClientId", clientId));
+
+
 var configBuilder = new ConfigurationBuilder();
 configBuilder
     .SetBasePath(AppContext.BaseDirectory)
     .AddJsonFile(appSettingsPath, false, true)
-    .AddInMemoryCollection([
-        new KeyValuePair<string, string?>("Configuration:SettingsPath", appSettingsPath)
-    ])
+    .AddInMemoryCollection(inMemory!)
     .AddEnvironmentVariables();
 
 var configuration = configBuilder.Build();
+var configData = configuration.GetSection("Configuration").Get<Configuration>();
+
+if (configData is null)
+{
+    await Console.Error.WriteLineAsync("Configuration section 'Configuration' not found in appsettings.json.");
+    return -1;
+}
+
+if (string.IsNullOrWhiteSpace(configData.ClientId))
+{
+    await Console.Error.WriteLineAsync(
+        "Client ID is required. Please provide it via --client-id or in appsettings.json.");
+    return -1;
+}
+
 var builder = Host.CreateApplicationBuilder(args);
 builder.Configuration.AddConfiguration(configuration);
 builder
@@ -79,7 +109,9 @@ builder
             sp.GetRequiredService<ICronScheduleMediator>(),
             sp.GetRequiredService<ILogger<ContextResolver>>()))
     .AddSingleton<IUpdateConfiguration>(sp => sp.GetRequiredService<ContextResolver>())
-    .AddSingleton<IAwsConfigurationFactory, AwsConfigurationFactory>()
+    .AddSingleton<IAwsClientFactory, AwsClientFactory>()
+    .AddSingleton<IAwsConfigurationFactory, AwsConfigurationFactory>(sp =>
+        new AwsConfigurationFactory(sp.GetRequiredService<IAwsClientFactory>(), configData.ClientId, configData))
     .AddSingleton<AwsConfiguration>(sp =>
     {
         var (awsConfiguration, errorMessage) = sp
@@ -109,7 +141,6 @@ builder
     .AddSingleton<ICronScheduleMediator, CronScheduleMediator>()
     .AddSingleton<IUploadChunksMediator, UploadChunksMediator>()
     .AddSingleton<ITemporaryCredentialsServer, RolesAnywhere>()
-    .AddSingleton<IAwsClientFactory, AwsClientFactory>()
     .AddSingleton<IAesContextResolver, AesContextResolver>()
     .AddSingleton<IArchiveService, ArchiveService>()
     .AddSingleton<IChunkedEncryptingFileProcessor, ChunkedEncryptingFileProcessor>()

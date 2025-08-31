@@ -30,7 +30,7 @@ public sealed class RetryActor(
 
                 if (state.AttemptCount > limit)
                 {
-                    logger.LogInformation("Retry Limit Exceeded for {State}", state);
+                    logger.LogInformation("Retry Limit Exceeded for {State} limit {Limit}", state, limit);
                     if (state.LimitExceeded is null)
                     {
                         logger.LogWarning("LimitExceeded function not set for {State}", state);

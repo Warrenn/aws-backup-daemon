@@ -30,11 +30,6 @@ Parameters:
     Default: "/backup-application"
     Description: Base path for SSM parameter names
 
-  ChunkSize:
-    Type: Number
-    Default: 104857600
-    Description: Chunk size for file chunks in bytes (default 100 MB)
-
 Resources:
   TrustAnchor:
     Type: AWS::RolesAnywhere::TrustAnchor
@@ -149,40 +144,10 @@ Resources:
                   - !Sub
                     - "${BucketArn}/${ClientId}/*"
                     - BucketArn: !ImportValue aws-backup-initial-bucket-arn
-              
-              - Effect: Allow
-                Action:
-                  - dynamodb:PutItem
-                  - dynamodb:GetItem
-                  - dynamodb:UpdateItem
-                  - dynamodb:Query
-                  - dynamodb:Scan
-                  - dynamodb:DeleteItem
-                  - dynamodb:BatchWriteItem
-                  - dynamodb:BatchGetItem
-                Resource:
-                  - !GetAtt ArchiveDataTable.Arn
 
-  ArchiveDataTable:
-    Type: AWS::DynamoDB::Table
-    DeletionPolicy: Delete
-    UpdateReplacePolicy: Delete
-    Properties:
-      TableName: !Sub "archive-data-${ClientId}"
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: PK
-          AttributeType: S
-        - AttributeName: SK
-          AttributeType: S
-      KeySchema:
-        - AttributeName: PK
-          KeyType: HASH
-        - AttributeName: SK
-          KeyType: RANGE
-      Tags:
-        - Key: client-id
-          Value: !Ref ClientId
+              - Effect: Allow
+                Action: cloudformation:DescribeStacks
+                Resource: !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AWS::StackName}/*"
 
   ClientQueueInbox:
     Type: AWS::SQS::Queue
@@ -282,8 +247,16 @@ Outputs:
     Value: !Ref ClientQueueInbox
   
   SqsInboxQueueArn:
-    Description: Client-specific Inbox  SQS Queue ARN
+    Description: Client-specific Inbox SQS Queue ARN
     Value: !GetAtt ClientQueueInbox.Arn
+  
+  SqsOutboxQueueUrl:
+    Description: Client-specific Outbox SQS Queue URL
+    Value: !Ref ClientQueueOutbox
+  
+  SqsOutboxQueueArn:
+    Description: Client-specific Outbox SQS Queue ARN
+    Value: !GetAtt ClientQueueOutbox.Arn
   
   TrustAnchorArn:
     Description: ARN of the Roles Anywhere Trust Anchor
@@ -316,15 +289,11 @@ Outputs:
   ExceptionTopicArn:
     Description: ARN of the SNS topic for exceptions
     Value: !Ref ExceptionTopic
-  
-  DynamoDbTableName:
-    Description: Name of the DynamoDB table for archive data
-    Value: !Ref ArchiveDataTable
+    
+  ParamArn:
+    Description: ARN prefix for SSM parameters
+    Value: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${ParamBasePath}/${ClientId}"
   
   ParamBasePath:
     Description: Base path for SSM parameters
-    Value: !Ref ParamBasePath
-  
-  ChunkSizeBytes:
-    Description: Chunk size for file chunks in bytes
-    Value: !Ref ChunkSize
+    Value: !Sub "${ParamBasePath}/${ClientId}"
