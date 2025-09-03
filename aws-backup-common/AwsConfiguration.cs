@@ -13,7 +13,8 @@ public sealed record AwsConfiguration(
     string ArchiveCompleteErrorsTopicArn,
     string RestoreCompleteErrorsTopicArn,
     string ExceptionTopicArn,
-    string ParamBasePath);
+    string ParamBasePath,
+    string DynamoDbTableName);
 
 public interface IAwsConfigurationFactory
 {
@@ -51,7 +52,8 @@ public sealed class AwsConfigurationFactory(
                 ArchiveCompleteErrorsTopicArn: GetValue(outputs, errorBuilder, "ArchiveCompleteErrorsTopicArn", configuration.ArchiveCompleteErrorsTopicArn),
                 RestoreCompleteErrorsTopicArn: GetValue(outputs, errorBuilder, "RestoreCompleteErrorsTopicArn", configuration.RestoreCompleteErrorsTopicArn),
                 ExceptionTopicArn: GetValue(outputs, errorBuilder, "ExceptionTopicArn", configuration.ExceptionTopicArn),
-                ParamBasePath: GetValue(outputs, errorBuilder, "ParamBasePath", configuration.ParamBasePath)
+                ParamBasePath: GetValue(outputs, errorBuilder, "ParamBasePath", configuration.ParamBasePath),
+                DynamoDbTableName: GetValue(outputs, errorBuilder, "DynamoDbTableName", configuration.DynamoDbTableName)
             );
             
             if (errorBuilder.Length > 0)

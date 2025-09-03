@@ -23,7 +23,7 @@ public sealed record ArchiveCompleteMessage(
     ArchiveRun ArchiveRun) : SnsMessage(Subject, Message);
 
 public sealed record ArchiveCompleteErrorMessage(
-    string RunId,
+    long RunId,
     string Subject,
     string Message,
     ArchiveRun ArchiveRun) : SnsMessage(Subject, Message);
@@ -83,7 +83,7 @@ public sealed class SnsActor(
         foreach (var (filePath, metaData) in archiveRun.Files)
         {
             builder.Append(
-                $"File: {filePath} Status: {metaData.Status} Size: {metaData.OriginalSize} LastModified: {metaData.LastModified} Skip Reason: {metaData.SkipReason} ");
+                $"File: {filePath} Status: {metaData.Status} Size: {metaData.OriginalSize} Modified: {metaData.LastModified} Skip Reason: {metaData.SkipReason} ");
             builder.AppendLine();
         }
 
@@ -110,7 +110,7 @@ public sealed class SnsActor(
         foreach (var (filePath, metaData) in restoreRun.RequestedFiles)
         {
             builder.Append(
-                $"File: {filePath} Status: {metaData.Status} LastModified: {metaData.LastModified} ");
+                $"File: {filePath} Status: {metaData.Status} Modified: {metaData.LastModified} ");
             builder.Append($"Failed Reason: {metaData.FailedMessage} ");
             builder.AppendLine();
         }

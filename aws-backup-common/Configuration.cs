@@ -17,6 +17,7 @@ public sealed record Configuration
     public string? RolesAnyWhereRoleArn { get; set; }
     public string? RolesAnyWhereTrustAnchorArn { get; set; }
     public string? ParamBasePath { get; set; }
+    public string? DynamoDbTableName { get; set; }
     public string? StackName { get; set; }
     public string? ColdStorage { get; set; }
     public string? HotStorage { get; set; }

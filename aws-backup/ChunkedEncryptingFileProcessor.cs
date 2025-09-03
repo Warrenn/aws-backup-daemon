@@ -123,7 +123,7 @@ public sealed class ChunkedEncryptingFileProcessor(
             // finish full-file hash
             fullHasher.TransformFinalBlock([], 0, 0);
             fileMetaData.OriginalSize = fs.Length;
-            fileMetaData.HashKey = fullHasher.Hash ?? [];
+            fileMetaData.HashId = new ByteArrayKey(fullHasher.Hash ?? []);
             fileMetaData.CompressedSize = chunks.Sum(c => c.CompressedSize);
 
             return new FileProcessResult(fileMetaData);
@@ -191,6 +191,7 @@ public sealed class ChunkedEncryptingFileProcessor(
                 };
 
                 chunks.Add(chunkData);
+                //todo:figure out how to get the hashId later
                 await archiveService.AddChunkToFile(
                     run,
                     fileMetaData,

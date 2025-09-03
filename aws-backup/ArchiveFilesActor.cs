@@ -105,6 +105,7 @@ public sealed class ArchiveFilesActor(
                 }
 
                 await archiveService.ReportProcessingResult(run, result, cancellationToken);
+                
                 logger.LogInformation("File {File} processed successfully for {ArchiveRunId}", filePath, runId);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

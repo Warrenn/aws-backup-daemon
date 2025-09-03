@@ -14,7 +14,7 @@ public interface IRestoreRequestsMediator
 
 public sealed class RestoreRunActor(
     IRestoreRequestsMediator mediator,
-    IArchiveDataStore archiveDataStore,
+    IFileMetaDataDataStore metaDataDataStore,
     IRestoreDataStore restoreDataStore,
     IRestoreService restoreService,
     ILogger<RestoreRunActor> logger,
@@ -30,8 +30,7 @@ public sealed class RestoreRunActor(
         await foreach (var restoreRequest in mediator.GetRestoreRequests(cancellationToken))
             try
             {
-                if (string.IsNullOrWhiteSpace(restoreRequest.ArchiveRunId) ||
-                    string.IsNullOrWhiteSpace(restoreRequest.RestorePaths))
+                if (restoreRequest.ArchiveRunId <= 0 || string.IsNullOrWhiteSpace(restoreRequest.RestorePaths))
                 {
                     logger.LogWarning("Received invalid restore request with null ArchiveRunId or RestorePaths");
                     continue;
@@ -65,7 +64,8 @@ public sealed class RestoreRunActor(
                 logger.LogInformation("Initiating restore run with ID {RestoreId} for ArchiveRunId {ArchiveRunId}",
                     restoreRun.RestoreId, restoreRequest.ArchiveRunId);
 
-                await foreach (var fileMetaData in archiveDataStore.GetRestorableFileMetaData(
+                //todo: make sure its files up to latest run id or latest just before but not later run ids
+                await foreach (var fileMetaData in metaDataDataStore.GetRestorableFileMetaData(
                                    restoreRequest.ArchiveRunId, cancellationToken))
                 {
                     if (!matcher.Match("/", fileMetaData.LocalFilePath).HasMatches)
@@ -74,6 +74,10 @@ public sealed class RestoreRunActor(
                     await restoreService.ScheduleFileRecovery(restoreRun, restoreRequest, fileMetaData,
                         cancellationToken);
                 }
+
+                //todo: set the restore state to all files listed
+
+                restoreRun.Status = RestoreRunStatus.AllFilesListed;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

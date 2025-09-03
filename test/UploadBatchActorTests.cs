@@ -120,7 +120,7 @@
 //         _archiveService.Verify(x => x.RecordChunkUpload(
 //             "run-1",
 //             batchFile,
-//             chunk.HashId,
+//             chunk.ChunkHashId,
 //             It.IsAny<CancellationToken>()), Times.Once);
 //
 //         Assert.False(File.Exists(batchFile));

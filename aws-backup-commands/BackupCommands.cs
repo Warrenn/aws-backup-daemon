@@ -32,7 +32,7 @@ public sealed class BackupCommands(
     public async Task RestoreArchive(
         CommonParameters commonParams,
         [Option("archive-id", Description = "The archive Id that you want to restore")]
-        string archiveId,
+        long archiveId,
         [Option("paths-to-restore", Description = "The paths you want to restore from the archive")]
         string[] pathsToRestore,
         [Ignore] CancellationToken cancellationToken = default
@@ -101,7 +101,7 @@ public sealed class BackupCommands(
     public async Task ListPaths(
         CommonParameters commonParams,
         [Option("archive-id", Description = "The archive Id to list paths for")]
-        string archiveId,
+        long archiveId,
         [Ignore] CancellationToken cancellationToken = default)
     {
         Console.WriteLine("Listing all paths in the archive...");

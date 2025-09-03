@@ -41,6 +41,7 @@ public sealed class RestoreService(
     {
         if (_restoreRunsCache.TryGetValue(restoreId, out var cached)) return cached;
         logger.LogDebug("Looking up restore run {RestoreId} in dataStore", restoreId);
+        
         cached = await restoreDataStore.LookupRestoreRun(restoreId, cancellationToken);
 
         if (cached is null)
@@ -82,26 +83,24 @@ public sealed class RestoreService(
                 select new
                 {
                     run.RestoreId,
-                    ChunkKey = chunkDetailsKeyPair.Key,
-                    ChunkRestore = chunkDetailsKeyPair.Value,
+                    ChunkToRestore = chunkDetailsKeyPair.Value,
                     RequestedFile = requestedFile
                 };
 
             foreach (var restoreChunkStatus in chunkStatuses)
             {
                 var restoreRunId = restoreChunkStatus.RestoreId;
-                var chunkRestore = restoreChunkStatus.ChunkRestore;
+                var chunkToRestore = restoreChunkStatus.ChunkToRestore;
                 var restoreFile = restoreChunkStatus.RequestedFile;
-                var chunkHashKey = restoreChunkStatus.ChunkKey;
 
-                chunkRestore.Status = S3ChunkRestoreStatus.ReadyToRestore;
+                chunkToRestore.Status = S3ChunkRestoreStatus.ReadyToRestore;
                 
-                var saveRestoreChunkStatusCommand = new SaveRestoreChunkStatusCommand(
-                    restoreRunId,
-                    restoreFile.FilePath,
-                    chunkHashKey,
-                    S3ChunkRestoreStatus.ReadyToRestore);
-                await dataStoreMediator.ExecuteCommand(saveRestoreChunkStatusCommand, cancellationToken);
+                // var saveRestoreChunkStatusCommand = new SaveRestoreChunkStatusCommand(
+                //     restoreRunId,
+                //     restoreFile.FilePath,
+                //     chunkHashKey,
+                //     S3ChunkRestoreStatus.ReadyToRestore);
+                // await dataStoreMediator.ExecuteCommand(saveRestoreChunkStatusCommand, cancellationToken);
 
                 var chunkStatusesSnapshot = restoreFile.CloudChunkDetails.Values.Select(d => d.Status).ToArray();
                 if (chunkStatusesSnapshot.Any(s => s == S3ChunkRestoreStatus.PendingDeepArchiveRestore))
@@ -127,10 +126,11 @@ public sealed class RestoreService(
                 };
                 await downloadMediator.DownloadFileFromS3(s3Request, cancellationToken);
                 
-                var saveRestoreFileMetaDataCommand = new SaveRestoreFileMetaDataCommand(
-                    restoreRunId,
-                    restoreFile);
-                await dataStoreMediator.ExecuteCommand(saveRestoreFileMetaDataCommand, cancellationToken);
+                // todo: update status command
+                // var saveRestoreFileMetaDataCommand = new SaveRestoreFileMetaDataCommand(
+                //     restoreRunId,
+                //     restoreFile);
+                // await dataStoreMediator.ExecuteCommand(saveRestoreFileMetaDataCommand, cancellationToken);
             }
         }
         catch (Exception ex)
@@ -153,12 +153,13 @@ public sealed class RestoreService(
             logger.LogInformation("File {File} in run {RunId} marked Completed",
                 req.FilePath, req.RestoreId);
             
-            var saveRestoreFileStatusCommand = new SaveRestoreFileStatusCommand(
-                req.RestoreId,
-                fileMeta.FilePath,
-                FileRestoreStatus.Completed,
-                "");
-            await dataStoreMediator.ExecuteCommand(saveRestoreFileStatusCommand, cancellationToken);
+            // todo: update status command
+            // var saveRestoreFileStatusCommand = new UpdateRestoreFileStatusCommand(
+            //     req.RestoreId,
+            //     fileMeta.FilePath,
+            //     FileRestoreStatus.Completed,
+            //     "");
+            // await dataStoreMediator.ExecuteCommand(saveRestoreFileStatusCommand, cancellationToken);
 
             // if *all* files done → finalize
             await SaveAndFinalizeIfComplete(restoreRun, cancellationToken);
@@ -187,12 +188,12 @@ public sealed class RestoreService(
             await snsMed.PublishMessage(
                 new SnsMessage($"Download failed: {req}", reason.ToString()), cancellationToken);
 
-            var saveRestoreFileStatusCommand = new SaveRestoreFileStatusCommand(
+            var updateRestoreFileStatusCommand = new UpdateRestoreFileStatusCommand(
                 req.RestoreId,
                 fileMeta.FilePath,
                 FileRestoreStatus.Failed,
                 reason.Message);
-            await dataStoreMediator.ExecuteCommand(saveRestoreFileStatusCommand, cancellationToken);
+            await dataStoreMediator.ExecuteCommand(updateRestoreFileStatusCommand, cancellationToken);
 
             await SaveAndFinalizeIfComplete(run, cancellationToken);
         }
@@ -335,13 +336,14 @@ public sealed class RestoreService(
                     AclEntries = fileMetaData.AclEntries,
                     Owner = fileMetaData.Owner,
                     Group = fileMetaData.Group,
-                    Sha256Checksum = fileMetaData.HashKey
+                    Sha256Checksum = fileMetaData.HashId?.ToArray()
                 };
                 await downloadMediator.DownloadFileFromS3(s3Request, cancellationToken);
             }
 
             restoreFileMeta ??= new RestoreFileMetaData(filePath);
 
+            restoreFileMeta.RestoreStartedAt = DateTimeOffset.UtcNow;
             restoreFileMeta.Status = fileStatus;
             restoreFileMeta.CloudChunkDetails = chunkDetails;
             restoreFileMeta.Size = fileMetaData.OriginalSize ?? 0;
@@ -350,7 +352,7 @@ public sealed class RestoreService(
             restoreFileMeta.AclEntries = fileMetaData.AclEntries;
             restoreFileMeta.Owner = fileMetaData.Owner;
             restoreFileMeta.Group = fileMetaData.Group;
-            restoreFileMeta.Sha256Checksum = fileMetaData.HashKey;
+            restoreFileMeta.Sha256Checksum = fileMetaData.HashId?.ToArray();
             restoreFileMeta.RestorePathStrategy = request.RestorePathStrategy;
             restoreFileMeta.RestoreFolder = request.RestoreDestination;
 

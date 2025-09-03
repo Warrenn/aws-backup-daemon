@@ -208,11 +208,10 @@ public sealed class ChunkDataActor(
                     state.Exception ?? new Exception("Exceeded limit"),
                     token);
 
-            if (await dataChunkService.ChunkAlreadyUploaded(chunk, cancellationToken) ||
-                fileMetaData.Status is FileStatus.Skipped)
+            if (await dataChunkService.ChunkAlreadyUploaded(chunk, cancellationToken))
             {
                 logger.LogInformation(
-                    "Skipping chunk {ChunkHash} {ChunkIndex} for file {LocalFilePath} - already uploaded",
+                    "Skipping chunk {ChunkHash} at offset {Offset} for file {LocalFilePath} - already uploaded",
                     Base64Url.Encode(chunk.HashId), chunk.Offset, fileMetaData.LocalFilePath);
 
                 await archiveService.RecordChunkUpload(
@@ -225,7 +224,8 @@ public sealed class ChunkDataActor(
 
             try
             {
-                logger.LogInformation("Processing chunk {ChunkIndex} for file {LocalFilePath} parent {ParentFile}",
+                logger.LogInformation(
+                    "Processing chunk offset {Offset} for file {LocalFilePath} parent {ParentFile}",
                     chunk.Offset, chunk.LocalFilePath, fileMetaData);
 
                 var dataSize = chunk.CompressedSize;
@@ -237,7 +237,8 @@ public sealed class ChunkDataActor(
 
                 _batches[index] ??= new UploadBatch(_streams[index]!.Name, archiveRun);
 
-                logger.LogInformation("Adding chunk {ChunkIndex} of {ParentFile} to batch {BatchFileName}",
+                logger.LogInformation(
+                    "Adding chunk offset {Offset} of {ParentFile} to batch {BatchFileName}",
                     chunk.Offset, uploadRequest.FileMetaData.LocalFilePath, _batches[index]!.LocalFilePath);
 
                 await using var src = new FileStream(

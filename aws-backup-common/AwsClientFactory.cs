@@ -5,6 +5,7 @@ using Amazon.S3;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleSystemsManagement;
 using Amazon.CloudFormation;
+using Amazon.DynamoDBv2;
 using Amazon.SQS;
 using Microsoft.Extensions.Logging;
 using temporary_credentials;
@@ -14,10 +15,11 @@ namespace aws_backup_common;
 public interface IAwsClientFactory
 {
     Task<IAmazonS3> CreateS3Client(CancellationToken cancellationToken);
-    Task<IAmazonSimpleSystemsManagement> CreateSsmClient(CancellationToken cancellationToken = default);
+    Task<IAmazonSimpleSystemsManagement> CreateSsmClient(CancellationToken cancellationToken);
     Task<IAmazonSQS> CreateSqsClient(CancellationToken cancellationToken);
     Task<IAmazonSimpleNotificationService> CreateSnsClient(CancellationToken cancellationToken);
-    Task<IAmazonCloudFormation> CreateCloudFormationClient(CancellationToken cancellationToken = default);
+    Task<IAmazonCloudFormation> CreateCloudFormationClient(CancellationToken cancellationToken);
+    Task<AmazonDynamoDBClient> CreateDynamoDbClient(CancellationToken cancellationToken);
     void ResetCachedCredentials();
 }
 
@@ -69,6 +71,22 @@ public sealed class AwsClientFactory(
         return credentials != null
             ? new AmazonSimpleNotificationServiceClient(credentials, config)
             : new AmazonSimpleNotificationServiceClient(config);
+    }
+
+    public async Task<AmazonDynamoDBClient> CreateDynamoDbClient(CancellationToken cancellationToken)
+    {
+        var config = new AmazonDynamoDBConfig
+        {
+            MaxErrorRetry = resolver.GeneralRetryLimit(),
+            RetryMode = resolver.GetAwsRetryMode(),
+            Timeout = TimeSpan.FromSeconds(resolver.ShutdownTimeoutSeconds()),
+            RegionEndpoint = resolver.GetAwsRegion()
+        };
+
+        var credentials = await GetCredentialsAsync(cancellationToken);
+        return credentials != null
+            ? new AmazonDynamoDBClient(credentials, config)
+            : new AmazonDynamoDBClient(config);
     }
 
     public async Task<IAmazonCloudFormation> CreateCloudFormationClient(CancellationToken cancellationToken)

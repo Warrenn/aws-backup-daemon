@@ -10,13 +10,12 @@ public interface IContextResolver
     string BatchS3Key(string batchFileName);
 
     string RestoreId(
-        string archiveRunId,
+        long archiveRunId,
         string restorePaths,
         DateTimeOffset requestedAt
     );
 
     string LocalRestoreFolder(string requestRestoreId);
-    string ArchiveRunId(DateTimeOffset utcNow);
     TimeSpan NextRetryTimeSpan(int attemptCount);
     S3StorageClass ColdStorage();
     S3StorageClass HotStorage();
@@ -355,17 +354,11 @@ public class ContextResolverBase(Configuration configuration) : IContextResolver
         return $"{_clientId}/data/{fileName}";
     }
 
-    public string RestoreId(string archiveRunId, string restorePaths, DateTimeOffset requestedAt)
+    public string RestoreId(long archiveRunId, string restorePaths, DateTimeOffset requestedAt)
     {
         var pathsHash = Base64Url.ComputeSimpleHash(restorePaths);
         var timestamp = requestedAt.ToString("yyyy-MM-dd-HH-mm-ss");
         return $"restore_{archiveRunId}_{pathsHash}_{timestamp}";
-    }
-
-    public string ArchiveRunId(DateTimeOffset utcNow)
-    {
-        var timestamp = utcNow.ToString("yyyy-MM-dd-HH-mm-ss");
-        return $"{timestamp}";
     }
 
     public TimeSpan NextRetryTimeSpan(int attemptCount)

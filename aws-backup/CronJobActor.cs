@@ -86,7 +86,7 @@ public sealed class CronJobActor(
                     continue;
                 }
 
-                var runId = contextResolver.ArchiveRunId(timeProvider.GetUtcNow());
+                var runId = timeProvider.GetUtcNow().ToUnixTimeSeconds();
                 var pathsToArchive = contextResolver.PathsToArchive();
                 var runRequest = new RunRequest(runId, pathsToArchive, cronSchedule);
 

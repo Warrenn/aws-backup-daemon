@@ -44,11 +44,6 @@ public readonly struct ByteArrayKey : IEquatable<ByteArrayKey>
         return !a.Equals(b);
     }
 
-    public ReadOnlySpan<byte> AsSpan()
-    {
-        return _data.AsSpan();
-    }
-
     public byte[] ToArray()
     {
         return _data;

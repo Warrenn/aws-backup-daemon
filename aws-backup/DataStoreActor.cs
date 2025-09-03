@@ -18,52 +18,18 @@ public sealed record SaveRunRequestCommand(
 public sealed record SaveArchiveRunCommand(
     ArchiveRun ArchiveRun) : DataStoreCommand;
 
-public sealed record RemoveArchiveRequestCommand(
-    string ArchiveRunId) : DataStoreCommand;
-
-public sealed record UpdateFileStatusCommand(
-    string RunId,
-    string FilePath,
-    FileStatus FileStatus,
-    string SkipReason) : DataStoreCommand;
-
-public sealed record UpdateTimeStampsCommand(
-    string RunId,
-    string LocalFilePath,
-    DateTimeOffset Created,
-    DateTimeOffset Modified) : DataStoreCommand;
-
-public sealed record UpdateOwnerGroupCommand(
-    string RunId,
-    string LocalFilePath,
-    string Owner,
-    string Group) : DataStoreCommand;
-
-public sealed record UpdateAclEntriesCommand(
-    string RunId,
-    string LocalFilePath,
-    AclEntry[] AclEntries) : DataStoreCommand;
-
-public sealed record UpdateArchiveStatusCommand(
-    string RunId,
-    ArchiveRunStatus RunStatus) : DataStoreCommand;
-
-public sealed record DeleteFileChunksCommand(
-    string RunId,
-    string LocalFilePath) : DataStoreCommand;
+public sealed record RemoveArchiveRequestCommand(long RunId) : DataStoreCommand;
 
 public sealed record SaveChunkStatusCommand(
-    string RunId,
+    long RunId,
     string LocalFilePath,
     ByteArrayKey ChunkHashKey,
     ChunkStatus ChunkStatus) : DataStoreCommand;
 
-public sealed record SaveFileMetaDataCommand(
-    string RunId,
-    FileMetaData MetaData) : DataStoreCommand;
+public sealed record SaveFileMetaDataCommand(FileMetaData MetaData) : DataStoreCommand;
 
 public sealed record SaveChunkDetailsCommand(
-    string RunId,
+    long RunId,
     string LocalFilePath,
     DataChunkDetails Details) : DataStoreCommand;
 
@@ -86,7 +52,7 @@ public sealed record SaveRestoreChunkStatusCommand(
     ByteArrayKey ChunkKey,
     S3ChunkRestoreStatus ReadyToRestore) : DataStoreCommand;
 
-public sealed record SaveRestoreFileStatusCommand(
+public sealed record UpdateRestoreFileStatusCommand(
     string ReqRestoreId,
     string FileMetaFilePath,
     FileRestoreStatus Status,
@@ -137,49 +103,6 @@ public class DataStoreActor(
                         await archiveDataStore.RemoveArchiveRequest(removeArchiveRequestCommand.ArchiveRunId,
                             cancellationToken);
                         break;
-                    case UpdateFileStatusCommand updateFileStatusCommand:
-                        await archiveDataStore.UpdateFileStatus(
-                            updateFileStatusCommand.RunId,
-                            updateFileStatusCommand.FilePath,
-                            updateFileStatusCommand.FileStatus,
-                            updateFileStatusCommand.SkipReason,
-                            cancellationToken);
-                        break;
-                    case UpdateTimeStampsCommand updateTimeStampsCommand:
-                        await archiveDataStore.UpdateTimeStamps(
-                            updateTimeStampsCommand.RunId,
-                            updateTimeStampsCommand.LocalFilePath,
-                            updateTimeStampsCommand.Created,
-                            updateTimeStampsCommand.Modified,
-                            cancellationToken);
-                        break;
-                    case UpdateOwnerGroupCommand updateOwnerGroupCommand:
-                        await archiveDataStore.UpdateOwnerGroup(
-                            updateOwnerGroupCommand.RunId,
-                            updateOwnerGroupCommand.LocalFilePath,
-                            updateOwnerGroupCommand.Owner,
-                            updateOwnerGroupCommand.Group,
-                            cancellationToken);
-                        break;
-                    case UpdateAclEntriesCommand updateAclEntriesCommand:
-                        await archiveDataStore.UpdateAclEntries(
-                            updateAclEntriesCommand.RunId,
-                            updateAclEntriesCommand.LocalFilePath,
-                            updateAclEntriesCommand.AclEntries,
-                            cancellationToken);
-                        break;
-                    case UpdateArchiveStatusCommand updateArchiveStatusCommand:
-                        await archiveDataStore.UpdateArchiveStatus(
-                            updateArchiveStatusCommand.RunId,
-                            updateArchiveStatusCommand.RunStatus,
-                            cancellationToken);
-                        break;
-                    case DeleteFileChunksCommand deleteFileChunksCommand:
-                        await archiveDataStore.DeleteFileChunks(
-                            deleteFileChunksCommand.RunId,
-                            deleteFileChunksCommand.LocalFilePath,
-                            cancellationToken);
-                        break;
                     case SaveChunkStatusCommand saveChunkStatusCommand:
                         await archiveDataStore.SaveChunkStatus(
                             saveChunkStatusCommand.RunId,
@@ -225,7 +148,7 @@ public class DataStoreActor(
                             saveRestoreChunkStatusCommand.ReadyToRestore,
                             cancellationToken);
                         break;
-                    case SaveRestoreFileStatusCommand saveRestoreFileStatusCommand:
+                    case UpdateRestoreFileStatusCommand saveRestoreFileStatusCommand:
                         await restoreDataStore.SaveRestoreFileStatus(
                             saveRestoreFileStatusCommand.ReqRestoreId,
                             saveRestoreFileStatusCommand.FileMetaFilePath,

@@ -41,7 +41,7 @@ public class HotStorageServiceIntegrationTests
                         [new ByteArrayKey([9, 10, 11])] =
                             new DataChunkDetails("a.chunk0", 0, 3000, [9, 10, 11], 2000)
                     },
-                    LastModified = TimeProvider.System.GetUtcNow(),
+                    Modified = TimeProvider.System.GetUtcNow(),
                     Created = TimeProvider.System.GetUtcNow().AddDays(-1),
                     CompressedSize = 1000,
                     OriginalSize = 1000,
@@ -54,7 +54,7 @@ public class HotStorageServiceIntegrationTests
                 {
                     CompressedSize = 1500,
                     OriginalSize = 3000,
-                    LastModified = TimeProvider.System.GetUtcNow(),
+                    Modified = TimeProvider.System.GetUtcNow(),
                     Created = TimeProvider.System.GetUtcNow().AddDays(-2),
                     AclEntries = [new AclEntry("bob", "rw-", "Allow")],
                     Owner = "bob",

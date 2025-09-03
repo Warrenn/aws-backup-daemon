@@ -33,24 +33,23 @@ public enum RestorePathStrategy
 public sealed record RestoreChunkDetails(
     string S3Key, // S3 key for the chunk
     string BucketName, // S3 bucket name
-    long OffsetInS3BatchFile,
+    long OffsetInS3File,
     long CompressedSize,
     long OffsetInSourceFile,
-    long Size,
-    byte[] HashId) : CloudChunkDetails(S3Key, BucketName, OffsetInS3BatchFile, CompressedSize, Size, HashId)
+    long ChunkSize,
+    byte[] HashId) : CloudChunkDetails(S3Key, BucketName, OffsetInS3File, CompressedSize, ChunkSize, HashId)
 {
     public S3ChunkRestoreStatus Status { get; set; } = S3ChunkRestoreStatus.PendingDeepArchiveRestore;
 }
 
 public sealed record RestoreRequest(
-    string ArchiveRunId,
+    long ArchiveRunId,
     string RestorePaths,
     DateTimeOffset RequestedAt,
     RestorePathStrategy RestorePathStrategy = RestorePathStrategy.Flatten,
     string? RestoreDestination = null);
 
-public sealed record RestoreFileMetaData(
-    string FilePath)
+public sealed record RestoreFileMetaData(string FilePath)
 {
     public FileRestoreStatus Status { get; set; } = FileRestoreStatus.PendingDeepArchiveRestore;
     public string? FailedMessage { get; set; }
@@ -64,6 +63,8 @@ public sealed record RestoreFileMetaData(
     public byte[]? Sha256Checksum { get; set; }
     public RestorePathStrategy RestorePathStrategy { get; set; }
     public string? RestoreFolder { get; set; }
+    public DateTimeOffset? RestoreStartedAt { get; set; }
+    public DateTimeOffset? RestoreCompletedAt { get; set; }
 }
 
 public sealed record DownloadFileFromS3Request(
@@ -86,7 +87,7 @@ public sealed class RestoreRun
 {
     public required string RestoreId { get; init; }
     public required string RestorePaths { get; init; }
-    public required string ArchiveRunId { get; init; }
+    public required long ArchiveRunId { get; init; }
     public required RestoreRunStatus Status { get; set; } = RestoreRunStatus.Processing;
     public required DateTimeOffset RequestedAt { get; init; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? CompletedAt { get; set; }

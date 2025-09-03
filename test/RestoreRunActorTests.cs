@@ -199,8 +199,8 @@ public class RestoreRunActorTests
                 path + ".chunk0",
                 0,
                 1234,
-                hashKey,
-                1234
+                1234,
+                hashKey
             );
 
             var meta = new FileMetaData(path)
@@ -216,7 +216,7 @@ public class RestoreRunActorTests
                 CompressedSize = 5678,
                 Chunks = new ConcurrentDictionary<ByteArrayKey, DataChunkDetails>
                 {
-                    [new ByteArrayKey(chunk.HashId)] = chunk
+                    [new ByteArrayKey(chunk.ChunkHashId)] = chunk
                 }
             };
 

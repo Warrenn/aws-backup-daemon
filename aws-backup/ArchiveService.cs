@@ -6,7 +6,7 @@ namespace aws_backup;
 
 public interface IArchiveService
 {
-    Task<ArchiveRun?> LookupArchiveRun(string runId, CancellationToken cancellationToken);
+    Task<ArchiveRun?> LookupArchiveRun(long runId, CancellationToken cancellationToken);
 
     Task<ArchiveRun> StartNewArchiveRun(RunRequest request, CancellationToken cancellationToken);
 
@@ -37,12 +37,13 @@ public sealed class ArchiveService(
     ILogger<ArchiveService> logger,
     IDataStoreMediator dataStoreMediator,
     IArchiveDataStore archiveDataStore,
-    IDataChunkService dataChunkService)
+    IDataChunkService dataChunkService,
+    IFileMetaDataService fileMetaDataService)
     : IArchiveService
 {
-    private readonly ConcurrentDictionary<string, ArchiveRun> _runCache = new();
+    private readonly ConcurrentDictionary<long, ArchiveRun> _runCache = new();
 
-    public async Task<ArchiveRun?> LookupArchiveRun(string runId, CancellationToken cancellationToken)
+    public async Task<ArchiveRun?> LookupArchiveRun(long runId, CancellationToken cancellationToken)
     {
         if (_runCache.TryGetValue(runId, out var cached))
         {
@@ -89,12 +90,10 @@ public sealed class ArchiveService(
         ArchiveRun run, FileMetaData fileMetaData, Exception exception,
         CancellationToken cancellationToken)
     {
-        var updateFileStatusCommand = new UpdateFileStatusCommand(
-            run.RunId, fileMetaData.LocalFilePath, FileStatus.Skipped, exception.Message);
-        await dataStoreMediator.ExecuteCommand(updateFileStatusCommand, cancellationToken);
-
         fileMetaData.Status = FileStatus.Skipped;
         fileMetaData.SkipReason = exception.Message;
+
+        await fileMetaDataService.UpdateStatus(fileMetaData, cancellationToken);
 
         // notify via SNS
         await snsMed.PublishMessage(new ExceptionMessage(
@@ -125,13 +124,7 @@ public sealed class ArchiveService(
                 $"Skipped due to: {exception}"), cancellationToken);
 
             // save the file metadata with updated status
-            var updateFileStatusCommand = new UpdateFileStatusCommand(
-                run.RunId, filePath, FileStatus.Skipped, exception.Message);
-            await dataStoreMediator.ExecuteCommand(updateFileStatusCommand, cancellationToken);
-
-            var saveChunkStatusCommand = new SaveChunkStatusCommand(
-                run.RunId, filePath, chunkKey, ChunkStatus.Failed);
-            await dataStoreMediator.ExecuteCommand(saveChunkStatusCommand, cancellationToken);
+            await fileMetaDataService.UpdateStatus(fileMetaData, cancellationToken);
         }
 
         details.Status = ChunkStatus.Failed;
@@ -152,9 +145,9 @@ public sealed class ArchiveService(
         CancellationToken cancellationToken)
     {
         var chunkKey = new ByteArrayKey(chunkDetails.HashId);
-        var filesSnapshot = run.Files.ToArray();
+        var filesSnapshot = run.Files.Values.ToArray();
 
-        foreach (var (filePath, fileMetaData) in filesSnapshot)
+        foreach (var fileMetaData in filesSnapshot)
         {
             if (!fileMetaData.Chunks.TryGetValue(chunkKey, out var fileChunk)) continue;
             fileChunk.Status = ChunkStatus.Uploaded;
@@ -164,13 +157,7 @@ public sealed class ArchiveService(
                 fileMetaData.Status = FileStatus.UploadComplete;
 
             // save the file metadata with updated status
-            var updateFileStatusCommand = new UpdateFileStatusCommand(
-                run.RunId, filePath, fileMetaData.Status, "");
-            await dataStoreMediator.ExecuteCommand(updateFileStatusCommand, cancellationToken);
-
-            var saveChunkStatusCommand = new SaveChunkStatusCommand(
-                run.RunId, filePath, chunkKey, ChunkStatus.Uploaded);
-            await dataStoreMediator.ExecuteCommand(saveChunkStatusCommand, cancellationToken);
+            await fileMetaDataService.UpdateStatus(fileMetaData, cancellationToken);
         }
 
         chunkDetails.Status = ChunkStatus.Uploaded;
@@ -190,10 +177,6 @@ public sealed class ArchiveService(
         var chunkKey = new ByteArrayKey(chunkDetails.HashId);
         fileMetaData.Chunks.TryAdd(chunkKey, chunkDetails);
 
-        var saveChunkDetailsCommand = new SaveChunkDetailsCommand(
-            run.RunId, fileMetaData.LocalFilePath, chunkDetails);
-        await dataStoreMediator.ExecuteCommand(saveChunkDetailsCommand, cancellationToken);
-
         await SaveAndFinalizeIfComplete(run, cancellationToken);
     }
 
@@ -212,10 +195,9 @@ public sealed class ArchiveService(
         if (fileMetaData.Status is FileStatus.Added) fileMetaData.Status = status;
 
         if (string.IsNullOrWhiteSpace(fileMetaData.SkipReason)) fileMetaData.SkipReason = skipReason;
-
-        var saveFileMetaDataCommand = new SaveFileMetaDataCommand(run.RunId, fileMetaData);
-        await dataStoreMediator.ExecuteCommand(saveFileMetaDataCommand, cancellationToken);
-
+        if (status is FileStatus.ChunkingComplete) return;
+        
+        await fileMetaDataService.UpdateStatus(fileMetaData, cancellationToken);
         await SaveAndFinalizeIfComplete(run, cancellationToken);
     }
 
@@ -233,12 +215,7 @@ public sealed class ArchiveService(
         if (run.Files.TryGetValue(filePath, out var metaData))
             return metaData;
 
-        metaData = await archiveDataStore.GetFileMetaData(runId, filePath, cancellationToken) ??
-                   new FileMetaData(filePath)
-                   {
-                       Status = FileStatus.Added,
-                       Chunks = new ConcurrentDictionary<ByteArrayKey, DataChunkDetails>()
-                   };
+        metaData = await fileMetaDataService.GetFileMetaData(runId, filePath, cancellationToken);
 
         run.Files.TryAdd(filePath, metaData);
         return metaData;

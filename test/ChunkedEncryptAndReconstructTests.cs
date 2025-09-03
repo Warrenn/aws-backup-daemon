@@ -100,7 +100,7 @@
 //             ch.CompressedSize,
 //             0,
 //             0,
-//             ch.HashId.ToArray(),
+//             ch.ChunkHashId.ToArray(),
 //             0
 //         )).ToArray();
 //
@@ -220,7 +220,7 @@
 //             ch.CompressedSize,
 //             0,
 //             0,
-//             ch.HashId.ToArray(),
+//             ch.ChunkHashId.ToArray(),
 //             0
 //         )).ToArray();
 //

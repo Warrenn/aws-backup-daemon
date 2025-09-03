@@ -67,7 +67,7 @@ public sealed class UploadBatchActor(
                     TagSet =
                     [
                         new Tag { Key = "storage-class", Value = "cold" },
-                        new Tag { Key = "archive-run-id", Value = S3Service.ScrubTagValue(batch.ArchiveRun.RunId) },
+                        new Tag { Key = "archive-run-id", Value = $"{batch.ArchiveRun.RunId}" },
                         new Tag { Key = "client-id", Value = S3Service.ScrubTagValue(contextResolver.ClientId()) },
                         new Tag { Key = "compression", Value = "zstd" }
                     ]
@@ -80,7 +80,7 @@ public sealed class UploadBatchActor(
                 foreach (var (archiveRun, fileMetaData, chunk) in batch.Requests)
                 {
                     logger.LogInformation(
-                        "Marking chunk {ChunkIndex} for file {ParentFile} as uploaded. Key: {Key}, Bucket: {BucketName}, OffsetInS3BatchFile: {OffsetInS3BatchFile} Size: {Size}",
+                        "Marking chunk at Offset {OffsetInSourceFile} for file {ParentFile} as uploaded. Key: {Key}, Bucket: {BucketName}, OffsetInS3File: {OffsetInS3File} Size: {Size}",
                         chunk.Offset, fileMetaData.LocalFilePath, key, bucketName, offsetInS3Batch, chunk.Size);
 
                     await dataChunkService.MarkChunkAsUploaded(
