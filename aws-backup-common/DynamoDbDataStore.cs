@@ -688,7 +688,7 @@ public class DynamoDbDataStore(
                     ["#m"] = "Owner",
                     ["#n"] = "Group",
                     ["#o"] = "AclEntries",
-                    ["#p"] = "Sha256Checksum",
+                    ["#p"] = "HashId",
                     ["#q"] = "RestorePathStrategy",
                     ["#r"] = "RestoreDestination",
                     ["#s"] = "S3Key",
@@ -738,7 +738,7 @@ public class DynamoDbDataStore(
                                 s => JsonSerializer.Deserialize<AclEntry[]>(s,
                                     SourceGenerationContext.Default.AclEntryArray)),
                             Owner = GetSIfExists(item, "Owner", s => s),
-                            Sha256Checksum = GetSIfExists(item, "Sha256Checksum", Base64Url.Decode),
+                            HashId = GetSIfExists(item, "HashId", Base64Url.Decode),
                             RestorePathStrategy = item.TryGetValue("RestorePathStrategy", out var strategy)
                                 ? Enum.Parse<RestorePathStrategy>(strategy.S)
                                 : RestorePathStrategy.Nested,
@@ -847,10 +847,10 @@ public class DynamoDbDataStore(
             SetSIfNotNull(fileItem, "Created", fileMeta.Created?.ToString("O"));
             SetSIfNotNull(fileItem, "Owner", fileMeta.Owner);
             SetSIfNotNull(fileItem, "Group", fileMeta.Group);
-            var sha256Checksum = fileMeta.Sha256Checksum is not null
-                ? Base64Url.Encode(fileMeta.Sha256Checksum)
+            var sha256Checksum = fileMeta.HashId is not null
+                ? Base64Url.Encode(fileMeta.HashId)
                 : null;
-            SetSIfNotNull(fileItem, "Sha256Checksum", sha256Checksum);
+            SetSIfNotNull(fileItem, "HashId", sha256Checksum);
 
             var fileItemUpdateRequest = CreateUpdateItemRequest(fileItem);
             await dynamoDbClient.UpdateItemAsync(fileItemUpdateRequest, cancellationToken);
@@ -931,10 +931,10 @@ public class DynamoDbDataStore(
         SetSIfNotNull(fileItem, "Created", fileMeta.Created?.ToString("O"));
         SetSIfNotNull(fileItem, "Owner", fileMeta.Owner);
         SetSIfNotNull(fileItem, "Group", fileMeta.Group);
-        var sha256Checksum = fileMeta.Sha256Checksum is not null
-            ? Base64Url.Encode(fileMeta.Sha256Checksum)
+        var sha256Checksum = fileMeta.HashId is not null
+            ? Base64Url.Encode(fileMeta.HashId)
             : null;
-        SetSIfNotNull(fileItem, "Sha256Checksum", sha256Checksum);
+        SetSIfNotNull(fileItem, "HashId", sha256Checksum);
 
         var fileItemUpdateRequest = CreateUpdateItemRequest(fileItem);
         await dynamoDbClient.UpdateItemAsync(fileItemUpdateRequest, cancellationToken);

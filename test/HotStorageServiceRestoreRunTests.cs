@@ -49,7 +49,7 @@ public class HotStorageServiceRestoreRunTests
                 AclEntries = new[] { new AclEntry("user", "r--", "Allow") },
                 Owner = $"user{i}",
                 Group = $"group{i}",
-                Sha256Checksum = [1, 2, 3, 4, 5],
+                HashId = [1, 2, 3, 4, 5],
                 Status = FileRestoreStatus.PendingS3Download
             };
             _original.RequestedFiles[meta.FilePath] = meta;
@@ -57,7 +57,7 @@ public class HotStorageServiceRestoreRunTests
 
         // Populate FailedFiles
         _original.RequestedFiles["/tmp/data/file1.txt"].FailedMessage = "Network error";
-        _original.RequestedFiles["/tmp/data/file2.txt"].FailedMessage = "Sha256Checksum mismatch";
+        _original.RequestedFiles["/tmp/data/file2.txt"].FailedMessage = "HashId mismatch";
 
         // Mocks
         var ctxMock = new Mock<IContextResolver>();
@@ -112,7 +112,7 @@ public class HotStorageServiceRestoreRunTests
             for (var i = 0; i < orig.AclEntries.Length; i++)
                 Assert.Equal(orig.AclEntries[i], dl.AclEntries[i]);
 
-            Assert.True(orig.Sha256Checksum.AsSpan().SequenceEqual(dl.Sha256Checksum));
+            Assert.True(orig.HashId.AsSpan().SequenceEqual(dl.HashId));
         }
 
     }

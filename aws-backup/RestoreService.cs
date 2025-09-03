@@ -122,7 +122,7 @@ public sealed class RestoreService(
                     AclEntries = restoreFile.AclEntries,
                     Owner = restoreFile.Owner,
                     Group = restoreFile.Group,
-                    Sha256Checksum = restoreFile.Sha256Checksum
+                    Sha256Checksum = restoreFile.HashId
                 };
                 await downloadMediator.DownloadFileFromS3(s3Request, cancellationToken);
                 
@@ -188,11 +188,9 @@ public sealed class RestoreService(
             await snsMed.PublishMessage(
                 new SnsMessage($"Download failed: {req}", reason.ToString()), cancellationToken);
 
-            var updateRestoreFileStatusCommand = new UpdateRestoreFileStatusCommand(
+            var updateRestoreFileStatusCommand = new SaveRestoreFileMetaDataCommand(
                 req.RestoreId,
-                fileMeta.FilePath,
-                FileRestoreStatus.Failed,
-                reason.Message);
+                fileMeta);
             await dataStoreMediator.ExecuteCommand(updateRestoreFileStatusCommand, cancellationToken);
 
             await SaveAndFinalizeIfComplete(run, cancellationToken);
@@ -352,7 +350,7 @@ public sealed class RestoreService(
             restoreFileMeta.AclEntries = fileMetaData.AclEntries;
             restoreFileMeta.Owner = fileMetaData.Owner;
             restoreFileMeta.Group = fileMetaData.Group;
-            restoreFileMeta.Sha256Checksum = fileMetaData.HashId?.ToArray();
+            restoreFileMeta.HashId = fileMetaData.HashId?.ToArray();
             restoreFileMeta.RestorePathStrategy = request.RestorePathStrategy;
             restoreFileMeta.RestoreFolder = request.RestoreDestination;
 

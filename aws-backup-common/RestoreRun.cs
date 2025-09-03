@@ -60,7 +60,7 @@ public sealed record RestoreFileMetaData(string FilePath)
     public AclEntry[]? AclEntries { get; set; }
     public string? Owner { get; set; }
     public string? Group { get; set; }
-    public byte[]? Sha256Checksum { get; set; }
+    public byte[]? HashId { get; set; }
     public RestorePathStrategy RestorePathStrategy { get; set; }
     public string? RestoreFolder { get; set; }
     public DateTimeOffset? RestoreStartedAt { get; set; }

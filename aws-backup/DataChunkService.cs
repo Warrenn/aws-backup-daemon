@@ -37,7 +37,6 @@ public sealed class DataChunkService(
         if (alreadyUploaded)
             return;
 
-        var hashKey = new ByteArrayKey(chunk.HashId);
         var cloudChunkDetails = new CloudChunkDetails(
             s3Key,
             bucketName,
@@ -46,7 +45,6 @@ public sealed class DataChunkService(
             chunk.Size,
             chunk.HashId);
         var addCloudChunkDetailsCommand = new AddCloudChunkDetailsCommand(
-            hashKey,
             cloudChunkDetails);
         await mediator.ExecuteCommand(addCloudChunkDetailsCommand, cancellationToken);
     }

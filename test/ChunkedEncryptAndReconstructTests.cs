@@ -111,7 +111,7 @@
 //             result.OriginalSize
 //         )
 //         {
-//             Sha256Checksum = result.FullFileHash
+//             HashId = result.FullFileHash
 //         };
 //
 //         // 7) Reconstruct
@@ -231,7 +231,7 @@
 //             result.OriginalSize
 //         )
 //         {
-//             Sha256Checksum = result.FullFileHash
+//             HashId = result.FullFileHash
 //         };
 //
 //         // 7) Reconstruct
