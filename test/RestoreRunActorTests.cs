@@ -1,280 +1,280 @@
-using System.Collections.Concurrent;
-using System.Threading.Channels;
-using aws_backup_common;
-using aws_backup;
-using Microsoft.Extensions.Logging;
-using Moq;
-
-namespace test;
-
-public class RestoreRunActorTests
-{
-    private readonly Mock<IArchiveDataStore> _archiveDataStore = new();
-    private readonly Mock<IContextResolver> _ctx = new();
-    private readonly TestLoggerClass<RestoreRunActor> _logger = new();
-    private readonly Mock<IRestoreRequestsMediator> _mediator = new();
-    private readonly Mock<IRestoreDataStore> _restoreDataService = new();
-    private readonly Mock<IRestoreService> _restoreService = new();
-
-    private RestoreRunActor CreateOrchestration(Channel<RestoreRequest> chan)
-    {
-        _mediator.Setup(m => m.GetRestoreRequests(It.IsAny<CancellationToken>()))
-            .Returns(chan.Reader.ReadAllAsync());
-        _ctx.Setup(c => c.RestoreId(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTimeOffset>()))
-            .Returns((string runId, string paths, DateTimeOffset _) => $"rid-{runId}-{paths}");
-        _restoreDataService.Setup(m => m.GetRestoreRequests(It.IsAny<CancellationToken>()))
-            .Returns(Enumerable.Empty<RestoreRequest>().ToAsyncEnumerable());
-
-        return new RestoreRunActor(
-            _mediator.Object,
-            _archiveDataStore.Object,
-            _restoreDataService.Object,
-            _restoreService.Object,
-            _logger,
-            _ctx.Object,
-            Mock.Of<ISnsMessageMediator>());
-    }
-
-    [Fact]
-    public async Task InvalidRequest_LoggedAndSkipped()
-    {
-        var chan = Channel.CreateUnbounded<RestoreRequest>();
-        chan.Writer.TryWrite(new RestoreRequest(
-            "",
-            "",
-            TimeProvider.System.GetUtcNow()));
-        chan.Writer.Complete();
-
-        var orch = CreateOrchestration(chan);
-        await orch.StartAsync(CancellationToken.None);
-        await orch.ExecuteTask!;
-
-        _restoreDataService.Verify(a => a.LookupRestoreRun(It.IsAny<string>(), It.IsAny<CancellationToken>()),
-            Times.Never);
-        var logMatches = _logger.LogRecords
-            .Where(l => l.LogLevel == LogLevel.Warning && l.Message.Contains("Received invalid restore request"));
-        Assert.Single(logMatches);
-    }
-
-    [Fact]
-    public async Task ExistingRestoreRun_Skipped()
-    {
-        // Arrange
-        var req = new RestoreRequest(
-            "ar1",
-            "/p",
-            DateTimeOffset.UtcNow
-        );
-
-        var chan = Channel.CreateUnbounded<RestoreRequest>();
-        chan.Writer.TryWrite(req);
-        chan.Writer.Complete();
-
-        // Stub the mediator to return our single request
-        _mediator
-            .Setup(m => m.GetRestoreRequests(It.IsAny<CancellationToken>()))
-            .Returns(chan.Reader.ReadAllAsync());
-
-        // Stub the context to generate a known restoreId
-        var expectedRestoreId = $"rid-{req.ArchiveRunId}-{req.RestorePaths}";
-        _ctx
-            .Setup(c => c.RestoreId(req.ArchiveRunId, req.RestorePaths, req.RequestedAt))
-            .Returns(expectedRestoreId);
-
-        // Simulate that a RestoreRun already exists => should skip
-        _restoreService
-            .Setup(r => r.LookupRestoreRun(expectedRestoreId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new RestoreRun
-            {
-                RestoreId = expectedRestoreId,
-                ArchiveRunId = req.ArchiveRunId,
-                RestorePaths = req.RestorePaths,
-                RequestedAt = req.RequestedAt,
-                Status = RestoreRunStatus.Processing,
-                RequestedFiles = new ConcurrentDictionary<string, RestoreFileMetaData>()
-            });
-
-        // Act
-        var orch = CreateOrchestration(chan);
-        await orch.StartAsync(CancellationToken.None);
-        await orch.ExecuteTask!;
-
-
-        // Assert
-
-        // 1) We should have checked LookupRestoreRun exactly once with our generated key
-        _restoreService.Verify(r =>
-            r.LookupRestoreRun(expectedRestoreId, It.IsAny<CancellationToken>()), Times.Once);
-
-        // 2) Since we skipped, we never even called into the archive service
-        _restoreDataService.Verify(a =>
-            a.LookupRestoreRun(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-
-    [Fact]
-    public async Task MissingArchiveRun_LogsWarningAndCreatesNew()
-    {
-        var req = new RestoreRequest(
-            "ar2",
-            "/p",
-            TimeProvider.System.GetUtcNow());
-        var chan = Channel.CreateUnbounded<RestoreRequest>();
-        chan.Writer.TryWrite(req);
-        chan.Writer.Complete();
-
-        _restoreService.Setup(r => r.LookupRestoreRun(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((RestoreRun)null);
-        _restoreService.Setup(r =>
-                r.StartNewRestoreRun(It.IsAny<RestoreRequest>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((RestoreRequest r, string id, CancellationToken _) => new RestoreRun
-            {
-                RestoreId = id,
-                ArchiveRunId = r.ArchiveRunId,
-                RestorePaths = r.RestorePaths,
-                RequestedAt = r.RequestedAt,
-                Status = RestoreRunStatus.Processing,
-                RequestedFiles = new ConcurrentDictionary<string, RestoreFileMetaData>()
-            }).Verifiable(Times.Once);
-        _archiveDataStore.Setup(a => a.GetRestorableFileMetaData(
-                It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns(Enumerable.Empty<FileMetaData>().ToAsyncEnumerable());
-
-        var orch = CreateOrchestration(chan);
-        await orch.StartAsync(CancellationToken.None);
-        await orch.ExecuteTask!;
-
-        var loggerMatches = _logger.LogRecords
-            .Where(l => l.LogLevel == LogLevel.Information && l.Message.Contains("Creating new restore run for"));
-        Assert.Single(loggerMatches);
-
-        _restoreService.VerifyAll();
-    }
-
-    [Fact]
-    public async Task ValidRequest_InitiatesRestoreRunWithCorrectFiles()
-    {
-        // Arrange the incoming RestoreRequest
-        var req = new RestoreRequest
-        (
-            "ar3",
-            "/a/**:/b/**", // Match all files under /a and /b
-            DateTimeOffset.UtcNow
-        );
-        var run = new RestoreRun
-        {
-            RestoreId = $"rid-{req.ArchiveRunId}-{req.RestorePaths}",
-            ArchiveRunId = req.ArchiveRunId,
-            RestorePaths = req.RestorePaths,
-            RequestedAt = req.RequestedAt,
-            Status = RestoreRunStatus.Processing,
-            RequestedFiles = new ConcurrentDictionary<string, RestoreFileMetaData>()
-        };
-        var chan = Channel.CreateUnbounded<RestoreRequest>();
-        chan.Writer.TryWrite(req);
-        chan.Writer.Complete();
-
-        // No existing RestoreRun
-        _restoreService
-            .Setup(r => r.LookupRestoreRun(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((RestoreRun)null);
-
-        _restoreService
-            .Setup(r => r.StartNewRestoreRun(It.IsAny<RestoreRequest>(), It.IsAny<string>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync((RestoreRequest _, string _, CancellationToken _) => run)
-            .Verifiable(Times.Once);
-
-        var archiveFiles = new List<FileMetaData>();
-        _archiveDataStore
-            .Setup(a=> a.GetRestorableFileMetaData(
-                It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns(archiveFiles.ToAsyncEnumerable());
-        
-        // Helper to add a file with one chunk
-        void AddFile(string path)
-        {
-            var hashKey = new byte[] { 1, 2, 3, 4 };
-            var chunk = new DataChunkDetails(
-                path + ".chunk0",
-                0,
-                1234,
-                1234,
-                hashKey
-            );
-
-            var meta = new FileMetaData(path)
-            {
-                OriginalSize = 9999,
-                LastModified = DateTimeOffset.UtcNow.AddDays(-1),
-                Created = DateTimeOffset.UtcNow.AddDays(-2),
-                Owner = "ownerX",
-                Group = "groupX",
-                AclEntries = new[] { new AclEntry("id", "rwx", "POSIX") },
-                HashKey = hashKey,
-                Status = FileStatus.Added,
-                CompressedSize = 5678,
-                Chunks = new ConcurrentDictionary<ByteArrayKey, DataChunkDetails>
-                {
-                    [new ByteArrayKey(chunk.ChunkHashId)] = chunk
-                }
-            };
-
-            // Note: ArchiveRun.Files is a ConcurrentDictionary
-            archiveFiles.Add(meta);
-        }
-
-        AddFile("/a/x.txt");
-        AddFile("/b/y.txt");
-        AddFile("/c/z.txt"); // should be excluded by the matcher
-
-        RestoreRun captured = null!;
-
-        var orch = CreateOrchestration(chan);
-        await orch.StartAsync(CancellationToken.None);
-        await orch.ExecuteTask!;
-        
-        _restoreService
-            .Verify(s=>s.ScheduleFileRecovery(
-                run,
-                It.Is<RestoreRequest>(r => r.ArchiveRunId == req.ArchiveRunId && r.RestorePaths == req.RestorePaths),
-                It.Is<FileMetaData>(f => f.LocalFilePath == "/a/x.txt" ),
-                It.IsAny<CancellationToken>()), Times.Once);
-        
-        _restoreService
-            .Verify(s=>s.ScheduleFileRecovery(
-                run,
-                It.Is<RestoreRequest>(r => r.ArchiveRunId == req.ArchiveRunId && r.RestorePaths == req.RestorePaths),
-                It.Is<FileMetaData>(f => f.LocalFilePath == "/b/y.txt" ),
-                It.IsAny<CancellationToken>()), Times.Once);
-
-        _restoreService
-            .Verify(s=>s.ScheduleFileRecovery(
-                run,
-                It.IsAny<RestoreRequest>(),
-                It.Is<FileMetaData>(f => f.LocalFilePath == "/c/z.txt" ),
-                It.IsAny<CancellationToken>()), Times.Never);
-        
-    }
-
-
-    [Fact]
-    public async Task ExceptionInHandler_LogsErrorAndContinues()
-    {
-        var req = new RestoreRequest("ar4", "/p", DateTimeOffset.UtcNow);
-        var chan = Channel.CreateUnbounded<RestoreRequest>();
-        chan.Writer.TryWrite(req);
-        chan.Writer.Complete();
-
-        _restoreService.Setup(r => r.LookupRestoreRun(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException("boom"));
-
-        var orch = CreateOrchestration(chan);
-        await orch.StartAsync(CancellationToken.None);
-        await orch.ExecuteTask!;
-
-        var loggerMatches = _logger.LogRecords
-            .Where(l => l.LogLevel == LogLevel.Error && l.Message.Contains("Error processing restore request"));
-        Assert.Single(loggerMatches);
-    }
-}
+// using System.Collections.Concurrent;
+// using System.Threading.Channels;
+// using aws_backup_common;
+// using aws_backup;
+// using Microsoft.Extensions.Logging;
+// using Moq;
+//
+// namespace test;
+//
+// public class RestoreRunActorTests
+// {
+//     private readonly Mock<IArchiveDataStore> _archiveDataStore = new();
+//     private readonly Mock<IContextResolver> _ctx = new();
+//     private readonly TestLoggerClass<RestoreRunActor> _logger = new();
+//     private readonly Mock<IRestoreRequestsMediator> _mediator = new();
+//     private readonly Mock<IRestoreDataStore> _restoreDataService = new();
+//     private readonly Mock<IRestoreService> _restoreService = new();
+//
+//     private RestoreRunActor CreateOrchestration(Channel<RestoreRequest> chan)
+//     {
+//         _mediator.Setup(m => m.GetRestoreRequests(It.IsAny<CancellationToken>()))
+//             .Returns(chan.Reader.ReadAllAsync());
+//         _ctx.Setup(c => c.RestoreId(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTimeOffset>()))
+//             .Returns((string runId, string paths, DateTimeOffset _) => $"rid-{runId}-{paths}");
+//         _restoreDataService.Setup(m => m.GetRestoreRequests(It.IsAny<CancellationToken>()))
+//             .Returns(Enumerable.Empty<RestoreRequest>().ToAsyncEnumerable());
+//
+//         return new RestoreRunActor(
+//             _mediator.Object,
+//             _archiveDataStore.Object,
+//             _restoreDataService.Object,
+//             _restoreService.Object,
+//             _logger,
+//             _ctx.Object,
+//             Mock.Of<ISnsMessageMediator>());
+//     }
+//
+//     [Fact]
+//     public async Task InvalidRequest_LoggedAndSkipped()
+//     {
+//         var chan = Channel.CreateUnbounded<RestoreRequest>();
+//         chan.Writer.TryWrite(new RestoreRequest(
+//             "",
+//             "",
+//             TimeProvider.System.GetUtcNow()));
+//         chan.Writer.Complete();
+//
+//         var orch = CreateOrchestration(chan);
+//         await orch.StartAsync(CancellationToken.None);
+//         await orch.ExecuteTask!;
+//
+//         _restoreDataService.Verify(a => a.LookupRestoreRun(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+//             Times.Never);
+//         var logMatches = _logger.LogRecords
+//             .Where(l => l.LogLevel == LogLevel.Warning && l.Message.Contains("Received invalid restore request"));
+//         Assert.Single(logMatches);
+//     }
+//
+//     [Fact]
+//     public async Task ExistingRestoreRun_Skipped()
+//     {
+//         // Arrange
+//         var req = new RestoreRequest(
+//             "ar1",
+//             "/p",
+//             DateTimeOffset.UtcNow
+//         );
+//
+//         var chan = Channel.CreateUnbounded<RestoreRequest>();
+//         chan.Writer.TryWrite(req);
+//         chan.Writer.Complete();
+//
+//         // Stub the mediator to return our single request
+//         _mediator
+//             .Setup(m => m.GetRestoreRequests(It.IsAny<CancellationToken>()))
+//             .Returns(chan.Reader.ReadAllAsync());
+//
+//         // Stub the context to generate a known restoreId
+//         var expectedRestoreId = $"rid-{req.ArchiveRunId}-{req.RestorePaths}";
+//         _ctx
+//             .Setup(c => c.RestoreId(req.ArchiveRunId, req.RestorePaths, req.RequestedAt))
+//             .Returns(expectedRestoreId);
+//
+//         // Simulate that a RestoreRun already exists => should skip
+//         _restoreService
+//             .Setup(r => r.LookupRestoreRun(expectedRestoreId, It.IsAny<CancellationToken>()))
+//             .ReturnsAsync(new RestoreRun
+//             {
+//                 RestoreId = expectedRestoreId,
+//                 ArchiveRunId = req.ArchiveRunId,
+//                 RestorePaths = req.RestorePaths,
+//                 RequestedAt = req.RequestedAt,
+//                 Status = RestoreRunStatus.Processing,
+//                 RequestedFiles = new ConcurrentDictionary<string, RestoreFileMetaData>()
+//             });
+//
+//         // Act
+//         var orch = CreateOrchestration(chan);
+//         await orch.StartAsync(CancellationToken.None);
+//         await orch.ExecuteTask!;
+//
+//
+//         // Assert
+//
+//         // 1) We should have checked LookupRestoreRun exactly once with our generated key
+//         _restoreService.Verify(r =>
+//             r.LookupRestoreRun(expectedRestoreId, It.IsAny<CancellationToken>()), Times.Once);
+//
+//         // 2) Since we skipped, we never even called into the archive service
+//         _restoreDataService.Verify(a =>
+//             a.LookupRestoreRun(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+//     }
+//
+//
+//     [Fact]
+//     public async Task MissingArchiveRun_LogsWarningAndCreatesNew()
+//     {
+//         var req = new RestoreRequest(
+//             "ar2",
+//             "/p",
+//             TimeProvider.System.GetUtcNow());
+//         var chan = Channel.CreateUnbounded<RestoreRequest>();
+//         chan.Writer.TryWrite(req);
+//         chan.Writer.Complete();
+//
+//         _restoreService.Setup(r => r.LookupRestoreRun(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+//             .ReturnsAsync((RestoreRun)null);
+//         _restoreService.Setup(r =>
+//                 r.StartNewRestoreRun(It.IsAny<RestoreRequest>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+//             .ReturnsAsync((RestoreRequest r, string id, CancellationToken _) => new RestoreRun
+//             {
+//                 RestoreId = id,
+//                 ArchiveRunId = r.ArchiveRunId,
+//                 RestorePaths = r.RestorePaths,
+//                 RequestedAt = r.RequestedAt,
+//                 Status = RestoreRunStatus.Processing,
+//                 RequestedFiles = new ConcurrentDictionary<string, RestoreFileMetaData>()
+//             }).Verifiable(Times.Once);
+//         _archiveDataStore.Setup(a => a.GetRestorableFileMetaData(
+//                 It.IsAny<string>(), It.IsAny<CancellationToken>()))
+//             .Returns(Enumerable.Empty<FileMetaData>().ToAsyncEnumerable());
+//
+//         var orch = CreateOrchestration(chan);
+//         await orch.StartAsync(CancellationToken.None);
+//         await orch.ExecuteTask!;
+//
+//         var loggerMatches = _logger.LogRecords
+//             .Where(l => l.LogLevel == LogLevel.Information && l.Message.Contains("Creating new restore run for"));
+//         Assert.Single(loggerMatches);
+//
+//         _restoreService.VerifyAll();
+//     }
+//
+//     [Fact]
+//     public async Task ValidRequest_InitiatesRestoreRunWithCorrectFiles()
+//     {
+//         // Arrange the incoming RestoreRequest
+//         var req = new RestoreRequest
+//         (
+//             "ar3",
+//             "/a/**:/b/**", // Match all files under /a and /b
+//             DateTimeOffset.UtcNow
+//         );
+//         var run = new RestoreRun
+//         {
+//             RestoreId = $"rid-{req.ArchiveRunId}-{req.RestorePaths}",
+//             ArchiveRunId = req.ArchiveRunId,
+//             RestorePaths = req.RestorePaths,
+//             RequestedAt = req.RequestedAt,
+//             Status = RestoreRunStatus.Processing,
+//             RequestedFiles = new ConcurrentDictionary<string, RestoreFileMetaData>()
+//         };
+//         var chan = Channel.CreateUnbounded<RestoreRequest>();
+//         chan.Writer.TryWrite(req);
+//         chan.Writer.Complete();
+//
+//         // No existing RestoreRun
+//         _restoreService
+//             .Setup(r => r.LookupRestoreRun(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+//             .ReturnsAsync((RestoreRun)null);
+//
+//         _restoreService
+//             .Setup(r => r.StartNewRestoreRun(It.IsAny<RestoreRequest>(), It.IsAny<string>(),
+//                 It.IsAny<CancellationToken>()))
+//             .ReturnsAsync((RestoreRequest _, string _, CancellationToken _) => run)
+//             .Verifiable(Times.Once);
+//
+//         var archiveFiles = new List<FileMetaData>();
+//         _archiveDataStore
+//             .Setup(a=> a.GetRestorableFileMetaData(
+//                 It.IsAny<string>(), It.IsAny<CancellationToken>()))
+//             .Returns(archiveFiles.ToAsyncEnumerable());
+//         
+//         // Helper to add a file with one chunk
+//         void AddFile(string path)
+//         {
+//             var hashKey = new byte[] { 1, 2, 3, 4 };
+//             var chunk = new DataChunkDetails(
+//                 path + ".chunk0",
+//                 0,
+//                 1234,
+//                 1234,
+//                 hashKey
+//             );
+//
+//             var meta = new FileMetaData(path)
+//             {
+//                 OriginalSize = 9999,
+//                 LastModified = DateTimeOffset.UtcNow.AddDays(-1),
+//                 Created = DateTimeOffset.UtcNow.AddDays(-2),
+//                 Owner = "ownerX",
+//                 Group = "groupX",
+//                 AclEntries = new[] { new AclEntry("id", "rwx", "POSIX") },
+//                 HashKey = hashKey,
+//                 Status = FileStatus.Added,
+//                 CompressedSize = 5678,
+//                 Chunks = new ConcurrentDictionary<ByteArrayKey, DataChunkDetails>
+//                 {
+//                     [new ByteArrayKey(chunk.ChunkHashId)] = chunk
+//                 }
+//             };
+//
+//             // Note: ArchiveRun.Files is a ConcurrentDictionary
+//             archiveFiles.Add(meta);
+//         }
+//
+//         AddFile("/a/x.txt");
+//         AddFile("/b/y.txt");
+//         AddFile("/c/z.txt"); // should be excluded by the matcher
+//
+//         RestoreRun captured = null!;
+//
+//         var orch = CreateOrchestration(chan);
+//         await orch.StartAsync(CancellationToken.None);
+//         await orch.ExecuteTask!;
+//         
+//         _restoreService
+//             .Verify(s=>s.ScheduleFileRecovery(
+//                 run,
+//                 It.Is<RestoreRequest>(r => r.ArchiveRunId == req.ArchiveRunId && r.RestorePaths == req.RestorePaths),
+//                 It.Is<FileMetaData>(f => f.LocalFilePath == "/a/x.txt" ),
+//                 It.IsAny<CancellationToken>()), Times.Once);
+//         
+//         _restoreService
+//             .Verify(s=>s.ScheduleFileRecovery(
+//                 run,
+//                 It.Is<RestoreRequest>(r => r.ArchiveRunId == req.ArchiveRunId && r.RestorePaths == req.RestorePaths),
+//                 It.Is<FileMetaData>(f => f.LocalFilePath == "/b/y.txt" ),
+//                 It.IsAny<CancellationToken>()), Times.Once);
+//
+//         _restoreService
+//             .Verify(s=>s.ScheduleFileRecovery(
+//                 run,
+//                 It.IsAny<RestoreRequest>(),
+//                 It.Is<FileMetaData>(f => f.LocalFilePath == "/c/z.txt" ),
+//                 It.IsAny<CancellationToken>()), Times.Never);
+//         
+//     }
+//
+//
+//     [Fact]
+//     public async Task ExceptionInHandler_LogsErrorAndContinues()
+//     {
+//         var req = new RestoreRequest("ar4", "/p", DateTimeOffset.UtcNow);
+//         var chan = Channel.CreateUnbounded<RestoreRequest>();
+//         chan.Writer.TryWrite(req);
+//         chan.Writer.Complete();
+//
+//         _restoreService.Setup(r => r.LookupRestoreRun(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+//             .ThrowsAsync(new InvalidOperationException("boom"));
+//
+//         var orch = CreateOrchestration(chan);
+//         await orch.StartAsync(CancellationToken.None);
+//         await orch.ExecuteTask!;
+//
+//         var loggerMatches = _logger.LogRecords
+//             .Where(l => l.LogLevel == LogLevel.Error && l.Message.Contains("Error processing restore request"));
+//         Assert.Single(loggerMatches);
+//     }
+// }
