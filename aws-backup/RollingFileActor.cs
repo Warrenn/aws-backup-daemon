@@ -8,19 +8,21 @@ namespace aws_backup;
 public sealed class RollingFileActor(
     IContextResolver contextResolver,
     IS3Service s3Service,
+    TimeProvider timeProvider,
     ILogger<RollingFileActor> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         logger.LogInformation("Starting rolling file actor");
+        var timer = new PeriodicTimer(TimeSpan.FromDays(1), timeProvider);
         while (!cancellationToken.IsCancellationRequested)
         {
-            await Task.Delay(TimeSpan.FromDays(1), cancellationToken);
+            await timer.WaitForNextTickAsync(cancellationToken);
             var s3LogFolder = contextResolver.S3LogFolder();
             var logFolder = contextResolver.RollingLogFolder();
-            
-            if(string.IsNullOrEmpty(logFolder) || !Directory.Exists(logFolder)) continue;
-            
+
+            if (string.IsNullOrEmpty(logFolder) || !Directory.Exists(logFolder)) continue;
+
             logger.LogInformation("Rolling file actor started, checking for files in {LogFolder}", logFolder);
             var (thisYear, thisMonth, thisDay) = DateTime.UtcNow;
 
@@ -41,7 +43,7 @@ public sealed class RollingFileActor(
                         filePath,
                         StorageTemperature.LowCost,
                         cancellationToken);
-                    
+
                     File.Delete(filePath); // Delete files older than today
                     logger.LogInformation("Deleted old log file: {FileName}", fileName);
                 }

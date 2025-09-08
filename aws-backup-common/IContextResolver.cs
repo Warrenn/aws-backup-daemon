@@ -42,6 +42,7 @@ public interface IContextResolver
     int SqsMaxNumberOfMessages();
     int SqsVisibilityTimeout();
     long SqsRetryDelaySeconds();
+    long SqsRetryResponseDelaySeconds();
     bool EncryptSqs();
     int GeneralRetryLimit();
     bool UseS3Accelerate();
@@ -316,6 +317,10 @@ public class ContextResolverBase(Configuration configuration) : IContextResolver
         return _configOptions.SqsRetryDelaySeconds ?? 60L;
     }
 
+    public long SqsRetryResponseDelaySeconds()
+    {
+        return _configOptions.SqsRetryResponseSeconds ?? 60L;
+    }
     // Boolean configuration methods with defaults
     public bool KeepTimeStamps()
     {

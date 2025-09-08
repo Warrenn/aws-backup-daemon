@@ -65,4 +65,5 @@ public sealed record Configuration
     public int? AwsS3TimeoutSeconds { get; set; }
     public int? NoOfConcurrentDbWriters { get; set; }
     public long? FlushDelaySeconds { get; set; }
+    public long? SqsRetryResponseSeconds { get; set; }
 }
