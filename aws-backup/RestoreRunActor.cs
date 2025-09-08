@@ -64,7 +64,6 @@ public sealed class RestoreRunActor(
                 logger.LogInformation("Initiating restore run with ID {RestoreId} for ArchiveRunId {ArchiveRunId}",
                     restoreRun.RestoreId, restoreRequest.ArchiveRunId);
 
-                //todo: make sure its files up to latest run id or latest just before but not later run ids
                 await foreach (var fileMetaData in metaDataDataStore.GetRestorableFileMetaData(
                                    restoreRequest.ArchiveRunId, cancellationToken))
                 {

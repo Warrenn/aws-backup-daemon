@@ -12,6 +12,7 @@ public class DynamoDbDataStore(
     IContextResolver contextResolver) :
     IArchiveDataStore,
     IRestoreDataStore,
+    IFileMetaDataDataStore,
     ICloudChunkStorage
 {
     public async IAsyncEnumerable<RunRequest> GetRunRequests(
@@ -29,7 +30,7 @@ public class DynamoDbDataStore(
                 KeyConditionExpression = "PK = :pk",
                 ExpressionAttributeValues = new Dictionary<string, AttributeValue>
                 {
-                    [":pk"] = new() { S = "ARCHIVE_REQUESTS" }
+                    [":pk"] = new() { S = "ARCHIVE_REQUEST" }
                 },
                 ProjectionExpression = "SK, PathsToArchive, CronSchedule",
                 ExclusiveStartKey = lastKey
@@ -40,7 +41,10 @@ public class DynamoDbDataStore(
             foreach (var item in resp.Items)
             {
                 var sk = item["SK"].S;
-                var runId = sk.Split('#', 2)[1];
+                if (string.IsNullOrWhiteSpace(sk) ||
+                    !sk.Contains('#') ||
+                    !long.TryParse(sk.Split('#').Last(), out var runId))
+                    continue;
 
                 var paths = GetSIfExists(item, "PathsToArchive", s => s) ?? "";
                 var cron = GetSIfExists(item, "CronSchedule", s => s) ?? "";
@@ -52,15 +56,34 @@ public class DynamoDbDataStore(
         } while (lastKey is { Count: > 0 });
     }
 
+    public async Task RemoveArchiveRequest(long runId, CancellationToken cancellationToken)
+    {
+        var tableName = awsConfiguration.DynamoDbTableName;
+        var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
+
+        var deleteReq = new DeleteItemRequest
+        {
+            TableName = tableName,
+            Key = new Dictionary<string, AttributeValue>
+            {
+                ["PK"] = new() { S = "ARCHIVE_REQUEST" },
+                ["SK"] = new() { S = $"ARCHIVE_REQUEST#{runId}" }
+            },
+            ConditionExpression = "attribute_exists(PK) AND attribute_exists(SK)"
+        };
+
+        await dynamoDbClient.DeleteItemAsync(deleteReq, cancellationToken);
+    }
+
     public async Task SaveRunRequest(RunRequest request, CancellationToken cancellationToken)
     {
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
         var item = new Dictionary<string, AttributeValue>
         {
             // partition key
-            ["PK"] = new() { S = "ARCHIVE_REQUESTS" },
+            ["PK"] = new() { S = "ARCHIVE_REQUEST" },
             // sort key
-            ["SK"] = new() { S = $"RUN_ID#{request.RunId}" },
+            ["SK"] = new() { S = $"ARCHIVE_REQUEST#{request.RunId}" },
             // other attributes
             ["PathsToArchive"] = new() { S = request.PathsToArchive },
             ["CronSchedule"] = new() { S = request.CronSchedule },
@@ -79,9 +102,9 @@ public class DynamoDbDataStore(
         var item = new Dictionary<string, AttributeValue>
         {
             // partition key
-            ["PK"] = new() { S = $"RUN_ID#{run.RunId}" },
+            ["PK"] = new() { S = "RUN" },
             // sort key
-            ["SK"] = new() { S = $"RUN_ID#{run.RunId}" },
+            ["SK"] = new() { S = $"RUN#{run.RunId}" },
             ["Type"] = new() { S = nameof(ArchiveRun) },
             ["PathsToArchive"] = new() { S = run.PathsToArchive },
             ["CronSchedule"] = new() { S = run.CronSchedule },
@@ -100,508 +123,99 @@ public class DynamoDbDataStore(
         await dynamoDbClient.UpdateItemAsync(updateItemRequest, cancellationToken);
     }
 
-    public async Task RemoveArchiveRequest(string archiveRunId, CancellationToken cancellationToken)
+    public async Task<ArchiveRun?> GetArchiveRun(long runId, CancellationToken cancellationToken)
     {
         var tableName = awsConfiguration.DynamoDbTableName;
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
 
-        var deleteReq = new DeleteItemRequest
+        var itemRequest = new GetItemRequest
         {
             TableName = tableName,
             Key = new Dictionary<string, AttributeValue>
             {
-                ["PK"] = new() { S = "ARCHIVE_REQUESTS" },
-                ["SK"] = new() { S = $"RUN_ID#{archiveRunId}" }
+                ["PK"] = new() { S = "RUN" },
+                ["SK"] = new() { S = $"RUN#{runId}" }
             },
-            ConditionExpression = "attribute_exists(PK) AND attribute_exists(SK)"
+            ProjectionExpression =
+                "#a, #b, #c, #d, #e, #f, #g, #h, #i, #j",
+            ExpressionAttributeNames = new Dictionary<string, string>
+            {
+                ["#a"] = "PathsToArchive",
+                ["#b"] = "CronSchedule",
+                ["#c"] = "CreatedAt",
+                ["#d"] = "Status",
+                ["#e"] = "Type",
+                ["#f"] = "CompressedSize",
+                ["#g"] = "OriginalSize",
+                ["#h"] = "TotalFiles",
+                ["#i"] = "TotalSkippedFiles",
+                ["#j"] = "CompletedAt"
+            },
+            ConsistentRead = false
         };
 
-        await dynamoDbClient.DeleteItemAsync(deleteReq, cancellationToken);
-    }
+        var resp = await dynamoDbClient.GetItemAsync(itemRequest, cancellationToken);
+        if (resp.Item == null || resp.Item.Count == 0)
+            return null;
 
-    public async Task<ArchiveRun?> GetArchiveRun(string runId, CancellationToken cancellationToken)
-    {
-        var tableName = awsConfiguration.DynamoDbTableName;
-        var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
-        Dictionary<string, AttributeValue>? lastKey;
+        var item = resp.Item;
 
-        ArchiveRun? run = null;
-
-        var pk = $"RUN_ID#{runId}";
-        do
+        var run = new ArchiveRun
         {
-            var queryReq = new QueryRequest
-            {
-                TableName = tableName,
-                KeyConditionExpression = "PK = :pk",
-                ExpressionAttributeValues = new Dictionary<string, AttributeValue>
-                {
-                    [":pk"] = new() { S = pk }
-                },
-                ProjectionExpression =
-                    "#a, #b, #c, #d, #e, #f, #g, #h, #i, #j, #k, #l, #m, #n, #o, #p, #q, #r, #s, #t, #u, #v",
-                ExpressionAttributeNames = new Dictionary<string, string>
-                {
-                    ["#a"] = "SK",
-                    ["#b"] = "PathsToArchive",
-                    ["#c"] = "CronSchedule",
-                    ["#d"] = "CreatedAt",
-                    ["#e"] = "Status",
-                    ["#f"] = "SkipReason",
-                    ["#g"] = "Type",
-                    ["#h"] = "LocalFilePath",
-                    ["#i"] = "ChunkIndex",
-                    ["#j"] = "CompressedSize",
-                    ["#k"] = "Size",
-                    ["#l"] = "Offset",
-                    ["#m"] = "OriginalSize",
-                    ["#n"] = "TotalFiles",
-                    ["#o"] = "TotalSkippedFiles",
-                    ["#p"] = "CompletedAt",
-                    ["#q"] = "Owner",
-                    ["#r"] = "Group",
-                    ["#s"] = "AclEntries",
-                    ["#t"] = "ChunkHashId",
-                    ["#u"] = "Created",
-                    ["#v"] = "Modified"
-                }
-            };
-
-            var resp = await dynamoDbClient.QueryAsync(queryReq, cancellationToken);
-            if (resp.Items == null || resp.Items.Count == 0)
-                return null;
-
-            // process this page’s items
-            foreach (var item in resp.Items)
-            {
-                var type = item["Type"].S;
-                switch (type)
-                {
-                    case nameof(ArchiveRun):
-                        run = new ArchiveRun
-                        {
-                            RunId = runId,
-                            PathsToArchive = GetSIfExists(item, "PathsToArchive", s => s) ?? "",
-                            CronSchedule = GetSIfExists(item, "CronSchedule", s => s) ?? "",
-                            CreatedAt = GetSIfExists(item, "CreatedAt", DateTimeOffset.Parse),
-                            Status = GetSIfExists(item, "Status", Enum.Parse<ArchiveRunStatus>),
-                            CompressedSize = GetNIfExists(item, "CompressedSize", long.Parse),
-                            OriginalSize = GetNIfExists(item, "OriginalSize", long.Parse),
-                            TotalFiles = GetNIfExists(item, "TotalFiles", int.Parse),
-                            TotalSkippedFiles = GetNIfExists(item, "TotalSkippedFiles", int.Parse),
-                            CompletedAt = GetSIfExists(item, "CompletedAt", DateTimeOffset.Parse)
-                        };
-                        break;
-                    case nameof(FileMetaData):
-                        // If we have FileMetaData, we can add it to the run
-                        if (run is null) break;
-                        //RUN_ID#<runID>#FILE#<filePath>
-                        var filePath = WebUtility.UrlDecode(item["SK"].S.Split('#').Last());
-
-                        var fileMeta = new FileMetaData(filePath)
-                        {
-                            Status = GetSIfExists(item, "Status", Enum.Parse<FileStatus>),
-                            SkipReason = GetSIfExists(item, "SkipReason", s => s) ?? "",
-                            HashKey = GetSIfExists(item, "ChunkHashId", Base64Url.Decode) ?? [],
-                            Created = GetSIfExists(item, "Created", DateTimeOffset.Parse),
-                            CompressedSize = GetNIfExists(item, "CompressedSize", long.Parse),
-                            OriginalSize = GetNIfExists(item, "OriginalSize", long.Parse),
-                            Owner = GetSIfExists(item, "Owner", s => s),
-                            Group = GetSIfExists(item, "Group", s => s),
-                            Modified = GetSIfExists(item, "Modified", DateTimeOffset.Parse),
-                            AclEntries = GetSIfExists(item, "AclEntries",
-                                s => JsonSerializer.Deserialize<AclEntry[]>(s,
-                                    SourceGenerationContext.Default.AclEntryArray))
-                        };
-
-                        run.Files.TryAdd(filePath, fileMeta);
-                        break;
-                    case nameof(DataChunkDetails):
-                        if (run is null) break;
-                        //RUN_ID#<runID>#FILE#<filePath>#CHUNK#<chunkHashKey>
-                        var keyParts = item["SK"].S.Split('#');
-                        var filePathPart = WebUtility.UrlDecode(keyParts[3]);
-                        if (!run.Files.TryGetValue(filePathPart, out var metaData)) break;
-                        var keyBytes = Base64Url.Decode(keyParts[5]);
-                        var chunkKey = new ByteArrayKey(keyBytes);
-                        metaData.Chunks.TryAdd(chunkKey, new DataChunkDetails(
-                            GetSIfExists(item, "LocalFilePath", s => s) ?? "",
-                            GetNIfExists(item, "CompressedSize", long.Parse),
-                            GetNIfExists(item, "Offset", long.Parse),
-                            GetNIfExists(item, "Size", long.Parse),
-                            keyBytes)
-                        {
-                            Status = GetSIfExists(item, "Status", Enum.Parse<ChunkStatus>)
-                        });
-                        break;
-                }
-            }
-
-            // DynamoDB gives you this if there's more data
-            lastKey = resp.LastEvaluatedKey;
-        } while (lastKey is { Count: > 0 });
+            RunId = runId,
+            PathsToArchive = GetSIfExists(item, "PathsToArchive", s => s) ?? "",
+            CronSchedule = GetSIfExists(item, "CronSchedule", s => s) ?? "",
+            CreatedAt = GetSIfExists(item, "CreatedAt", DateTimeOffset.Parse),
+            Status = GetSIfExists(item, "Status", Enum.Parse<ArchiveRunStatus>),
+            CompressedSize = GetNIfExists(item, "CompressedSize", long.Parse, 0),
+            OriginalSize = GetNIfExists(item, "OriginalSize", long.Parse, 0),
+            TotalFiles = GetNIfExists(item, "TotalFiles", int.Parse, 0),
+            TotalSkippedFiles = GetNIfExists(item, "TotalSkippedFiles", int.Parse, 0),
+            CompletedAt = GetSIfExists(item, "CompletedAt", DateTimeOffset.Parse)
+        };
 
         return run;
     }
 
-    public async Task UpdateFileStatus(string runId, string filePath, FileStatus fileStatus, string skipReason,
-        CancellationToken cancellationToken)
-    {
-        var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
-
-        var encodedFilePath = WebUtility.UrlEncode(filePath);
-        var item = new Dictionary<string, AttributeValue>
-        {
-            // partition key
-            ["PK"] = new() { S = $"RUN_ID#{runId}" },
-            // sort key
-            ["SK"] = new() { S = $"RUN_ID#{runId}#FILE#{encodedFilePath}" },
-            ["Status"] = new() { S = Enum.GetName(fileStatus) },
-            ["Type"] = new() { S = nameof(FileMetaData) }
-        };
-        SetSIfNotNull(item, "SkipReason", skipReason);
-
-        var updateItemRequest = CreateUpdateItemRequest(item);
-        await dynamoDbClient.UpdateItemAsync(updateItemRequest, cancellationToken);
-    }
-
-    public async Task SaveChunkStatus(string runId, string localFilePath, ByteArrayKey chunkHashKey,
-        ChunkStatus chunkStatus,
-        CancellationToken cancellationToken)
-    {
-        var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
-
-        var encodedFilePath = WebUtility.UrlEncode(localFilePath);
-        var chunkKey = $"RUN_ID#{runId}#FILE#{encodedFilePath}#CHUNK#{Base64Url.Encode(chunkHashKey.ToArray())}";
-        var item = new Dictionary<string, AttributeValue>
-        {
-            // partition key
-            ["PK"] = new() { S = $"RUN_ID#{runId}" },
-            // sort key
-            ["SK"] = new() { S = chunkKey },
-            ["Status"] = new() { S = Enum.GetName(chunkStatus) },
-            ["Type"] = new() { S = nameof(DataChunkDetails) }
-        };
-
-        var updateItemRequest = CreateUpdateItemRequest(item);
-        await dynamoDbClient.UpdateItemAsync(updateItemRequest, cancellationToken);
-    }
-
-    public async Task<FileMetaData?> GetFileMetaData(string runId, string filePath, CancellationToken cancellationToken)
-    {
-        //todo: this needs refactoring to do overrides if the runId is not found
-        var tableName = awsConfiguration.DynamoDbTableName;
-        var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
-        Dictionary<string, AttributeValue>? lastKey;
-
-        FileMetaData? fileMetaData = null;
-
-        var pk = $"RUN_ID#{runId}";
-        var sk = $"RUN_ID#{runId}#FILE#{WebUtility.UrlEncode(filePath)}";
-
-        do
-        {
-            var queryReq = new QueryRequest
-            {
-                TableName = tableName,
-                KeyConditionExpression = "PK = :pk AND begins_with(SK, :skp)",
-                ExpressionAttributeValues = new Dictionary<string, AttributeValue>
-                {
-                    [":pk"] = new() { S = pk },
-                    [":skp"] = new() { S = sk }
-                },
-                ProjectionExpression = "#a, #b, #c, #d, #e, #f, #g, #h, #i, #j, #k, #l, #m, #n, #o, #p",
-                ExpressionAttributeNames = new Dictionary<string, string>
-                {
-                    ["#a"] = "SK",
-                    ["#b"] = "Created",
-                    ["#c"] = "Status",
-                    ["#d"] = "SkipReason",
-                    ["#e"] = "Type",
-                    ["#f"] = "LocalFilePath",
-                    ["#g"] = "ChunkIndex",
-                    ["#h"] = "CompressedSize",
-                    ["#i"] = "Size",
-                    ["#j"] = "Offset",
-                    ["#k"] = "OriginalSize",
-                    ["#l"] = "Owner",
-                    ["#m"] = "Group",
-                    ["#n"] = "AclEntries",
-                    ["#o"] = "Modified",
-                    ["#p"] = "ChunkHashId"
-                }
-            };
-
-            var resp = await dynamoDbClient.QueryAsync(queryReq, cancellationToken);
-            if (resp.Items == null || resp.Items.Count == 0)
-                return null;
-
-            // process this page’s items
-            foreach (var item in resp.Items)
-            {
-                var type = item["Type"].S;
-                switch (type)
-                {
-                    case nameof(FileMetaData):
-                        //RUN_ID#<runID>#FILE#<filePath>                    
-                        fileMetaData = new FileMetaData(filePath)
-                        {
-                            Status = GetSIfExists(item, "Status", Enum.Parse<FileStatus>),
-                            SkipReason = GetSIfExists(item, "SkipReason", s => s) ?? "",
-                            HashKey = GetSIfExists(item, "ChunkHashId", Base64Url.Decode) ?? [],
-                            Created = GetSIfExists(item, "Created", DateTimeOffset.Parse),
-                            CompressedSize = GetNIfExists(item, "CompressedSize", long.Parse),
-                            OriginalSize = GetNIfExists(item, "OriginalSize", long.Parse),
-                            Owner = GetSIfExists(item, "Owner", s => s),
-                            Group = GetSIfExists(item, "Group", s => s),
-                            Modified = GetSIfExists(item, "Modified", DateTimeOffset.Parse),
-                            AclEntries = GetSIfExists(item, "AclEntries",
-                                s => JsonSerializer.Deserialize<AclEntry[]>(s,
-                                    SourceGenerationContext.Default.AclEntryArray))
-                        };
-                        break;
-                    case nameof(DataChunkDetails):
-                        //RUN_ID#<runID>#FILE#<filePath>#CHUNK#<chunkHashKey>
-                        var keyParts = item["SK"].S.Split('#');
-                        var keyBytes = Base64Url.Decode(keyParts[5]);
-                        var chunkKey = new ByteArrayKey(keyBytes);
-
-                        fileMetaData?.Chunks.TryAdd(chunkKey, new DataChunkDetails(
-                            GetSIfExists(item, "LocalFilePath", s => s) ?? "",
-                            GetNIfExists(item, "CompressedSize", long.Parse),
-                            GetNIfExists(item, "Offset", long.Parse),
-                            GetNIfExists(item, "Size", long.Parse),
-                            keyBytes)
-                        {
-                            Status = GetSIfExists(item, "Status", Enum.Parse<ChunkStatus>)
-                        });
-                        break;
-                }
-            }
-
-            // DynamoDB gives you this if there's more data
-            lastKey = resp.LastEvaluatedKey;
-        } while (lastKey is { Count: > 0 });
-
-        return fileMetaData;
-    }
-
-    public async Task SaveChunkDetails(string runId, string localFilePath, DataChunkDetails details,
-        CancellationToken cancellationToken)
-    {
-        var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
-
-        var encodedFilePath = WebUtility.UrlEncode(localFilePath);
-        var chunkKey = $"RUN_ID#{runId}#FILE#{encodedFilePath}#CHUNK#{Base64Url.Encode(details.ChunkHashId)}";
-
-        var item = new Dictionary<string, AttributeValue>
-        {
-            // partition key
-            ["PK"] = new() { S = $"RUN_ID#{runId}" },
-            // sort key
-            ["SK"] = new() { S = chunkKey },
-            ["Status"] = new() { S = Enum.GetName(details.Status) },
-            ["Type"] = new() { S = nameof(DataChunkDetails) },
-            ["LocalFilePath"] = new() { S = details.LocalFilePath },
-            ["Offset"] = new() { N = details.Offset.ToString() },
-            ["CompressedSize"] = new() { N = details.CompressedSize.ToString() },
-            ["Size"] = new() { N = details.Size.ToString() }
-        };
-
-        var updateItemRequest = CreateUpdateItemRequest(item);
-        await dynamoDbClient.UpdateItemAsync(updateItemRequest, cancellationToken);
-    }
-
-    public async Task SaveFileMetaData(string runId, FileMetaData metaData,
-        CancellationToken cancellationToken)
-    {
-        var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
-        var localFilePath = metaData.LocalFilePath;
-        var hashKey = metaData.HashKey;
-        var status = metaData.Status;
-        var aclEntryString = metaData.AclEntries is not null
-            ? JsonSerializer.Serialize(metaData.AclEntries, SourceGenerationContext.Default.AclEntryArray)
-            : null;
-
-        var encodedFilePath = WebUtility.UrlEncode(localFilePath);
-        var hashString = Base64Url.Encode(hashKey);
-        var item = new Dictionary<string, AttributeValue>
-        {
-            // partition key
-            ["PK"] = new() { S = $"RUN_ID#{runId}" },
-            // sort key
-            ["SK"] = new() { S = $"RUN_ID#{runId}#FILE#{encodedFilePath}" },
-            ["Type"] = new() { S = nameof(FileMetaData) },
-            ["ChunkHashId"] = new() { S = hashString },
-            ["Status"] = new() { S = Enum.GetName(status) },
-            ["LocalFilePath"] = new() { S = localFilePath }
-        };
-
-        SetSIfNotNull(item, "AclEntries", aclEntryString);
-        SetSIfNotNull(item, "Created", metaData.Created?.ToString("O"));
-        SetSIfNotNull(item, "Modified", metaData.Modified?.ToString("O"));
-        SetSIfNotNull(item, "SkipReason", metaData.SkipReason);
-        SetSIfNotNull(item, "Owner", metaData.Owner);
-        SetSIfNotNull(item, "Group", metaData.Group);
-        SetNIfNotNull(item, "CompressedSize", metaData.CompressedSize);
-        SetNIfNotNull(item, "OriginalSize", metaData.OriginalSize);
-
-        var updateItemRequest = CreateUpdateItemRequest(item);
-        await dynamoDbClient.UpdateItemAsync(updateItemRequest, cancellationToken);
-    }
-
-    public async IAsyncEnumerable<FileMetaData> GetRestorableFileMetaData(string runId,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
+    public async Task<bool> ContainsChunkKey(ByteArrayKey key, CancellationToken cancellationToken)
     {
         var tableName = awsConfiguration.DynamoDbTableName;
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
-        Dictionary<string, AttributeValue>? lastKey;
+        var chunkHash = Base64Url.Encode(key.ToArray());
 
-        var pk = $"RUN_ID#{runId}";
-        var sk = $"RUN_ID#{runId}#FILE#";
-
-        var currentFilePath = "";
-        FileMetaData? fileMetaData = null;
-
-        do
-        {
-            var queryReq = new QueryRequest
-            {
-                TableName = tableName,
-                KeyConditionExpression = "PK = :pk AND begins_with(SK, :skp)",
-                ExpressionAttributeValues = new Dictionary<string, AttributeValue>
-                {
-                    [":pk"] = new() { S = pk },
-                    [":skp"] = new() { S = sk }
-                },
-                ProjectionExpression = "#a, #b, #c, #d, #e, #f, #g, #h, #i, #j, #k, #l, #m, #n, #o, #p",
-                ExpressionAttributeNames = new Dictionary<string, string>
-                {
-                    ["#a"] = "SK",
-                    ["#b"] = "Created",
-                    ["#c"] = "Status",
-                    ["#d"] = "SkipReason",
-                    ["#e"] = "Type",
-                    ["#f"] = "LocalFilePath",
-                    ["#g"] = "ChunkIndex",
-                    ["#h"] = "CompressedSize",
-                    ["#i"] = "Size",
-                    ["#j"] = "Offset",
-                    ["#k"] = "OriginalSize",
-                    ["#l"] = "Owner",
-                    ["#m"] = "Group",
-                    ["#n"] = "AclEntries",
-                    ["#o"] = "Modified",
-                    ["#p"] = "ChunkHashId"
-                }
-            };
-
-            var resp = await dynamoDbClient.QueryAsync(queryReq, cancellationToken);
-            if (resp.Items == null || resp.Items.Count == 0)
-                yield break;
-
-            // process this page’s items
-            foreach (var item in resp.Items)
-            {
-                var filePath = "";
-                var type = item["Type"].S;
-                switch (type)
-                {
-                    case nameof(FileMetaData):
-                        //RUN_ID#<runID>#FILE#<filePath>
-                        var skParts = item["SK"].S.Split('#');
-                        var encodedFilePath = skParts.Last();
-                        filePath = WebUtility.UrlDecode(encodedFilePath);
-
-                        fileMetaData = new FileMetaData(filePath)
-                        {
-                            Status = GetSIfExists(item, "Status", Enum.Parse<FileStatus>),
-                            SkipReason = GetSIfExists(item, "SkipReason", s => s) ?? "",
-                            HashKey = GetSIfExists(item, "ChunkHashId", Base64Url.Decode) ?? [],
-                            Created = GetSIfExists(item, "Created", DateTimeOffset.Parse),
-                            CompressedSize = GetNIfExists(item, "CompressedSize", long.Parse),
-                            OriginalSize = GetNIfExists(item, "OriginalSize", long.Parse),
-                            Owner = GetSIfExists(item, "Owner", s => s),
-                            Group = GetSIfExists(item, "Group", s => s),
-                            Modified = GetSIfExists(item, "Modified", DateTimeOffset.Parse),
-                            AclEntries = GetSIfExists(item, "AclEntries",
-                                s => JsonSerializer.Deserialize<AclEntry[]>(s,
-                                    SourceGenerationContext.Default.AclEntryArray))
-                        };
-                        break;
-                    case nameof(DataChunkDetails):
-                        //RUN_ID#<runID>#FILE#<filePath>#CHUNK#<chunkHashKey>
-                        var keyParts = item["SK"].S.Split('#');
-                        var keyBytes = Base64Url.Decode(keyParts[5]);
-                        var chunkKey = new ByteArrayKey(keyBytes);
-
-                        fileMetaData?.Chunks.TryAdd(chunkKey, new DataChunkDetails(
-                            GetSIfExists(item, "LocalFilePath", s => s) ?? "",
-                            GetNIfExists(item, "CompressedSize", long.Parse),
-                            GetNIfExists(item, "Offset", long.Parse),
-                            GetNIfExists(item, "Size", long.Parse),
-                            keyBytes)
-                        {
-                            Status = GetSIfExists(item, "Status", Enum.Parse<ChunkStatus>)
-                        });
-                        break;
-                }
-
-                if (string.IsNullOrWhiteSpace(currentFilePath)) currentFilePath = filePath;
-                if (filePath == currentFilePath || fileMetaData?.Status is not FileStatus.UploadComplete) continue;
-
-                yield return fileMetaData;
-                currentFilePath = filePath;
-                fileMetaData = null;
-            }
-
-            // DynamoDB gives you this if there's more data
-            lastKey = resp.LastEvaluatedKey;
-        } while (lastKey is { Count: > 0 });
-
-        if (fileMetaData?.Status is FileStatus.UploadComplete)
-            // yield the last file metadata if it is complete
-            yield return fileMetaData;
-    }
-
-    public async Task<bool> ContainsKey(ByteArrayKey key, CancellationToken cancellationToken)
-    {
-        var tableName = awsConfiguration.DynamoDbTableName;
-        var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
-        var keyString = Base64Url.Encode(key.ToArray());
-
-        var resp = await dynamoDbClient.GetItemAsync(new GetItemRequest
+        var itemRequest = new GetItemRequest
         {
             TableName = tableName,
             Key = new Dictionary<string, AttributeValue>
             {
-                ["PK"] = new() { S = $"CLOUD_CHUNK#{keyString}" },
-                ["SK"] = new() { S = "CLOUD_CHUNK" }
+                ["PK"] = new() { S = "CLOUD_CHUNK" },
+                ["SK"] = new() { S = $"CLOUD_CHUNK#{chunkHash}" }
             },
-            // only fetch the keys
-            ProjectionExpression = "PK, SK",
-            ConsistentRead = false // eventual‐consistency is fine for existence checks
-        }, cancellationToken);
+            ProjectionExpression = "#pk",
+            ExpressionAttributeNames = new Dictionary<string, string> { ["#pk"] = "PK" },
+            ConsistentRead = false
+        };
 
-        // if no item, resp.Item will be empty
-        return resp.Item is { Count: > 0 };
+        var resp = await dynamoDbClient.GetItemAsync(itemRequest, cancellationToken);
+        return resp.Item is not null && resp.Item.Count != 0;
     }
 
-    public async Task AddCloudChunkDetails(ByteArrayKey hashKey, CloudChunkDetails cloudChunkDetails,
-        CancellationToken cancellationToken)
+    public async Task AddCloudChunkDetails(CloudChunkDetails cloudChunkDetails, CancellationToken cancellationToken)
     {
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
-        var keyString = Base64Url.Encode(hashKey.ToArray());
+        var chunkHash = Base64Url.Encode(cloudChunkDetails.HashId.ToArray());
         var item = new Dictionary<string, AttributeValue>
         {
             // partition key
-            ["PK"] = new() { S = $"CLOUD_CHUNK#{keyString}" },
+            ["PK"] = new() { S = "CLOUD_CHUNK" },
             // sort key
-            ["SK"] = new() { S = "CLOUD_CHUNK" },
+            ["SK"] = new() { S = $"CLOUD_CHUNK#{chunkHash}" },
             ["Type"] = new() { S = nameof(CloudChunkDetails) },
             ["S3Key"] = new() { S = cloudChunkDetails.S3Key },
-            ["Size"] = new() { N = cloudChunkDetails.CompressedSize.ToString() },
-            ["Offset"] = new() { N = cloudChunkDetails.OffsetInS3BatchFile.ToString() }
+            ["BucketName"] = new() { S = cloudChunkDetails.BucketName },
+            ["OffsetInS3BatchFile"] = new() { N = cloudChunkDetails.OffsetInS3BatchFile.ToString() },
+            ["CompressedSize"] = new() { N = cloudChunkDetails.CompressedSize.ToString() },
+            ["Size"] = new() { N = cloudChunkDetails.Size.ToString() }
         };
 
         var updateItemRequest = CreateUpdateItemRequest(item);
@@ -613,41 +227,323 @@ public class DynamoDbDataStore(
     {
         var tableName = awsConfiguration.DynamoDbTableName;
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
-        var keyString = Base64Url.Encode(hashKey.ToArray());
+        var chunkHash = Base64Url.Encode(hashKey.ToArray());
 
-        var queryReq = new QueryRequest
+        var itemRequest = new GetItemRequest
         {
             TableName = tableName,
-            KeyConditionExpression = "PK = :pk",
-            ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+            Key = new Dictionary<string, AttributeValue>
             {
-                [":pk"] = new() { S = $"CLOUD_CHUNK#{keyString}" }
+                ["PK"] = new() { S = "CLOUD_CHUNK" },
+                ["SK"] = new() { S = $"CLOUD_CHUNK#{chunkHash}" }
             },
-            ProjectionExpression = "#a, #b, #c, #d, #e",
+            ProjectionExpression = "#a, #b, #c, #d, #e, #f",
             ExpressionAttributeNames = new Dictionary<string, string>
             {
-                ["#a"] = "S3Key",
-                ["#b"] = "BucketName",
-                ["#c"] = "CompressedSize",
-                ["#d"] = "OffsetInS3File",
-                ["#e"] = "Size"
-            }
+                ["#a"] = "SK",
+                ["#b"] = "S3Key",
+                ["#c"] = "BucketName",
+                ["#d"] = "CompressedSize",
+                ["#e"] = "OffsetInS3BatchFile",
+                ["#f"] = "Size"
+            },
+            ConsistentRead = false
         };
 
-        var resp = await dynamoDbClient.QueryAsync(queryReq, cancellationToken);
-        if (resp.Items == null || resp.Items.Count == 0)
-            return null;
+        var resp = await dynamoDbClient.GetItemAsync(itemRequest, cancellationToken);
+        if (resp.Item is null || resp.Item.Count == 0) return null;
+        var details = new CloudChunkDetails(
+            GetSIfExists(resp.Item, "S3Key", s => s) ?? "",
+            GetSIfExists(resp.Item, "BucketName", s => s) ?? "",
+            CompressedSize: GetNIfExists(resp.Item, "CompressedSize", long.Parse, 0),
+            OffsetInS3BatchFile: GetNIfExists(resp.Item, "OffsetInS3BatchFile", long.Parse, 0),
+            Size: GetNIfExists(resp.Item, "Size", long.Parse, 0),
+            HashId: hashKey.ToArray()
+        );
+        return details;
+    }
 
-        var item = resp.Items[0];
-        var returnChunk = new CloudChunkDetails(
-            GetSIfExists(item, "S3Key", s => s) ?? "",
-            GetSIfExists(item, "BucketName", s => s) ?? "",
-            GetNIfExists(item, "CompressedSize", long.Parse),
-            GetNIfExists(item, "OffsetInS3File", long.Parse),
-            GetNIfExists(item, "Size", long.Parse),
-            hashKey.ToArray());
+    public async Task<FileMetaData?> GetFileMetaData(long runId, string filePath, CancellationToken cancellationToken)
+    {
+        var prefix = $"FILE_METADATA#{WebUtility.UrlEncode(filePath)}#RUN_ID#";
+        var targetSk = $"{prefix}{runId:0000000000000000000}";
+        var tableName = awsConfiguration.DynamoDbTableName;
+        var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
+        const string projectionExpression = "#a, #b, #c, #d, #e, #f, #g, #h, #i, #j, #k, #l";
+        var expressionAttributeNames = new Dictionary<string, string>
+        {
+            ["#a"] = "SK",
+            ["#b"] = "AclEntries",
+            ["#c"] = "CompressedSize",
+            ["#d"] = "OriginalSize",
+            ["#e"] = "Created",
+            ["#f"] = "LastModified",
+            ["#g"] = "Group",
+            ["#h"] = "Owner",
+            ["#i"] = "Status",
+            ["#j"] = "Type",
+            ["#k"] = "SkipReason",
+            ["#l"] = "HashId"
+        };
 
-        return returnChunk;
+        var getReq = new GetItemRequest
+        {
+            TableName = tableName,
+            Key = new Dictionary<string, AttributeValue>
+            {
+                ["PK"] = new() { S = "FILE_METADATA" },
+                ["SK"] = new() { S = targetSk }
+            },
+            ProjectionExpression = projectionExpression,
+            ExpressionAttributeNames = expressionAttributeNames,
+            ConsistentRead = false
+        };
+        FileMetaData? fileMetaData = null;
+
+        var resp = await dynamoDbClient.GetItemAsync(getReq, cancellationToken);
+        if (resp.Item is { Count: > 0 }) fileMetaData = MapFileMetaData(resp.Item, filePath);
+
+        if (fileMetaData is null)
+        {
+            var queryReq = new QueryRequest
+            {
+                TableName = tableName,
+                KeyConditionExpression = "#pk = :pk AND #sk BETWEEN :lo AND :hi",
+                ExpressionAttributeNames = new Dictionary<string, string>
+                {
+                    ["#pk"] = "PK",
+                    ["#sk"] = "SK"
+                },
+                ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+                {
+                    [":pk"] = new() { S = "FILE_METADATA" },
+                    [":lo"] = new() { S = prefix }, // inclusive lower bound (same filename)
+                    [":hi"] = new() { S = targetSk } // inclusive upper bound (<= target runId)
+                },
+                ScanIndexForward = false, // descending
+                Limit = 1,
+                ProjectionExpression = projectionExpression,
+                ConsistentRead = false
+            };
+
+            var queryResp = await dynamoDbClient.QueryAsync(queryReq, cancellationToken);
+            if (queryResp.Count == 0) return null;
+            fileMetaData = MapFileMetaData(queryResp.Items[0], filePath);
+        }
+
+        if (fileMetaData.HashId is null) return fileMetaData;
+
+        var fileHash = Base64Url.Encode(fileMetaData.HashId.Value.ToArray());
+        var pk = $"FILE_CHUNK#{fileHash}";
+        var sk = $"FILE_CHUNK#{fileHash}#CHUNK#";
+        Dictionary<string, AttributeValue> lastKey = new();
+
+        do
+        {
+            var chunkReq = new QueryRequest
+            {
+                TableName = tableName,
+                KeyConditionExpression = "PK = :pk AND begins_with(SK, :skp)",
+                ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+                {
+                    [":pk"] = new() { S = pk },
+                    [":skp"] = new() { S = sk }
+                },
+                ProjectionExpression = "#a, #b, #c, #d",
+                ExpressionAttributeNames = new Dictionary<string, string>
+                {
+                    ["#a"] = "SK",
+                    ["#b"] = "Type",
+                    ["#c"] = "OffsetInSourceFile",
+                    ["#d"] = "OriginalSize",
+                    ["#e"] = "CompressedSize"
+                },
+                ConsistentRead = false,
+                ExclusiveStartKey = lastKey
+            };
+
+            var chunkResp = await dynamoDbClient.QueryAsync(chunkReq, cancellationToken);
+            if (chunkResp.Items == null || chunkResp.Items.Count == 0)
+                return null;
+
+            // process this page’s items
+            foreach (var item in chunkResp.Items)
+            {
+                var keyParts = item["SK"].S.Split('#');
+                var keyBytes = Base64Url.Decode(keyParts.Last());
+                var chunkKey = new ByteArrayKey(keyBytes);
+
+                fileMetaData.Chunks.TryAdd(chunkKey, new DataChunkDetails(
+                    filePath,
+                    GetNIfExists(item, "CompressedSize", long.Parse),
+                    GetNIfExists(item, "OffsetInSourceFile", long.Parse),
+                    GetNIfExists(item, "OriginalSize", long.Parse),
+                    keyBytes)
+                {
+                    Status = GetSIfExists(item, "Status", Enum.Parse<ChunkStatus>)
+                });
+            }
+
+            // DynamoDB gives you this if there's more data
+            lastKey = chunkResp.LastEvaluatedKey;
+        } while (lastKey is { Count: > 0 });
+
+        return fileMetaData;
+    }
+
+    public async Task<bool> SaveFileMetaData(FileMetaData metaData, CancellationToken cancellationToken)
+    {
+        var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
+        var localFilePath = metaData.LocalFilePath;
+        if (string.IsNullOrWhiteSpace(localFilePath)) return false;
+        var runId = metaData.RunId;
+        string? hashId = null;
+        if (metaData.HashId is not null)
+            hashId = Base64Url.Encode(metaData.HashId.Value.ToArray());
+
+        var status = metaData.Status;
+        var aclEntryString = metaData.AclEntries is not null
+            ? JsonSerializer.Serialize(metaData.AclEntries, SourceGenerationContext.Default.AclEntryArray)
+            : null;
+
+        var encodedFilePath = WebUtility.UrlEncode(localFilePath);
+        var item = new Dictionary<string, AttributeValue>
+        {
+            // partition key
+            ["PK"] = new() { S = "FILE_METADATA" },
+            // sort key
+            ["SK"] = new() { S = $"FILE_METADATA#{encodedFilePath}#RUN_ID#{runId:0000000000000000000}" },
+            ["Type"] = new() { S = nameof(FileMetaData) },
+            ["Status"] = new() { S = Enum.GetName(status) }
+        };
+
+        SetSIfNotNull(item, "HashId", hashId);
+        SetSIfNotNull(item, "AclEntries", aclEntryString);
+        SetSIfNotNull(item, "Created", metaData.Created?.ToString("O"));
+        SetSIfNotNull(item, "LastModified", metaData.LastModified?.ToString("O"));
+        SetSIfNotNull(item, "SkipReason", metaData.SkipReason);
+        SetSIfNotNull(item, "Owner", metaData.Owner);
+        SetSIfNotNull(item, "Group", metaData.Group);
+        SetNIfNotNull(item, "CompressedSize", metaData.CompressedSize);
+        SetNIfNotNull(item, "OriginalSize", metaData.OriginalSize);
+
+        var updateItemRequest = CreateUpdateItemRequest(item);
+        await dynamoDbClient.UpdateItemAsync(updateItemRequest, cancellationToken);
+        return true;
+    }
+
+    public async IAsyncEnumerable<FileMetaData> GetRestorableFileMetaData(long runId,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var cache = new Dictionary<string, FileMetaData>();
+        var tableName = awsConfiguration.DynamoDbTableName;
+        var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
+        Dictionary<string, AttributeValue> lastKeyFileQuery = new();
+        do
+        {
+            var queryReq = new QueryRequest
+            {
+                TableName = tableName,
+                KeyConditionExpression = "PK = :pk",
+                ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+                {
+                    [":pk"] = new() { S = "FILE_METADATA" }
+                },
+                ProjectionExpression = "#a, #b, #c, #d, #e, #f, #g, #h, #i, #j, #k, #l",
+                ExpressionAttributeNames = new Dictionary<string, string>
+                {
+                    ["#a"] = "SK",
+                    ["#b"] = "AclEntries",
+                    ["#c"] = "CompressedSize",
+                    ["#d"] = "OriginalSize",
+                    ["#e"] = "Created",
+                    ["#f"] = "LastModified",
+                    ["#g"] = "Group",
+                    ["#h"] = "Owner",
+                    ["#i"] = "Status",
+                    ["#j"] = "Type",
+                    ["#k"] = "SkipReason",
+                    ["#l"] = "HashId"
+                },
+                ExclusiveStartKey = lastKeyFileQuery
+            };
+
+            var resp = await dynamoDbClient.QueryAsync(queryReq, cancellationToken);
+            if (resp.Items == null || resp.Items.Count == 0)
+                yield break;
+
+            foreach (var fileMetaData in resp.Items
+                         .Select(item => MapFileMetaData(item))
+                         .Where(fileMetaData => fileMetaData.RunId <= runId))
+                if (!cache.TryGetValue(fileMetaData.LocalFilePath, out var existingMetaData) ||
+                    existingMetaData.RunId < fileMetaData.RunId)
+                    cache[fileMetaData.LocalFilePath] = fileMetaData;
+
+            // DynamoDB gives you this if there's more data
+            lastKeyFileQuery = resp.LastEvaluatedKey;
+        } while (lastKeyFileQuery is { Count: > 0 });
+
+        foreach (var fileMetaData in cache.Values)
+        {
+            var chunkLastKey = new Dictionary<string, AttributeValue>();
+            var filePath = fileMetaData.LocalFilePath;
+            if (fileMetaData.HashId is null) continue;
+            var fileHash = Base64Url.Encode(fileMetaData.HashId.Value.ToArray());
+            var pk = $"FILE_CHUNK#{fileHash}";
+            var sk = $"FILE_CHUNK#{fileHash}#CHUNK#";
+            do
+            {
+                var chunkReq = new QueryRequest
+                {
+                    TableName = tableName,
+                    KeyConditionExpression = "PK = :pk AND begins_with(SK, :skp)",
+                    ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+                    {
+                        [":pk"] = new() { S = pk },
+                        [":skp"] = new() { S = sk }
+                    },
+                    ProjectionExpression = "#a, #b, #c, #d, #e",
+                    ExpressionAttributeNames = new Dictionary<string, string>
+                    {
+                        ["#a"] = "SK",
+                        ["#b"] = "Type",
+                        ["#c"] = "OffsetInSourceFile",
+                        ["#d"] = "OriginalSize",
+                        ["#e"] = "CompressedSize"
+                    },
+                    ConsistentRead = false,
+                    ExclusiveStartKey = chunkLastKey
+                };
+
+                var chunkResp = await dynamoDbClient.QueryAsync(chunkReq, cancellationToken);
+                if (chunkResp?.Items is null || chunkResp.Items.Count == 0)
+                {
+                    yield return fileMetaData;
+                    continue;
+                }
+
+                foreach (var item in chunkResp.Items)
+                {
+                    var keyParts = item["SK"].S.Split('#');
+                    var keyBytes = Base64Url.Decode(keyParts.Last());
+                    var chunkKey = new ByteArrayKey(keyBytes);
+
+                    fileMetaData.Chunks.TryAdd(chunkKey, new DataChunkDetails(
+                        filePath,
+                        GetNIfExists(item, "CompressedSize", long.Parse),
+                        GetNIfExists(item, "OffsetInSourceFile", long.Parse),
+                        GetNIfExists(item, "OriginalSize", long.Parse),
+                        keyBytes)
+                    {
+                        Status = GetSIfExists(item, "Status", Enum.Parse<ChunkStatus>)
+                    });
+                }
+
+                // DynamoDB gives you this if there's more data
+                chunkLastKey = chunkResp.LastEvaluatedKey;
+                yield return fileMetaData;
+            } while (chunkLastKey is { Count: > 0 });
+        }
     }
 
     public async Task<RestoreRun?> LookupRestoreRun(string restoreId, CancellationToken cancellationToken)
@@ -658,45 +554,45 @@ public class DynamoDbDataStore(
 
         RestoreRun? restoreRun = null;
 
-        var pk = $"RESTORE_ID#{restoreId}";
+        var pk = $"RESTORE#{restoreId}";
+        var skPrefix = $"RESTORE#{restoreId}#";
         do
         {
             var queryReq = new QueryRequest
             {
                 TableName = tableName,
-                KeyConditionExpression = "PK = :pk",
+                KeyConditionExpression = "PK = :pk AND begins_with(SK, :skp)",
+                ScanIndexForward = true,
                 ExpressionAttributeValues = new Dictionary<string, AttributeValue>
                 {
-                    [":pk"] = new() { S = pk }
+                    [":pk"] = new() { S = pk },
+                    [":skp"] = new() { S = skPrefix }
                 },
                 ProjectionExpression =
-                    "#a, #b, #c, #d, #e, #f, #g, #h, #i, #j, #k, #l, #m, #n, #o, #p, #q, #r, #s, #t, #u, #v, #w, #x",
+                    "#a, #b, #c, #d, #e, #f, #g, #h, #i, #j, #k, #l, #m, #n, #o, #p, #q, #r, #s, #t, #u",
                 ExpressionAttributeNames = new Dictionary<string, string>
                 {
                     ["#a"] = "SK",
-                    ["#b"] = "RestorePaths",
-                    ["#c"] = "ArchiveRunId",
-                    ["#d"] = "Status",
-                    ["#e"] = "RequestedAt",
-                    ["#f"] = "SkipReason",
-                    ["#g"] = "CompletedAt",
-                    ["#h"] = "FailedMessage",
-                    ["#i"] = "Size",
-                    ["#j"] = "Modified",
-                    ["#k"] = "Created",
-                    ["#l"] = "Type",
-                    ["#m"] = "Owner",
-                    ["#n"] = "Group",
-                    ["#o"] = "AclEntries",
-                    ["#p"] = "HashId",
-                    ["#q"] = "RestorePathStrategy",
-                    ["#r"] = "RestoreDestination",
-                    ["#s"] = "S3Key",
-                    ["#t"] = "BucketName",
-                    ["#u"] = "CompressedSize",
-                    ["#v"] = "OffsetInS3File",
-                    ["#w"] = "Size",
-                    ["#x"] = "Index"
+                    ["#b"] = "Type",
+                    ["#c"] = "RequestedAt",
+                    ["#d"] = "RestorePathStrategy",
+                    ["#e"] = "RunId",
+                    ["#f"] = "RestorePaths",
+                    ["#g"] = "CreatedAt",
+                    ["#h"] = "CompletedAt",
+                    ["#i"] = "Status",
+                    ["#j"] = "FailedMessage",
+                    ["#k"] = "RestoreStartedAt",
+                    ["#l"] = "ArchiveRunId",
+                    ["#m"] = "Size",
+                    ["#n"] = "LastModified",
+                    ["#o"] = "Created",
+                    ["#p"] = "AclEntries",
+                    ["#q"] = "Owner",
+                    ["#r"] = "Group",
+                    ["#s"] = "HashId",
+                    ["#t"] = "RestoreFolder",
+                    ["#u"] = "RestoreCompletedAt"
                 }
             };
 
@@ -715,7 +611,7 @@ public class DynamoDbDataStore(
                         {
                             RestoreId = restoreId,
                             RestorePaths = GetSIfExists(item, "RestorePaths", s => s) ?? "",
-                            ArchiveRunId = GetSIfExists(item, "ArchiveRunId", s => s) ?? "",
+                            ArchiveRunId = GetNIfExists(item, "ArchiveRunId", long.Parse, 0),
                             Status = GetSIfExists(item, "Status", Enum.Parse<RestoreRunStatus>),
                             RequestedAt = GetSIfExists(item, "RequestedAt", DateTimeOffset.Parse),
                             CompletedAt = GetSIfExists(item, "CompletedAt", DateTimeOffset.Parse)
@@ -724,7 +620,6 @@ public class DynamoDbDataStore(
                     case nameof(RestoreFileMetaData):
                         // If we have FileMetaData, we can add it to the run
                         if (restoreRun is null) break;
-                        //RESTORE_ID#<restoreID>#FILE#<filePath>
                         var filePath = WebUtility.UrlDecode(item["SK"].S.Split('#').Last());
 
                         var fileMeta = new RestoreFileMetaData(filePath)
@@ -732,40 +627,23 @@ public class DynamoDbDataStore(
                             Status = GetSIfExists(item, "Status", Enum.Parse<FileRestoreStatus>),
                             FailedMessage = GetSIfExists(item, "FailedMessage", s => s),
                             Size = GetNIfExists(item, "Size", long.Parse),
-                            LastModified = GetSIfExists(item, "Modified", DateTimeOffset.Parse),
+                            LastModified = GetSIfExists(item, "LastModified", DateTimeOffset.Parse),
                             Created = GetSIfExists(item, "Created", DateTimeOffset.Parse),
                             AclEntries = GetSIfExists(item, "AclEntries",
                                 s => JsonSerializer.Deserialize<AclEntry[]>(s,
                                     SourceGenerationContext.Default.AclEntryArray)),
                             Owner = GetSIfExists(item, "Owner", s => s),
+                            Group = GetSIfExists(item, "Group", s => s),
                             HashId = GetSIfExists(item, "HashId", Base64Url.Decode),
                             RestorePathStrategy = item.TryGetValue("RestorePathStrategy", out var strategy)
                                 ? Enum.Parse<RestorePathStrategy>(strategy.S)
                                 : RestorePathStrategy.Nested,
-                            RestoreFolder = GetSIfExists(item, "RestoreDestination", s => s)
+                            RestoreFolder = GetSIfExists(item, "RestoreFolder", s => s),
+                            RestoreStartedAt = GetSIfExists(item, "RestoreStartedAt", DateTimeOffset.Parse),
+                            RestoreCompletedAt = GetSIfExists(item, "RestoreCompletedAt", DateTimeOffset.Parse)
                         };
 
                         restoreRun.RequestedFiles.TryAdd(filePath, fileMeta);
-                        break;
-                    case nameof(RestoreChunkDetails):
-                        if (restoreRun is null) break;
-                        //RESTORE_ID#<restoreID>#FILE#<filePath>#CHUNK#<chunkHashKey>
-                        var keyParts = item["SK"].S.Split('#');
-                        var filePathPart = WebUtility.UrlDecode(keyParts[3]);
-                        if (!restoreRun.RequestedFiles.TryGetValue(filePathPart, out var metaData)) break;
-                        var keyBytes = Base64Url.Decode(keyParts.Last());
-                        var chunkKey = new ByteArrayKey(keyBytes);
-                        metaData.CloudChunkDetails.TryAdd(chunkKey, new RestoreChunkDetails(
-                            GetSIfExists(item, "S3Key", s => s) ?? "",
-                            GetSIfExists(item, "BucketName", s => s) ?? "",
-                            GetNIfExists(item, "CompressedSize", long.Parse),
-                            GetNIfExists(item, "OffsetInS3File", long.Parse),
-                            GetNIfExists(item, "Size", long.Parse),
-                            keyBytes,
-                            GetNIfExists(item, "index", int.Parse))
-                        {
-                            Status = GetSIfExists(item, "Status", Enum.Parse<S3ChunkRestoreStatus>)
-                        });
                         break;
                 }
             }
@@ -777,221 +655,11 @@ public class DynamoDbDataStore(
         return restoreRun;
     }
 
-    public async Task SaveRestoreRequest(RestoreRequest restoreRequest, CancellationToken cancellationToken)
-    {
-        var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
-        var restoreId = contextResolver.RestoreId(restoreRequest.ArchiveRunId, restoreRequest.RestorePaths,
-            restoreRequest.RequestedAt);
-
-        var item = new Dictionary<string, AttributeValue>
-        {
-            // partition key
-            ["PK"] = new() { S = "RESTORE_REQUESTS" },
-            // sort key
-            ["SK"] = new() { S = $"RESTORE_ID#{restoreId}" },
-            ["Type"] = new() { S = nameof(RestoreRequest) },
-            // other attributes
-            ["RequestedAt"] = new() { S = restoreRequest.RequestedAt.ToString("O") },
-            ["RestorePathStrategy"] = new() { S = Enum.GetName(restoreRequest.RestorePathStrategy) },
-            ["RestorePaths"] = new() { S = restoreRequest.RestorePaths },
-            ["ArchiveRunId"] = new() { S = restoreRequest.ArchiveRunId }
-        };
-
-        var updateItemRequest = CreateUpdateItemRequest(item);
-        await dynamoDbClient.UpdateItemAsync(updateItemRequest, cancellationToken);
-    }
-
-    public async Task SaveRestoreRun(RestoreRun run, CancellationToken cancellationToken)
-    {
-        var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
-        var pk = $"RESTORE_ID#{run.RestoreId}";
-
-        // 1) Meta item
-        var metaItem = new Dictionary<string, AttributeValue>
-        {
-            ["PK"] = new() { S = pk },
-            ["SK"] = new() { S = pk },
-            ["Type"] = new() { S = nameof(RestoreRun) },
-            ["RestoreId"] = new() { S = run.RestoreId },
-            ["RestorePaths"] = new() { S = run.RestorePaths },
-            ["ArchiveRunId"] = new() { S = run.ArchiveRunId },
-            ["Status"] = new() { S = run.Status.ToString() },
-            ["RequestedAt"] = new() { S = run.RequestedAt.ToString("O") }
-        };
-
-        SetSIfNotNull(metaItem, "CompletedAt", run.CompletedAt?.ToString("O"));
-        var updateRequest = CreateUpdateItemRequest(metaItem);
-        await dynamoDbClient.UpdateItemAsync(updateRequest, cancellationToken);
-
-        // 2) File‐level items
-        foreach (var (filePath, fileMeta) in run.RequestedFiles)
-        {
-            var fileSk = $"{pk}#FILE#{WebUtility.UrlEncode(filePath)}";
-
-            var fileItem = new Dictionary<string, AttributeValue>
-            {
-                ["PK"] = new() { S = pk },
-                ["SK"] = new() { S = fileSk },
-                ["Status"] = new() { S = Enum.GetName(fileMeta.Status) },
-                ["Type"] = new() { S = nameof(RestoreFileMetaData) },
-                ["RestorePathStrategy"] = new() { S = Enum.GetName(fileMeta.RestorePathStrategy) },
-                ["Size"] = new() { N = fileMeta.Size.ToString() }
-            };
-            var aclEntriesString = fileMeta.AclEntries is not null
-                ? JsonSerializer.Serialize(fileMeta.AclEntries, SourceGenerationContext.Default.AclEntryArray)
-                : null;
-            SetSIfNotNull(fileItem, "AclEntries", aclEntriesString);
-            SetSIfNotNull(fileItem, "RestoreDestination", fileMeta.RestoreFolder);
-            SetSIfNotNull(fileItem, "FailedMessage", fileMeta.FailedMessage);
-            SetSIfNotNull(fileItem, "Modified", fileMeta.LastModified?.ToString("O"));
-            SetSIfNotNull(fileItem, "Created", fileMeta.Created?.ToString("O"));
-            SetSIfNotNull(fileItem, "Owner", fileMeta.Owner);
-            SetSIfNotNull(fileItem, "Group", fileMeta.Group);
-            var sha256Checksum = fileMeta.HashId is not null
-                ? Base64Url.Encode(fileMeta.HashId)
-                : null;
-            SetSIfNotNull(fileItem, "HashId", sha256Checksum);
-
-            var fileItemUpdateRequest = CreateUpdateItemRequest(fileItem);
-            await dynamoDbClient.UpdateItemAsync(fileItemUpdateRequest, cancellationToken);
-
-            // 3) Chunk‐level items
-            var items = from chunkKv in fileMeta.CloudChunkDetails
-                select chunkKv.Value
-                into chunk
-                let chunkKeyB64 = Base64Url.Encode(chunk.HashInSourceFile)
-                let chunkSk = $"{fileSk}#CHUNK_ID#{chunkKeyB64}"
-                select new Dictionary<string, AttributeValue>
-                {
-                    ["PK"] = new() { S = pk },
-                    ["SK"] = new() { S = chunkSk },
-                    ["Type"] = new() { S = nameof(RestoreChunkDetails) },
-                    ["S3Key"] = new() { S = chunk.S3Key },
-                    ["BucketName"] = new() { S = chunk.BucketName },
-                    ["Index"] = new() { N = chunk.Index.ToString() },
-                    ["CompressedSize"] = new() { N = chunk.CompressedSize.ToString() },
-                    ["OffsetInS3File"] = new() { N = chunk.OffsetInS3BatchFile.ToString() },
-                    ["Size"] = new() { N = chunk.SizeInSourceFile.ToString() },
-                    ["Status"] = new() { S = Enum.GetName(chunk.Status) }
-                };
-            foreach (var item in items)
-            {
-                var chunkItemUpdateRequest = CreateUpdateItemRequest(item);
-                await dynamoDbClient.UpdateItemAsync(chunkItemUpdateRequest, cancellationToken);
-            }
-        }
-    }
-
-    public async Task RemoveRestoreRequest(string restoreId, CancellationToken cancellationToken)
+    public async IAsyncEnumerable<RestoreRequest> GetRestoreRequests([EnumeratorCancellation]CancellationToken cancellationToken)
     {
         var tableName = awsConfiguration.DynamoDbTableName;
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
-
-        var deleteReq = new DeleteItemRequest
-        {
-            TableName = tableName,
-            Key = new Dictionary<string, AttributeValue>
-            {
-                ["PK"] = new() { S = "RESTORE_REQUESTS" },
-                ["SK"] = new() { S = $"RESTORE_ID#{restoreId}" }
-            },
-            ConditionExpression = "attribute_exists(PK) AND attribute_exists(SK)"
-        };
-
-        await dynamoDbClient.DeleteItemAsync(deleteReq, cancellationToken);
-    }
-
-    public async Task SaveRestoreFileMetaData(string restoreRunRestoreId, RestoreFileMetaData fileMeta,
-        CancellationToken cancellationToken)
-    {
-        var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
-
-        var pk = $"RESTORE_ID#{restoreRunRestoreId}";
-        var filePath = fileMeta.FilePath;
-
-        var fileSk = $"{pk}#FILE#{WebUtility.UrlEncode(filePath)}";
-
-        var fileItem = new Dictionary<string, AttributeValue>
-        {
-            ["PK"] = new() { S = pk },
-            ["SK"] = new() { S = fileSk },
-            ["Status"] = new() { S = Enum.GetName(fileMeta.Status) },
-            ["Type"] = new() { S = nameof(RestoreFileMetaData) },
-            ["RestorePathStrategy"] = new() { S = Enum.GetName(fileMeta.RestorePathStrategy) },
-            ["Size"] = new() { N = fileMeta.Size.ToString() }
-        };
-
-        var aclEntriesString = fileMeta.AclEntries is not null
-            ? JsonSerializer.Serialize(fileMeta.AclEntries, SourceGenerationContext.Default.AclEntryArray)
-            : null;
-        SetSIfNotNull(fileItem, "AclEntries", aclEntriesString);
-        SetSIfNotNull(fileItem, "RestoreDestination", fileMeta.RestoreFolder);
-        SetSIfNotNull(fileItem, "FailedMessage", fileMeta.FailedMessage);
-        SetSIfNotNull(fileItem, "Modified", fileMeta.LastModified?.ToString("O"));
-        SetSIfNotNull(fileItem, "Created", fileMeta.Created?.ToString("O"));
-        SetSIfNotNull(fileItem, "Owner", fileMeta.Owner);
-        SetSIfNotNull(fileItem, "Group", fileMeta.Group);
-        var sha256Checksum = fileMeta.HashId is not null
-            ? Base64Url.Encode(fileMeta.HashId)
-            : null;
-        SetSIfNotNull(fileItem, "HashId", sha256Checksum);
-
-        var fileItemUpdateRequest = CreateUpdateItemRequest(fileItem);
-        await dynamoDbClient.UpdateItemAsync(fileItemUpdateRequest, cancellationToken);
-
-        // 3) Chunk‐level items
-        var items = from chunkKv in fileMeta.CloudChunkDetails
-            select chunkKv.Value
-            into chunk
-            let chunkKeyB64 = Base64Url.Encode(chunk.HashInSourceFile)
-            let chunkSk = $"{fileSk}#CHUNK_ID#{chunkKeyB64}"
-            select new Dictionary<string, AttributeValue>
-            {
-                ["PK"] = new() { S = pk },
-                ["SK"] = new() { S = chunkSk },
-                ["Type"] = new() { S = nameof(RestoreChunkDetails) },
-                ["S3Key"] = new() { S = chunk.S3Key },
-                ["BucketName"] = new() { S = chunk.BucketName },
-                ["Index"] = new() { N = chunk.Index.ToString() },
-                ["CompressedSize"] = new() { N = chunk.CompressedSize.ToString() },
-                ["OffsetInS3File"] = new() { N = chunk.OffsetInS3BatchFile.ToString() },
-                ["Size"] = new() { N = chunk.SizeInSourceFile.ToString() },
-                ["Status"] = new() { S = Enum.GetName(chunk.Status) }
-            };
-        foreach (var item in items)
-        {
-            var chunkItemUpdateRequest = CreateUpdateItemRequest(item);
-            await dynamoDbClient.UpdateItemAsync(chunkItemUpdateRequest, cancellationToken);
-        }
-    }
-
-    public async Task SaveRestoreChunkStatus(string restoreId, string filePath, ByteArrayKey chunkKey,
-        S3ChunkRestoreStatus readyToRestore, CancellationToken cancellationToken)
-    {
-        var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
-
-        var encodedFilePath = WebUtility.UrlEncode(filePath);
-        var chunkKeyB64 = Base64Url.Encode(chunkKey.ToArray());
-        var chunkSk = $"RESTORE_ID#{restoreId}#FILE#{encodedFilePath}#CHUNK_ID#{chunkKeyB64}";
-        var item = new Dictionary<string, AttributeValue>
-        {
-            // partition key
-            ["PK"] = new() { S = $"RESTORE_ID#{restoreId}" },
-            // sort key
-            ["SK"] = new() { S = chunkSk },
-            ["Status"] = new() { S = Enum.GetName(readyToRestore) }
-        };
-
-        var updateItemRequest = CreateUpdateItemRequest(item);
-        await dynamoDbClient.UpdateItemAsync(updateItemRequest, cancellationToken);
-    }
-
-    public async IAsyncEnumerable<RestoreRequest> GetRestoreRequests(
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        var tableName = awsConfiguration.DynamoDbTableName;
-        var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
-
+        
         Dictionary<string, AttributeValue>? lastKey = null;
         do
         {
@@ -1001,23 +669,23 @@ public class DynamoDbDataStore(
                 KeyConditionExpression = "PK = :pk",
                 ExpressionAttributeValues = new Dictionary<string, AttributeValue>
                 {
-                    [":pk"] = new() { S = "RESTORE_REQUESTS" }
+                    [":pk"] = new() { S = "RESTORE_REQUEST" }
                 },
                 ProjectionExpression =
                     "ArchiveRunId, RestorePaths, RequestedAt, RestorePathStrategy, RestoreDestination",
                 ExclusiveStartKey = lastKey
             };
-
+        
             var resp = await dynamoDbClient.QueryAsync(req, cancellationToken);
-
+        
             foreach (var item in resp.Items)
             {
                 var paths = item["RestorePaths"].S;
-                var archiveRunId = item["ArchiveRunId"].S;
-                var requestedAt = DateTimeOffset.Parse(item["RequestedAt"].S);
+                var archiveRunId = GetNIfExists(item,"ArchiveRunId", long.Parse, 0);
+                var requestedAt = GetSIfExists(item, "RequestedAt", DateTimeOffset.Parse);
                 var restorePathStrategy = GetSIfExists(item, "RestorePathStrategy", Enum.Parse<RestorePathStrategy>);
                 var restoreFolder = GetSIfExists(item, "RestoreDestination", s => s);
-
+        
                 yield return new RestoreRequest(
                     archiveRunId,
                     paths,
@@ -1025,33 +693,176 @@ public class DynamoDbDataStore(
                     restorePathStrategy,
                     restoreFolder);
             }
-
+        
             lastKey = resp.LastEvaluatedKey;
         } while (lastKey is { Count: > 0 });
     }
 
-    public async Task SaveRestoreFileStatus(string restoreId, string fileMetaFilePath, FileRestoreStatus status,
-        string reasonMessage,
-        CancellationToken cancellationToken)
+    public async Task SaveRestoreRequest(RestoreRequest restoreRequest, CancellationToken cancellationToken)
     {
         var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
-
-        var encodedFilePath = WebUtility.UrlEncode(fileMetaFilePath);
-        var chunkSk = $"RESTORE_ID#{restoreId}#FILE#{encodedFilePath}";
+        var restoreId = contextResolver.RestoreId(restoreRequest.ArchiveRunId, restoreRequest.RestorePaths,
+            restoreRequest.RequestedAt);
+        
         var item = new Dictionary<string, AttributeValue>
         {
             // partition key
-            ["PK"] = new() { S = $"RESTORE_ID#{restoreId}" },
+            ["PK"] = new() { S = "RESTORE_REQUEST" },
             // sort key
-            ["SK"] = new() { S = chunkSk },
-            ["Status"] = new() { S = Enum.GetName(status) }
+            ["SK"] = new() { S = $"RESTORE_REQUEST#{restoreId}" },
+            ["Type"] = new() { S = nameof(RestoreRequest) },
+            // other attributes
+            ["RequestedAt"] = new() { S = restoreRequest.RequestedAt.ToString("O") },
+            ["RestorePathStrategy"] = new() { S = Enum.GetName(restoreRequest.RestorePathStrategy) },
+            ["RestoreDestination"] = new() { S = restoreRequest.RestorePaths },
+            ["ArchiveRunId"] = new() { S = restoreRequest.ArchiveRunId.ToString() }
         };
-        SetSIfNotNull(item, "FailedMessage", reasonMessage);
+        
+        var updateItemRequest = CreateUpdateItemRequest(item);
+        await dynamoDbClient.UpdateItemAsync(updateItemRequest, cancellationToken);
 
-        var updateReq = CreateUpdateItemRequest(item);
-        await dynamoDbClient.UpdateItemAsync(updateReq, cancellationToken);
     }
 
+    public async Task SaveRestoreRun(RestoreRun restoreRun, CancellationToken cancellationToken)
+    {
+        var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
+        var pk = $"RESTORE#{restoreRun.RestoreId}";
+
+        var metaItem = new Dictionary<string, AttributeValue>
+        {
+            ["PK"] = new() { S = pk },
+            ["SK"] = new() { S = pk },
+            ["Type"] = new() { S = nameof(RestoreRun) }
+        };
+        SetSIfNotNull(metaItem, "RestoreId", restoreRun.RestoreId);
+        SetNIfNotNull(metaItem, "ArchiveRunId", restoreRun.ArchiveRunId);
+        SetSIfNotNull(metaItem, "RestorePaths", restoreRun.RestorePaths);
+        SetSIfNotNull(metaItem, "Status", Enum.GetName(restoreRun.Status));
+        SetSIfNotNull(metaItem, "RequestedAt", restoreRun.RequestedAt.ToString("O"));
+        SetSIfNotNull(metaItem, "CompletedAt", restoreRun.CompletedAt?.ToString("O"));
+
+        var updateRequest = CreateUpdateItemRequest(metaItem);
+        await dynamoDbClient.UpdateItemAsync(updateRequest, cancellationToken);
+
+        foreach (var (filePath, fileMeta) in restoreRun.RequestedFiles)
+        {
+            var fileSk = $"{pk}#FILENAME#{WebUtility.UrlEncode(filePath)}";
+
+            var fileItem = new Dictionary<string, AttributeValue>
+            {
+                ["PK"] = new() { S = pk },
+                ["SK"] = new() { S = fileSk },
+                ["Type"] = new() { S = nameof(RestoreFileMetaData) },
+                ["Status"] = new() { S = Enum.GetName(fileMeta.Status) },
+                ["RestorePathStrategy"] = new() { S = Enum.GetName(fileMeta.RestorePathStrategy) },
+                ["Size"] = new() { N = fileMeta.Size.ToString() }
+            };
+            var aclEntriesString = fileMeta.AclEntries is not null
+                ? JsonSerializer.Serialize(fileMeta.AclEntries, SourceGenerationContext.Default.AclEntryArray)
+                : null;
+            SetSIfNotNull(fileItem, "AclEntries", aclEntriesString);
+            SetSIfNotNull(fileItem, "RestoreDestination", fileMeta.RestoreFolder);
+            SetSIfNotNull(fileItem, "FailedMessage", fileMeta.FailedMessage);
+            SetSIfNotNull(fileItem, "LastModified", fileMeta.LastModified?.ToString("O"));
+            SetSIfNotNull(fileItem, "Created", fileMeta.Created?.ToString("O"));
+            SetSIfNotNull(fileItem, "Owner", fileMeta.Owner);
+            SetSIfNotNull(fileItem, "Group", fileMeta.Group);
+            var hashId = fileMeta.HashId is not null
+                ? Base64Url.Encode(fileMeta.HashId)
+                : null;
+            SetSIfNotNull(fileItem, "HashId", hashId);
+            SetSIfNotNull(fileItem, "StartedAt", fileMeta.RestoreStartedAt?.ToString("O"));
+            SetSIfNotNull(fileItem, "CompletedAt", fileMeta.RestoreCompletedAt?.ToString("O"));
+
+            var fileItemUpdateRequest = CreateUpdateItemRequest(fileItem);
+            await dynamoDbClient.UpdateItemAsync(fileItemUpdateRequest, cancellationToken);
+        }
+    }
+
+    public async Task RemoveRestoreRequest(string restoreId, CancellationToken cancellationToken)
+    {
+        var tableName = awsConfiguration.DynamoDbTableName;
+        var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
+        
+        var deleteReq = new DeleteItemRequest
+        {
+            TableName = tableName,
+            Key = new Dictionary<string, AttributeValue>
+            {
+                ["PK"] = new() { S = "RESTORE_REQUEST" },
+                ["SK"] = new() { S = $"RESTORE_REQUEST#{restoreId}" }
+            },
+            ConditionExpression = "attribute_exists(PK) AND attribute_exists(SK)"
+        };
+        
+        await dynamoDbClient.DeleteItemAsync(deleteReq, cancellationToken);
+    }
+
+    public async Task SaveRestoreFileMetaData(string restoreId, RestoreFileMetaData restoreFileMeta,
+        CancellationToken cancellationToken)
+    {
+        var dynamoDbClient = await clientFactory.CreateDynamoDbClient(cancellationToken);
+        
+        var pk = $"RESTORE#{restoreId}";
+        var filePath = restoreFileMeta.FilePath;
+        
+        var fileSk = $"{pk}#FILENAME#{WebUtility.UrlEncode(filePath)}";
+        
+        var fileItem = new Dictionary<string, AttributeValue>
+        {
+            ["PK"] = new() { S = pk },
+            ["SK"] = new() { S = fileSk },
+            ["Status"] = new() { S = Enum.GetName(restoreFileMeta.Status) },
+            ["Type"] = new() { S = nameof(RestoreFileMetaData) },
+            ["RestorePathStrategy"] = new() { S = Enum.GetName(restoreFileMeta.RestorePathStrategy) },
+            ["Size"] = new() { N = restoreFileMeta.Size.ToString() }
+        };
+        
+        var aclEntriesString = restoreFileMeta.AclEntries is not null
+            ? JsonSerializer.Serialize(restoreFileMeta.AclEntries, SourceGenerationContext.Default.AclEntryArray)
+            : null;
+        SetSIfNotNull(fileItem, "AclEntries", aclEntriesString);
+        SetSIfNotNull(fileItem, "RestoreDestination", restoreFileMeta.RestoreFolder);
+        SetSIfNotNull(fileItem, "FailedMessage", restoreFileMeta.FailedMessage);
+        SetSIfNotNull(fileItem, "LastModified", restoreFileMeta.LastModified?.ToString("O"));
+        SetSIfNotNull(fileItem, "Created", restoreFileMeta.Created?.ToString("O"));
+        SetSIfNotNull(fileItem, "Owner", restoreFileMeta.Owner);
+        SetSIfNotNull(fileItem, "Group", restoreFileMeta.Group);
+        var hashId = restoreFileMeta.HashId is not null
+            ? Base64Url.Encode(restoreFileMeta.HashId)
+            : null;
+        SetSIfNotNull(fileItem, "HashId", hashId);
+        SetSIfNotNull(fileItem, "RestoreStartedAt", restoreFileMeta.RestoreStartedAt?.ToString("O"));
+        SetSIfNotNull(fileItem, "RestoreCompletedAt", restoreFileMeta.RestoreCompletedAt?.ToString("O"));
+        
+        var fileItemUpdateRequest = CreateUpdateItemRequest(fileItem);
+        await dynamoDbClient.UpdateItemAsync(fileItemUpdateRequest, cancellationToken);
+    }
+
+    private static FileMetaData MapFileMetaData(Dictionary<string, AttributeValue> item, string filePath = "")
+    {
+        var skParts = item["SK"].S.Split('#');
+        var id = long.Parse(skParts.Last());
+
+        filePath = string.IsNullOrWhiteSpace(filePath) ? WebUtility.UrlDecode(skParts[1]) : filePath;
+
+        return new FileMetaData(filePath, id)
+        {
+            Status = GetSIfExists(item, "Status", Enum.Parse<FileStatus>),
+            SkipReason = GetSIfExists(item, "SkipReason", s => s) ?? "",
+            HashId = new ByteArrayKey(GetSIfExists(item, "HashId", Base64Url.Decode) ?? []),
+            Created = GetSIfExists(item, "Created", DateTimeOffset.Parse),
+            CompressedSize = GetNIfExists(item, "CompressedSize", long.Parse),
+            OriginalSize = GetNIfExists(item, "OriginalSize", long.Parse),
+            Owner = GetSIfExists(item, "Owner", s => s),
+            Group = GetSIfExists(item, "Group", s => s),
+            LastModified = GetSIfExists(item, "LastModified", DateTimeOffset.Parse),
+            AclEntries = GetSIfExists(item, "AclEntries",
+                s => JsonSerializer.Deserialize<AclEntry[]>(s,
+                    SourceGenerationContext.Default.AclEntryArray))
+        };
+    }
+    
     private UpdateItemRequest CreateUpdateItemRequest(Dictionary<string, AttributeValue> attributes)
     {
         var expressionBuilder = new StringBuilder("SET");
@@ -1102,6 +913,14 @@ public class DynamoDbDataStore(
         }
 
         return sb.ToString();
+    }
+
+    private static T GetNIfExists<T>(Dictionary<string, AttributeValue> item, string key, Func<string, T> conversion,
+        T defaultValue)
+    {
+        if (!item.TryGetValue(key, out var value) || value.N is null)
+            return defaultValue;
+        return conversion(value.N);
     }
 
     private static T? GetNIfExists<T>(Dictionary<string, AttributeValue> item, string key, Func<string, T> conversion)

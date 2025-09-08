@@ -2,7 +2,7 @@ namespace aws_backup_common;
 
 public interface ICloudChunkStorage
 {
-    Task<bool> ContainsKey(ByteArrayKey key, CancellationToken cancellationToken);
+    Task<bool> ContainsChunkKey(ByteArrayKey key, CancellationToken cancellationToken);
 
     Task AddCloudChunkDetails(CloudChunkDetails cloudChunkDetails, CancellationToken cancellationToken);
     

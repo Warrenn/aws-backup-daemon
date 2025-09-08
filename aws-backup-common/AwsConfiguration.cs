@@ -5,7 +5,7 @@ using Amazon.CloudFormation.Model;
 namespace aws_backup_common;
 
 public sealed record AwsConfiguration(
-    string BucketName, // required
+    string BucketName,
     string SqsInboxQueueUrl,
     string SqsOutboxQueueUrl,
     string ArchiveCompleteTopicArn,
@@ -57,7 +57,7 @@ public sealed class AwsConfigurationFactory(
             );
             
             if (errorBuilder.Length > 0)
-                return (null, errorBuilder.ToString()); ;
+                return (null, errorBuilder.ToString());
 
             return (returnValue, null);
         }

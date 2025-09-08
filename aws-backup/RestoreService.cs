@@ -95,13 +95,6 @@ public sealed class RestoreService(
 
                 chunkToRestore.Status = S3ChunkRestoreStatus.ReadyToRestore;
                 
-                // var saveRestoreChunkStatusCommand = new SaveRestoreChunkStatusCommand(
-                //     restoreRunId,
-                //     restoreFile.FilePath,
-                //     chunkHashKey,
-                //     S3ChunkRestoreStatus.ReadyToRestore);
-                // await dataStoreMediator.ExecuteCommand(saveRestoreChunkStatusCommand, cancellationToken);
-
                 var chunkStatusesSnapshot = restoreFile.CloudChunkDetails.Values.Select(d => d.Status).ToArray();
                 if (chunkStatusesSnapshot.Any(s => s == S3ChunkRestoreStatus.PendingDeepArchiveRestore))
                     continue;

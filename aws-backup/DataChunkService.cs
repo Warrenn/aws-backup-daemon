@@ -24,7 +24,7 @@ public sealed class DataChunkService(
     {
         var key = new ByteArrayKey(chunk.HashId);
         if (_cache.ContainsKey(key)) return true;
-        var inStorage = await cloudChunkStorage.ContainsKey(key, cancellationToken);
+        var inStorage = await cloudChunkStorage.ContainsChunkKey(key, cancellationToken);
         if (inStorage) _cache.TryAdd(key, chunk);
         return inStorage;
     }
