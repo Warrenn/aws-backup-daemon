@@ -108,7 +108,6 @@ public class DataStoreActor(
             {
                 logger.LogError(ex, "Error processing command {CommandType}: {Message}", command.GetType(),
                     ex.Message);
-                // Optionally, you can publish an error message to a message bus or log it
             }
     }
 }

@@ -119,11 +119,10 @@ public sealed class RestoreService(
                 };
                 await downloadMediator.DownloadFileFromS3(s3Request, cancellationToken);
                 
-                // todo: update status command
-                // var saveRestoreFileMetaDataCommand = new SaveRestoreFileMetaDataCommand(
-                //     restoreRunId,
-                //     restoreFile);
-                // await dataStoreMediator.ExecuteCommand(saveRestoreFileMetaDataCommand, cancellationToken);
+                var saveRestoreFileMetaDataCommand = new SaveRestoreFileMetaDataCommand(
+                    restoreRunId,
+                    restoreFile);
+                await dataStoreMediator.ExecuteCommand(saveRestoreFileMetaDataCommand, cancellationToken);
             }
         }
         catch (Exception ex)
@@ -146,13 +145,10 @@ public sealed class RestoreService(
             logger.LogInformation("File {File} in run {RunId} marked Completed",
                 req.FilePath, req.RestoreId);
             
-            // todo: update status command
-            // var saveRestoreFileStatusCommand = new UpdateRestoreFileStatusCommand(
-            //     req.RestoreId,
-            //     fileMeta.FilePath,
-            //     FileRestoreStatus.Completed,
-            //     "");
-            // await dataStoreMediator.ExecuteCommand(saveRestoreFileStatusCommand, cancellationToken);
+            var saveRestoreFileStatusCommand = new SaveRestoreFileMetaDataCommand(
+                req.RestoreId,
+                fileMeta);
+            await dataStoreMediator.ExecuteCommand(saveRestoreFileStatusCommand, cancellationToken);
 
             // if *all* files done → finalize
             await SaveAndFinalizeIfComplete(restoreRun, cancellationToken);
